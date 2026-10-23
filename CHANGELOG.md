@@ -3,6 +3,45 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] - 2026-10-23
+
+右侧栏有了「小说工坊」：不开对话框也能看见这本书现在在哪、卡在哪、下一步做什么。
+
+### 新增
+
+- **小说工坊面板**（`client.js` + `/api/inkwell`）：注册成右侧 Sidebar 的一个 tab 类型
+  （`ctx.sidebarRightTabs.register`），每 5 秒随会话切换重取一次快照。面板只读，不提供
+  写操作——阶段推进仍然走工具，这样「谁能改」还是那一个门禁。
+- **面板投影**（`src/panel/model.ts`，纯函数）：标题、阶段、下一阶、卡点、字数进度、
+  章表（章纲/草稿轮次/定稿状态）、出场最多的角色、待回收线索、最近的事实。全部零 token，
+  由磁盘数据算得。
+- **路由**（`src/panel/serve.ts`）：`GET /api/inkwell[/snapshot]`，可带 `?session=<id>`；
+  `perWorkspace` 开启时按该会话的 `cwd` 定位书，否则回落到进程那一本。非 GET 一律 403/405，
+  面板是只读的。
+- **`webServer` 是可选服务**：面板路由经 `ctx.inject(['webServer'])` 挂载，headless
+  profile 里没有这个服务，插件照样装载工具，只是没有面板。
+
+### 变更
+
+- **入口不再有 `default` 导出**。装载器会把模块规整成 `exports.default ?? exports`，一个
+  `default` 导出会把 `inject` 一起挡在外面，插件于是在服务就绪前访问 `ctx.tools`，真机启动
+  报 `cannot get property "tools" without inject`。这个错误在单测里看不见（单测直接调
+  `apply`），现在有 `test/plugin-shape.test.ts` 把装载器看到的形状钉住。
+- 包声明补 `dsh.client`（`platform: web`、依赖的客户端包 id）与 `exports["./client"]`，
+  `files` 增加 `client.js`。
+
+### 验证
+
+- 146 个用例（v0.3 是 125）。新增：面板投影、路由（200/403/404/405、按会话分书）、
+  模块装载形状、九个工具在只有声明过的服务可用时仍能挂载。
+- 真机验证：独立 profile（`inkwell-verify`）boot 后，`/api/inkwell` 返回真实书的快照；
+  客户端模块被 shell 以 `plugins/??dsh-inkwell/client.js` 预加载。
+
+### 仍不做
+
+- 面板里的写操作（推进阶段、改章纲）：面板是仪表盘，不是第二个入口。
+- 章节级并发写：同一本书同一章同时写会被后写覆盖。
+
 ## [0.3.0] - 2026-10-23
 
 一本书跟着一个工作区走：多工作区不再互相串书，模型路由多了推理档位，从 git 安装终于能用。
@@ -40,7 +79,6 @@
 
 ### 仍不做（留给后续）
 
-- 侧边栏「小说工坊」入口与项目创建面板（客户端 React 插件）。
 - 章节级并发写：同一本书同一章同时写会被后写覆盖（账本与章纲仍是单写者模型）。
 
 ## [0.2.0] - 2026-10-23
@@ -102,6 +140,7 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.4.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.4.0
 [0.3.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.3.0
 [0.2.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.2.0
 [0.1.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.1.0

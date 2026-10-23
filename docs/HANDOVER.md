@@ -1,17 +1,17 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-23，对应 release v0.3.0。
+> 最后更新：2026-10-23，对应 release v0.4.0。
 
 ## 一句话
 
-dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）与按会话解析的项目根（v0.3）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
+dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）和右侧栏的小说工坊面板（v0.4）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
 
 ## 仓库现状
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -43,6 +43,13 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **推理档位**：角色路由四字段 `provider/model/maxTokens/reasoningEffort`，原样塞进 `agentOptions`。`ReasoningEffortId` 是 branded string，取值由供应商适配器决定，插件不校验。
 - **三态字段覆盖**：`src/domain/fields.ts` 的 `mergeField` / `mentioned` / `concrete`。工具层用空串（`maxTokens` 用 `0`）表达「本书显式不设」，落盘为 `null`，压住全局默认且不连累同角色其它字段。
 - **可安装**：`package.json` 补 `prepare: npm run build`，`files` 只发 `lib/` 的老问题不再致命；新增 `scripts/verify-install.mjs` + `npm run verify`，挂载**构建产物**断言 9 工具 + 1 门禁都在。
+
+### v0.4 小说工坊面板（右侧栏）
+
+- **面板宿主侧**：`src/panel/model.ts`（纯函数投影：阶段/卡点/字数进度/章表含草稿轮次/出场最多角色/待回收线索/最近事实）+ `src/panel/serve.ts`（`GET /api/inkwell[/snapshot]`，可带 `?session=<id>`）。`webServer` 经 `ctx.inject(['webServer'])` 等，headless profile 里没有它就只装工具不装面板。
+- **面板浏览器侧**：`client.js`（手写，**不许打包**——它是 `__ModuleLoader__.load` 信封）注册侧栏 tab 类型 `ctx.sidebarRightTabs.register`，每 5 秒重取快照。只读，没有写操作。
+- **入口形状修复（重要）**：删掉 `export default apply`。装载器按 `exports.default ?? exports` 规整模块，`default` 导出会把 `inject` 挡在外面，真机启动报 `cannot get property "tools" without inject`。新增 `test/plugin-shape.test.ts` 钉住装载器看到的形状，`verify-install.mjs` 对构建产物再断一次。
+- **包声明**：`dsh.client`（`platform: web` + 依赖的客户端包 id）、`exports["./client"]`、`files` 增加 `client.js`。
 
 ## 怎么本地跑
 
@@ -80,11 +87,12 @@ npm 走外网很慢（装 43 个包要 4 分钟左右），不是卡死，耐心
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 125 个用例全过（vitest，12 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传
-- ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 18 个配置键全部就位
-- ✅ **真实 DSH 实装**：`dsh plugin --profile inkwell-verify add E:\dshplugin` 成功，profile 里 `dsh-inkwell: link:E:/dshplugin`，装载后工具清单与仓库内构建产物一致
-- ✅ `npm pack` 体积 83.6 kB / 101 个文件，文件树正确
-- ❌ 侧边栏面板仍未做（客户端 React 插件）
+- ✅ 146 个用例全过（vitest，14 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与路由（200/403/404/405、按会话分书）、模块装载形状
+- ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
+- ✅ **真实 DSH 实装**：`dsh plugin --profile inkwell-verify add E:\dshplugin` 成功，profile 里 `dsh-inkwell: link:E:/dshplugin`
+- ✅ **真机 boot**（v0.4）：独立 profile 带 `@deepseek-ai/dsh-web-app` 启动后，shell 里出现 `plugins/??dsh-inkwell/client.js` 预加载；`GET /api/inkwell` 返回真实书的快照（HTTP 200，JSON）；`/api/inkwell/snapshot` 同样 200
+- ✅ `npm pack` 体积 83.6 kB / 101 个文件，文件树正确（v0.3 数据；v0.4 多了 `client.js`，未重新 pack）
+- ❌ 面板的**视觉效果**没有截图验证过——只验证了「模块被加载、路由返回数据」，没验证渲染出来长什么样
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）
 
@@ -137,6 +145,15 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 **预设**（侧边栏/多角色隔离才用得上）：是 bundle patch 插一行 `@deepseek-ai/dsh-agent-preset`，`config.plugins` 是一组插件行（persona 用 `@deepseek-ai/dsh-persona`，模型用 `@deepseek-ai/dsh-agent-default-model`）。openwrite 的 `presets/openwrite/agent.cordis.yml` 是最佳参照。
 
+**客户端插件（v0.4 核实的一手结论，别再重查）**：
+
+- 声明：`package.json` 里 `dsh.client = { platform: 'web', inject: ['@deepseek-ai/dsh-client-ui-sidebar-right', …] }`，`exports["./client"]` 指向 `./client.js`，且 `client.js` 必须在 `files` 里。
+- 文件形状：手写的 `__ModuleLoader__.load({ id, factory })`，factory 里 `const exports = {}; exports.apply = …; exports.inject = ['slots','sidebarRightTabs','sidebarRight']; return exports`。**不能过打包器**，任何构建都会改写这层信封。
+- 右侧栏服务（`dsh-client-ui-sidebar-right` 的 `SidebarRightTabRegistry`）：`ctx.sidebarRightTabs.register({ id, title, icon, order, render })`。右侧列**只有一个**（`rightbar`），没有第二个右手座位，所以扩面板的正确姿势是加一个 tab **类型**，不是抢占整栏。
+- `ctx.slots` 是静态槽位表（`dsh-client-ui-slots`），`inject` 里列的是**客户端包 id**，不是服务名——列错不会报错，只会静默不生效。
+- 加载路径：shell 以 `plugins/??<pkg>/client.js&rev=<hash>` 预加载；HMR 走 `/plugins/events` SSE。
+- DSH 版本核对：本机 0.2.0-rc.2。`dsh plugin` 对 `desktop` profile 有额外保护（要求该 profile 已被 Desktop 初始化过）。
+
 **GLM 等模型**：DSH 供应商体系原生覆盖 Z.ai（智谱）、Anthropic、OpenAI、Moonshot；密钥在 Settings → Models，插件只引用 provider/model 名字。
 
 ## 设计上不能破的几条
@@ -149,20 +166,21 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.4 候选，按性价比排序）
+## 下一步（v0.5 候选，按性价比排序）
 
-1. **侧边栏「小说工坊」面板**（工作量最大）：客户端 React 插件，第四个入口 + 建项目选目录。前置：核实客户端插槽 API（`dsh-client-ui-slots`），参照 openwrite 的 `studio-panel`。注意 `apps/web` 侧改动必须重建并按现有 URL 验证。
-2. **章节级并发写保护**：同一章被两个会话同时 `write` 时后者覆盖。做带版本号的乐观锁（`chapters/index.json` 里存 `revision`），冲突时拒绝并提示先 `read`。
-3. **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录（谁提的、哪条、改了没有），支持跨会话追溯。
-4. **草稿审核面板化**：chief 的裁决做成面板里可逐条勾选 必改/建议改/可忽略。
+1. **面板的视觉验收**：v0.4 只验证了「模块被加载、路由返回数据」，没有截图证明渲染正确。第一步是用真实 GUI 打开侧栏看一眼，再把渲染形状（空态、有书态、卡点态）记进测试。
+2. **面板里的写操作**：现在只读。要做「在面板里批准章纲」，必须先决定门禁唯一性——写请求也得走同一套 `gateToolCall`，不能另开一条绕过闸门的路。
+3. **章节级并发写保护**：同一章被两个会话同时 `write` 时后者覆盖。做带版本号的乐观锁（`chapters/index.json` 里存 `revision`），冲突时拒绝并提示先 `read`。
+4. **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录（谁提的、哪条、改了没有），支持跨会话追溯。
 5. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 125 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 146 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
-3. 读 `docs/architecture.md`（设计取舍，含「根目录属于会话」与「三态路由」两节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/roles.ts`（角色定义）+ `src/gate.ts`（门禁）。
-4. 决定先做上面 v0.4 列表的哪一项。
+3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「入口形状是个陷阱」四节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/panel/`（面板）+ `client.js`（浏览器半边）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.5 列表的哪一项。
 
 ## 项目记忆
 

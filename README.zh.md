@@ -133,6 +133,34 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
+## 右侧栏的小说工坊（v0.4）
+
+面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
+
+它只做一件事：把磁盘上的书**投影**成一眼能看懂的仪表盘。
+
+```text
+《雾港》  draft 阶段 → review
+卡点：第 3 章章纲未批准；第 2 章章纲缺必写节拍
+字数 12,480 / 800,000（1.6%）　已定稿 2 章　草稿 1 章
+角色：沈砚 12 · 阿鸢 9
+待回收线索：船底的货单（第 1 章）
+```
+
+- **只读。** 面板没有按钮能推进阶段或改章纲，阶段推进仍然走工具——「谁能改」还是那一个门禁。
+- **零 token。** 快照由 `src/panel/model.ts` 从磁盘数据算得，不调模型。
+- **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
+- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 9 个工具，只是没有面板。
+
+宿主侧只有一个只读接口，浏览器半边每 5 秒取一次：
+
+```text
+GET /api/inkwell            # 进程那一本
+GET /api/inkwell?session=<id>   # 该会话工作区里的那一本
+```
+
+非 GET 一律 403/405——面板不提供写操作，也就不需要写权限的 CSRF 面。
+
 ## 确定性检查都查什么
 
 `novel_check` 与写入时的自动扫描共用一套纯函数：
@@ -173,7 +201,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 - **不续写、不代笔。** 插件自己没有生成文字的模型调用，一个字都不替你写（`novel_dispatch` 派出去的是子智能体，不是本插件）。
 - **不判断文学质量。** 「这段好不好」不是确定性函数能回答的，所以它不装作能。
 - **不做平台敏感词审核。** 各平台规则不同且常变，硬编码在插件里很快会过期。
-- **不带 UI 面板。** 全部能力在对话里可完成。
+- **面板不写操作。** 右侧栏的工坊是仪表盘，不是第二个入口；改这本书仍然只能通过工具和门禁。
 
 ## 已知边界
 
@@ -185,9 +213,9 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，125 个用例，含端到端流程与双工作区隔离
+npm test            # vitest，146 个用例，含端到端流程、双工作区隔离与面板投影
 npm run build       # 产出 lib/
-npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了
+npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部
 ```
 

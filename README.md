@@ -43,9 +43,9 @@ allowBuilds:
 
 Without that, the install lands a shell with no `lib/`.
 
-v0.2 adds a **commander pipeline**: the main session talks to you, dispatches a
-writer subagent, runs logic and character reviewers, a chief adjudicator, and
-only commits a chapter when you nod.
+The **commander pipeline** is the default shape: the main session talks to you,
+dispatches a writer subagent, runs logic and character reviewers plus a chief
+adjudicator, and only commits a chapter when you nod.
 
 ## One book per workspace
 
@@ -96,10 +96,39 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 
+## The workshop panel
+
+As of v0.4 the web shell's right Sidebar carries a **小说工坊** tab
+(`ctx.sidebarRightTabs.register`) — not a second right column, because there is
+only one and taking it over would push the Sidebar out.
+
+It does one thing: project the book on disk into a dashboard you can read at a
+glance — phase, what blocks the next transition, word progress against the
+target, the chapter table with draft rounds, the busiest characters, and the
+threads still owed a payoff.
+
+- **Read-only.** No button on the panel advances a phase or edits a contract;
+  that still goes through the tools, so the gate stays the only writer.
+- **No tokens.** The snapshot is computed by `src/panel/model.ts` from disk.
+- **Per session.** With `perWorkspace` on, the panel resolves the book from the
+  session's `cwd`, so switching sessions switches books.
+- **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
+  profile has no web server and still gets all nine tools.
+
+One host route, polled every 5 seconds by the browser half:
+
+```text
+GET /api/inkwell                 # the process-wide book
+GET /api/inkwell?session=<id>    # the book in that session's workspace
+```
+
+Anything but GET answers 403/405 — a read-only panel needs no write surface.
+
 ## Non-goals
 
-It does not generate prose itself, does not judge literary quality, does not
-encode any platform's content policy, and ships no UI panel.
+It does not generate prose itself, does not judge literary quality, and does not
+encode any platform's content policy. The panel is a dashboard, not a second
+entry point: it holds no write operations.
 
 ## Development
 

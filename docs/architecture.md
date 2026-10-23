@@ -7,9 +7,11 @@
 ```text
 src/
   domain/    纯函数与磁盘读写，不认识 DSH，可以在 node 里直接测
+  panel/     面板投影与只读路由（model.ts 纯函数，serve.ts 一个 prefix handler）
   tools/     九个工具，只做参数翻译与结果格式化
   gate.ts    预执行门禁，唯一能拒绝调用的地方
-  index.ts   挂载：注册工具 + 挂 tools/pre-execute
+  index.ts   挂载：注册工具 + 挂 tools/pre-execute + 挂面板路由
+client.js    浏览器半边：把面板注册成右侧栏的一个 tab 类型
 ```
 
 `domain/` 不认识 Cordis，也不认识工具注册表。这是刻意的：约束逻辑必须是可单测的纯函数，否则「代码强制」会退化成「代码看起来在强制」。
@@ -137,23 +139,55 @@ resolveSessionRoot(exec, config, baseStore):
 
 ## 与 DSH 的接缝
 
-只用了两个扩展点：
+宿主侧用了四个扩展点：
 
 1. `ctx.tools.register(defineTool({...}))` —— 注册工具，schema 自动进入系统提示词组装。
 2. `ctx.on('tools/pre-execute', (exec, next) => ...)` —— 预执行瀑布，返回 `{kind:'deny', reason}` 即拦截，`next()` 放行。
+3. `ctx.inject(['webServer'], …)` + `webServer.register({kind:'prefix', path:'/api/inkwell'})` —— 面板的只读数据接口。
+4. 客户端半边：`client.js` 里的 `ctx.sidebarRightTabs.register(…)` —— 把面板注册成右侧栏的一个 tab 类型。
 
 派发角色时多用一层 `ctx.subagents.start('spawn', …)`，但它不是「拒绝」通道：那里只负责起子智能体并收集文本。
 
 门禁放在 `pre-execute` 而不是 `execute` 里，是为了让被拒的调用**不产生任何副作用**，同时把拒绝原因作为工具结果回给模型——模型看到的是「还缺什么」，而不是一个异常堆栈。
 
+## 面板为什么不走 Remote
+
+DSH 有两套往界面送数据的办法：Remote 命名空间（宿主面 + 客户端面靠 bundle manifest 配对）和 HTTP 路由。面板选了后者，理由很实际：**它是只读的**。Remote 那一套的价值在于双向类型契约，而只读快照不需要写接口，也就不需要那层机械。
+
+于是形状变成：
+
+```text
+src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、卡点、章表、字数进度、线索）
+src/panel/serve.ts   路由：读 model 的投影，序列化成 JSON
+client.js            浏览器半边：每 5 秒 GET 一次，渲染成 tab
+```
+
+`model.ts` 不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：投影逻辑必须能在 node 里直接断言，否则面板上显示的东西无法验证。
+
+服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个仪表盘不该有这种权力。
+
+### 右侧栏只有一条
+
+Web shell 的右列（`rightbar`）已经被右侧 Sidebar 占满，没有第二个右手座位。想往里加 UI，唯一被支持的办法是给那个 Sidebar 加**一个 tab 类型**（`ctx.sidebarRightTabs.register`）。抢占整栏会把 Sidebar 挤走，那不是扩展，那是覆盖。
+
+## 入口形状是个陷阱
+
+装载器把模块规整成 `exports.default ?? exports` 再交给 Cordis。所以一个 `export default apply` 会把 `inject` 一起挡在外面：插件于是在 `ctx.tools` 就绪前访问它，真机启动报
+
+```text
+cannot get property "tools" without inject
+```
+
+而单测完全看不见——它们直接调 `apply(ctx, config)`，跳过了装载器。现在有两道闸：`test/plugin-shape.test.ts` 断言模块形状，`scripts/verify-install.mjs` 对构建产物再断一次。教训写在这里：**入口导出的形状是契约的一部分**，不是风格问题。
+
 ## 发售形状
 
-`files` 只发 `lib/`，所以**构建必须发生在安装时**：从 git 安装的包没有预构建产物，靠 `prepare` 脚本在 install 后跑 `tsc`。pnpm 默认拦构建脚本，这也是为什么 README 要求 `allowBuilds: { dsh-inkwell: true }`——少了这一条，装上去是一个没有 `lib/` 的空壳，而 `dsh` 只会在装载时报一个看不出原因的错。
+`files` 只发 `lib/` 和手写的 `client.js`，所以**服务端半边必须发生在安装时**：从 git 安装的包没有预构建产物，靠 `prepare` 脚本在 install 后跑 `tsc`。pnpm 默认拦构建脚本，这也是为什么 README 要求 `allowBuilds: { dsh-inkwell: true }`——少了这一条，装上去是一个没有 `lib/` 的空壳，而 `dsh` 只会在装载时报一个看不出原因的错。`client.js` 没有构建步骤，也**不能有**：它是一层 `__ModuleLoader__` 信封，任何打包器都会把这层信封改写成别的东西。
 
-`npm run verify`（`scripts/verify-install.mjs`）专治这类回归：它用假上下文挂载**构建产物**，断言 9 个工具和 1 个门禁都出现了。测试跑的是 `src/`，打包错误它看不见。
+`npm run verify`（`scripts/verify-install.mjs`）专治这类回归：它用假上下文挂载**构建产物**，断言 9 个工具、1 个门禁、1 条面板路由都出现了，还检查浏览器半边——`dsh.client` 声明、`exports["./client"]`、`client.js` 真在 `files` 里、文件里确实调了 `__ModuleLoader__.load`。测试跑的是 `src/`，这些打包错误它一个也看不见。
 
 ## 后续方向
 
-- **侧边栏「小说工坊」**：客户端 React 插件，项目创建面板与章节目录树。
+- **面板里的写操作**：现在面板只读。若要支持「在面板里批准章纲」，需要先决定一件事：门禁的唯一性。可行做法是面板的写请求仍走同一套 `gateToolCall` 校验，而不是另开一条绕过闸门的路。
 - **章节级并发写**：同一章被两个会话同时写时目前后者覆盖；需要带版本号的乐观锁。
 - **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录，支持跨会话追溯「这条意见谁提的、改了没有」。
