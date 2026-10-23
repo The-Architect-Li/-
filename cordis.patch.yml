@@ -1,0 +1,11 @@
+# Bundle patch for dsh-inkwell.
+#
+# `dsh plugin --profile web add dsh-inkwell` installs the package; this file is
+# what puts it into the profile's plugin tree. Override any field under
+# `config` to retune the gates for one workspace.
+
+- insert:
+    - id: inkwell
+      name: dsh-inkwell
+      config:
+        root: .novel

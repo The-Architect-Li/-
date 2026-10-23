@@ -1,0 +1,10 @@
+node_modules/
+lib/
+coverage/
+*.tsbuildinfo
+*.log
+.DS_Store
+Thumbs.db
+
+# 写作项目目录：属于用户数据，不进仓库
+.novel/
