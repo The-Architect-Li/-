@@ -83,7 +83,7 @@ npm 走外网很慢（装 43 个包要 4 分钟左右），不是卡死，耐心
 - ✅ 125 个用例全过（vitest，12 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 18 个配置键全部就位
 - ✅ **真实 DSH 实装**：`dsh plugin --profile inkwell-verify add E:\dshplugin` 成功，profile 里 `dsh-inkwell: link:E:/dshplugin`，装载后工具清单与仓库内构建产物一致
-- ✅ `npm pack` 体积约 60 kB，文件树正确
+- ✅ `npm pack` 体积 83.6 kB / 101 个文件，文件树正确
 - ❌ 侧边栏面板仍未做（客户端 React 插件）
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）
