@@ -81,10 +81,30 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_project` | 初始化、看状态、写前提、推进阶段 | 前提太短、角色不够、章纲不全 |
 | `novel_canon` | 角色卡与世界观 | 缺 name；世界观缺 detail |
 | `novel_outline` | 分卷、章纲、批准 | 章纲少于 2 个节拍、引用不存在的角色 |
-| `novel_chapter` | 写 / 读 / 列章节 | 阶段不对、章纲未批准、漏掉必出场角色 |
+| `novel_chapter` | write 直接写 / propose 落草稿 / commit 定稿 / read 读 / list 列 | write 漏角色不保存；propose/commit 需已批准章纲 |
 | `novel_ledger` | 记事实、查事实、全量体检 | 与已有设定冲突且未指名替换 |
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
 | `novel_check` | 确定性体检（零 token） | 不会拒绝，只报告 |
+| `novel_roles` | 查看/设置各角色用的模型 | set 缺 role |
+| `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
+
+## 小说工坊流水线（v0.2）
+
+v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派子智能体干活，你只裁决最后一道。
+
+```text
+你 ⇄ 指挥官（主会话）充分沟通
+        ├─ novel_dispatch writer    → 出初稿
+        ├─ novel_chapter propose    → 落草稿 + 跑确定性体检（不挡）
+        ├─ novel_dispatch logic     → 逻辑审核（带证据）
+        ├─ novel_dispatch character → 角色一致性审核
+        ├─ novel_dispatch chief     → 总审核裁决分歧
+        └─ 你点头 → novel_chapter commit → 才算一章
+```
+
+**按角色配模型：** 写手用 GLM、审核用 DeepSeek，随你。`novel_roles set` 把选择存进**这本书**的 `project.json`，不动全局；没设的角色继承当前会话模型。模型密钥永远留在 DSH 设置里，插件只记 provider/model 名字——它不知道你的 key。
+
+设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
 ## 确定性检查都查什么
 

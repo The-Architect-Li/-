@@ -31,7 +31,13 @@ dsh plugin --profile web add dsh-inkwell
 ```
 
 Restart the dsh process after installing (the client bundle is snapshotted at
-startup). Seven `novel_*` tools then appear in the session.
+startup). Nine `novel_*` tools then appear in the session.
+
+v0.2 adds a **commander pipeline**: the main session talks to you, dispatches a
+writer subagent, runs logic and character reviewers, a chief adjudicator, and
+only commits a chapter when you nod. Each role can use a different model
+(`novel_roles`), with keys staying in DSH settings — the plugin only stores
+provider and model names.
 
 ## Workflow
 
@@ -52,6 +58,8 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
 | `novel_check` | repetition, rhythm, tone, contract | never; it reports instead |
+| `novel_roles` | inspect or set each role's model route | set without a role |
+| `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 
 ## Non-goals
 
