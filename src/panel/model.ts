@@ -19,6 +19,7 @@ import type {
   LedgerEntry,
   Snapshot,
 } from '../domain/types.ts'
+import { buildSections, type PanelSection } from './tree.ts'
 
 /** One planned-but-unwritten chapter, or both, as the panel lists it. */
 export interface PanelChapter {
@@ -81,6 +82,8 @@ export interface PanelSnapshot {
   premiseChars: number
   /** When the project record last changed. */
   updatedAt: string | null
+  /** The four drawers the panel draws: world, cast, plot, manuscript. */
+  sections: PanelSection[]
 }
 
 /** Draft rounds for one chapter, as the caller already listed them. */
@@ -198,6 +201,7 @@ export function buildPanelSnapshot(
     volumeCount: snapshot.volumes.length,
     premiseChars: countChars(project.premise),
     updatedAt: project.updatedAt ?? null,
+    sections: buildSections(snapshot, new Map(drafts.map((entry) => [entry.number, entry.rounds]))),
   }
 }
 
@@ -222,5 +226,6 @@ export function emptyPanelSnapshot(root: string): PanelSnapshot {
     volumeCount: 0,
     premiseChars: 0,
     updatedAt: null,
+    sections: [],
   }
 }

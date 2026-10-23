@@ -1,0 +1,312 @@
+/**
+ * The panel's tree.
+ *
+ * One book, folded into the four drawers a writer actually opens: world,
+ * cast, plot, manuscript. Every row is already flattened into the payload —
+ * the browser half never derives structure, it only draws what it is given.
+ *
+ * Why the tree lives on the host: the browser has no filesystem, and a JSON
+ * shape this small is cheaper to test as a pure function than to re-derive in
+ * hand-written `client.js`. The counts here are the ones the screenshot shows
+ * ("人物设计 12"), so a miscount is a test failure, not a visual nit.
+ */
+import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
+
+/** How one row wants to be drawn: finished work, open work, or a warning. */
+export type PanelTone = 'done' | 'todo' | 'warn' | 'muted'
+
+/** One line in the drawer. Groups carry `children`; leaves do not. */
+export interface PanelRow {
+  /** Stable identity, unique inside the panel; used as the React key and the collapse key. */
+  id: string
+  label: string
+  /** Pill count, e.g. the `12` in `人物设计 12`. */
+  count?: number
+  /** Small chip on the right, e.g. `已批准`, `已完成`, `故事线`. */
+  chip?: string
+  /** Right-aligned detail that is not a number, e.g. `3.2 万字`. */
+  aside?: string
+  tone?: PanelTone
+  children?: PanelRow[]
+}
+
+/** One drawer: a top-level row group with its own count. */
+export interface PanelSection {
+  id: string
+  label: string
+  count: number
+  rows: PanelRow[]
+}
+
+/** The role order the cast drawer uses, with the names a writer expects. */
+const CAST_GROUPS = [
+  { role: 'protagonist', label: '主角' },
+  { role: 'antagonist', label: '反派' },
+  { role: 'supporting', label: '配角' },
+  { role: 'minor', label: '路人' },
+] as const
+
+/** Rows per list before the rest is summarised, so a long book stays one payload. */
+const CAP = {
+  world: 12,
+  cast: 24,
+  cards: 24,
+  chapters: 40,
+  beats: 8,
+} as const
+
+/** Draft rounds keyed by chapter number, as the route already read them. */
+export type DraftRounds = ReadonlyMap<number, readonly DraftRound[]>
+
+/**
+ * Format a word count the way the studio writes it.
+ *
+ * @param words - committed chapter words.
+ * @returns `1.2 万字` past ten thousand, plain digits below.
+ */
+export function formatWords(words: number): string {
+  if (!Number.isFinite(words) || words <= 0) return '0 字'
+  if (words >= 10000) return `${(words / 10000).toFixed(1)} 万字`
+  return `${words} 字`
+}
+
+/**
+ * Summarise a list that may be longer than the payload should carry.
+ *
+ * @param rows - the rows built so far.
+ * @param total - how many exist in the book.
+ * @param cap - how many to keep.
+ * @param prefix - id prefix for the summary row.
+ * @returns the rows to send, plus the "还有 N 条" tail when it is needed.
+ */
+function capped(rows: PanelRow[], total: number, cap: number, prefix: string): PanelRow[] {
+  if (total <= cap) return rows
+  return [
+    ...rows,
+    {
+      id: `${prefix}.more`,
+      label: `还有 ${total - cap} 条`,
+      tone: 'muted',
+    },
+  ]
+}
+
+/**
+ * The world drawer: every entry that is not a person.
+ *
+ * @param snapshot - the book.
+ * @returns the drawer.
+ */
+function worldSection(snapshot: Snapshot): PanelSection {
+  const rows: PanelRow[] = snapshot.world.slice(0, CAP.world).map((entry, index) => ({
+    id: `world.${index}`,
+    label: entry.name,
+    ...(entry.kind ? { aside: entry.kind } : {}),
+  }))
+  return {
+    id: 'world',
+    label: '世界观',
+    count: snapshot.world.length,
+    rows: capped(rows, snapshot.world.length, CAP.world, 'world'),
+  }
+}
+
+/**
+ * The cast drawer: an overview row, then one group per structural role.
+ *
+ * @param snapshot - the book.
+ * @returns the drawer.
+ */
+function castSection(snapshot: Snapshot): PanelSection {
+  const byRole = new Map<string, CharacterCard[]>()
+  for (const card of snapshot.characters) {
+    const list = byRole.get(card.role) ?? []
+    list.push(card)
+    byRole.set(card.role, list)
+  }
+  const groups: PanelRow[] = CAST_GROUPS.map((group) => {
+    const cards = byRole.get(group.role) ?? []
+    const children: PanelRow[] = cards.slice(0, CAP.cast).map((card, index) => ({
+      id: `cast.${group.role}.${index}`,
+      label: card.name,
+      ...(card.goal ? { aside: card.goal } : {}),
+    }))
+    return {
+      id: `cast.${group.role}`,
+      label: group.label,
+      count: cards.length,
+      tone: cards.length === 0 ? 'muted' : 'todo',
+      children: capped(children, cards.length, CAP.cast, `cast.${group.role}`),
+    }
+  })
+  return {
+    id: 'cast',
+    label: '人物设计',
+    count: snapshot.characters.length,
+    rows: [{ id: 'cast.overview', label: '概览', aside: `${snapshot.characters.length} 人` }, ...groups],
+  }
+}
+
+/**
+ * Chapter numbers a volume's outline covers.
+ *
+ * @param plans - chapter outlines.
+ * @param volume - the volume number.
+ * @returns chapter numbers in order.
+ */
+function chaptersOfVolume(plans: readonly ChapterPlan[], volume: number): number[] {
+  return plans.filter((plan) => plan.volume === volume).map((plan) => plan.number).sort((a, b) => a - b)
+}
+
+/**
+ * The plot drawer: the spine, the beats, the hooks, the cards.
+ *
+ * `count` is the drawer total the screenshot shows, so it is the sum of the
+ * things a writer would count as plot material — beats, hooks and cards.
+ *
+ * @param snapshot - the book.
+ * @returns the drawer.
+ */
+function plotSection(snapshot: Snapshot): PanelSection {
+  const beats = snapshot.plans.reduce((sum, plan) => sum + plan.beats.length, 0)
+  const hooks = snapshot.plans.reduce((sum, plan) => sum + plan.hooks.length, 0)
+
+  const volumeRows: PanelRow[] = snapshot.volumes.map((volume) => {
+    const numbers = chaptersOfVolume(snapshot.plans, volume.number)
+    return {
+      id: `plot.volume.${volume.number}`,
+      label: `第${volume.number}卷 ${volume.title}`,
+      count: numbers.length,
+      chip: volume.approved ? '已批准' : '待批准',
+      tone: volume.approved ? 'done' : 'todo',
+      children: numbers.slice(0, CAP.beats).map((number) => ({
+        id: `plot.volume.${volume.number}.${number}`,
+        label: `第${number}章`,
+        tone: 'muted',
+      })),
+    }
+  })
+
+  const cards: PanelRow[] = snapshot.plans.slice(0, CAP.cards).map((plan) => ({
+    id: `plot.card.${plan.number}`,
+    label: `第${plan.number}章 ${plan.title}`.trim(),
+    chip: plan.approved ? '已批准' : '待批准',
+    aside: `${plan.beats.length} 节拍`,
+    tone: plan.approved ? 'done' : 'todo',
+  }))
+
+  return {
+    id: 'plot',
+    label: '剧情设计',
+    count: beats + hooks + snapshot.plans.length,
+    rows: [
+      {
+        id: 'plot.spine',
+        label: '全书故事线',
+        chip: '故事线',
+        aside: `${snapshot.volumes.length} 卷`,
+        children: capped(volumeRows, snapshot.volumes.length, CAP.cards, 'plot.volume'),
+      },
+      { id: 'plot.beats', label: '剧情点', count: beats, tone: beats === 0 ? 'muted' : 'todo' },
+      { id: 'plot.hooks', label: '伏笔总览', count: hooks, tone: hooks === 0 ? 'muted' : 'todo' },
+      {
+        id: 'plot.cards',
+        label: '章卡',
+        count: snapshot.plans.length,
+        children: capped(cards, snapshot.plans.length, CAP.cards, 'plot.card'),
+      },
+    ],
+  }
+}
+
+/**
+ * The manuscript drawer: volumes, then their chapters with real state.
+ *
+ * A chapter row is `done` once it is committed, `todo` when its outline is
+ * approved and nothing is written, `warn` while a draft is waiting.
+ *
+ * @param snapshot - the book.
+ * @param rounds - draft rounds already read by the route.
+ * @returns the drawer.
+ */
+function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
+  const written = new Map<number, ChapterMeta>(snapshot.chapters.map((chapter) => [chapter.number, chapter]))
+  const numbers = new Set<number>()
+  for (const plan of snapshot.plans) numbers.add(plan.number)
+  for (const chapter of snapshot.chapters) numbers.add(chapter.number)
+
+  const chapterRow = (number: number): PanelRow => {
+    const plan = snapshot.plans.find((entry) => entry.number === number)
+    const chapter = written.get(number)
+    const draftCount = rounds.get(number)?.length ?? 0
+    const title = plan?.title || chapter?.title || ''
+    const base = { id: `text.chapter.${number}`, label: `第${number}章 ${title}`.trim() }
+    if (chapter) {
+      return { ...base, chip: '已完成', aside: formatWords(chapter.words), tone: 'done' }
+    }
+    if (draftCount > 0) return { ...base, chip: `${draftCount} 稿`, tone: 'warn' }
+    if (plan?.approved) return { ...base, chip: '可写', tone: 'todo' }
+    return { ...base, chip: '未写', tone: 'muted' }
+  }
+
+  const assigned = new Set<number>()
+  for (const volume of snapshot.volumes) {
+    for (const number of chaptersOfVolume(snapshot.plans, volume.number)) assigned.add(number)
+  }
+  const loose = [...numbers].filter((number) => !assigned.has(number)).sort((a, b) => a - b)
+
+  const volumeRows: PanelRow[] = snapshot.volumes.map((volume) => {
+    const covered = chaptersOfVolume(snapshot.plans, volume.number)
+    return {
+      id: `text.volume.${volume.number}`,
+      label: `第${volume.number}卷 ${volume.title}`.trim(),
+      count: covered.length,
+      children: capped(covered.slice(0, CAP.chapters).map(chapterRow), covered.length, CAP.chapters, `text.volume.${volume.number}`),
+    }
+  })
+
+  const looseRows: PanelRow[] = loose.map(chapterRow)
+
+  return {
+    id: 'text',
+    label: '正文',
+    count: snapshot.chapters.length,
+    rows: [
+      ...volumeRows,
+      ...(looseRows.length > 0
+        ? [
+            {
+              id: 'text.loose',
+              label: '未分卷',
+              count: looseRows.length,
+              children: capped(looseRows, looseRows.length, CAP.chapters, 'text.loose'),
+            } satisfies PanelRow,
+          ]
+        : []),
+    ],
+  }
+}
+
+/**
+ * Build all four drawers.
+ *
+ * @param snapshot - the book.
+ * @param rounds - draft rounds per chapter.
+ * @returns the sections, in drawing order.
+ */
+export function buildSections(snapshot: Snapshot, rounds: DraftRounds): PanelSection[] {
+  return [worldSection(snapshot), castSection(snapshot), plotSection(snapshot), textSection(snapshot, rounds)]
+}
+
+/** Rows in use, for the panel's footer line. */
+export function countRows(sections: readonly PanelSection[]): number {
+  let total = 0
+  const walk = (rows: readonly PanelRow[]): void => {
+    for (const row of rows) {
+      total += 1
+      if (row.children) walk(row.children)
+    }
+  }
+  for (const section of sections) walk(section.rows)
+  return total
+}
