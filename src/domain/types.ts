@@ -1,0 +1,145 @@
+/**
+ * Inkwell domain model.
+ *
+ * Everything here is plain data that round-trips through JSON on disk. No
+ * model calls, no I/O. The writer's project directory is the single source of
+ * truth, so a new session on a new machine sees exactly the same canon.
+ */
+
+/** Ordered production phases. The gate machine only moves forward. */
+export const PHASES = ['premise', 'canon', 'outline', 'drafting', 'review', 'done'] as const
+
+/** One production phase. */
+export type Phase = (typeof PHASES)[number]
+
+/** Character's structural position in the story. */
+export const CHARACTER_ROLES = ['protagonist', 'antagonist', 'supporting', 'minor'] as const
+
+/** One character's structural position. */
+export type CharacterRole = (typeof CHARACTER_ROLES)[number]
+
+/** Root record of a project. */
+export interface ProjectFile {
+  formatVersion: 1
+  title: string
+  phase: Phase
+  premise: string
+  targetWords: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** A character card, including the voice fields that stop everyone sounding alike. */
+export interface CharacterCard {
+  name: string
+  role: CharacterRole
+  /** How this person talks: rhythm, vocabulary, verbal tics. */
+  voice: string
+  appearance: string
+  goal: string
+  secret: string
+  updatedAt: string
+}
+
+/** One worldbuilding fact: place, faction, rule, item. */
+export interface WorldEntry {
+  name: string
+  kind: string
+  detail: string
+  updatedAt: string
+}
+
+/** A volume-level outline. */
+export interface VolumeOutline {
+  number: number
+  title: string
+  summary: string
+  approved: boolean
+}
+
+/** A chapter-level contract: what must happen, who appears, whose eyes. */
+export interface ChapterPlan {
+  number: number
+  volume: number
+  title: string
+  pov: string
+  characters: string[]
+  /** Beats that must land in the draft. Deterministic coverage is checked after writing. */
+  beats: string[]
+  /** Intended chapter-end hook. */
+  hooks: string[]
+  approved: boolean
+}
+
+/** One asserted fact about the story world, tied to the chapter that asserts it. */
+export interface LedgerEntry {
+  id: string
+  subject: string
+  predicate: string
+  value: string
+  /** 0 means "declared during setup", before any chapter exists. */
+  chapter: number
+  /** Quoted source text that justifies the assertion. */
+  quote: string
+  /** Id of the entry this one replaces, if the change is intentional. */
+  supersedes: string | null
+  createdAt: string
+}
+
+/** Chapter metadata stored in the index. */
+export interface ChapterMeta {
+  number: number
+  title: string
+  words: number
+  summary: string
+  writtenAt: string
+}
+
+/** A completed chapter on disk. */
+export interface ChapterDraft extends ChapterMeta {
+  text: string
+}
+
+/** How much a finding matters. `error` blocks, `warn` asks for a rewrite, `info` is context. */
+export type Severity = 'error' | 'warn' | 'info'
+
+/** One deterministic observation about the manuscript. */
+export interface Finding {
+  code: string
+  severity: Severity
+  message: string
+  evidence: string
+}
+
+/**
+ * Everything the gates, scanners and briefing need, read once.
+ */
+export interface Snapshot {
+  project: ProjectFile
+  characters: CharacterCard[]
+  world: WorldEntry[]
+  volumes: VolumeOutline[]
+  plans: ChapterPlan[]
+  ledger: LedgerEntry[]
+  chapters: ChapterMeta[]
+}
+
+/** Resolved, fully-defaulted plugin configuration. */
+export interface InkwellConfig {
+  root: string
+  premiseMinChars: number
+  briefingBudgetChars: number
+  briefingTailChars: number
+  briefingLookback: number
+  chapterMinWords: number
+  chapterMaxWords: number
+  repeatShingleSize: number
+  repeatWarnRatio: number
+  repeatErrorRatio: number
+  openingRepeatMin: number
+  rhythmStdRatioWarn: number
+  dialogueMinRatio: number
+  aiToneWarnPer1000: number
+  aiToneWords: string[]
+  beatCoverageMin: number
+}
