@@ -1,5 +1,6 @@
 /** A minimal stand-in for the harness. */
 import { mkdtemp, rm } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,11 +44,22 @@ export interface CallOptions {
   noAgent?: boolean
 }
 
+/** One host route the plugin registered, recorded instead of served. */
+export interface RecordedRoute {
+  kind: 'exact' | 'prefix'
+  path: string
+  handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  /** Whether the plugin has since disposed the registration. */
+  disposed: boolean
+}
+
 /** A mounted plugin plus the helpers to call it. */
 export interface Harness {
   root: string
   tools: Map<string, AnyTool>
   subagents: FakeSubagents
+  /** Every HTTP route the plugin registered on the fake host. */
+  routes: RecordedRoute[]
   call(name: string, args: Record<string, unknown>, options?: CallOptions): Promise<CallResult>
   cleanup(): Promise<void>
 }
@@ -88,11 +100,15 @@ export async function createHarness(
   const root = await mkdtemp(join(tmpdir(), 'inkwell-'))
   const tools = new Map<string, AnyTool>()
   const gates: GateListener[] = []
+  const routes: RecordedRoute[] = []
   const subs = subagents ?? fakeSubagents(() => {
     throw new Error('this test did not configure a subagents responder')
   })
 
-  const ctx = {
+  // The host services the plugin may touch. `webServer` is included because the
+  // panel route registers against it; a host without one is modelled by the
+  // `inject` guard below, which only calls back once every named service exists.
+  const services: Record<string, unknown> = {
     tools: {
       register(definition: AnyTool) {
         tools.set(definition.name, definition)
@@ -100,9 +116,33 @@ export async function createHarness(
       },
     },
     subagents: subs.service,
+    webServer: {
+      register(route: Omit<RecordedRoute, 'disposed'>) {
+        const record: RecordedRoute = { ...route, disposed: false }
+        routes.push(record)
+        return () => {
+          record.disposed = true
+        }
+      },
+    },
+  }
+
+  const ctx = {
+    ...services,
     on(event: string, listener: GateListener) {
       if (event === 'tools/pre-execute') gates.push(listener)
       return () => undefined
+    },
+    get(service: string) {
+      return services[service]
+    },
+    inject(deps: string[], callback: (child: unknown) => void) {
+      if (deps.every((needed) => services[needed] !== undefined)) callback(ctx)
+      return () => undefined
+    },
+    effect(effect: () => unknown) {
+      const disposer = effect()
+      return typeof disposer === 'function' ? disposer : () => undefined
     },
   } as unknown as Context
 
@@ -111,6 +151,7 @@ export async function createHarness(
   return {
     root,
     tools,
+    routes,
     subagents: subs,
     async call(name, args, options = {}) {
       const tool = tools.get(name)
