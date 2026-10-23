@@ -31,4 +31,4 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
-[0.1.0]: https://github.com/OWNER/dsh-inkwell/releases/tag/v0.1.0
+[0.1.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.1.0
