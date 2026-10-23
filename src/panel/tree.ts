@@ -179,11 +179,15 @@ function plotSection(snapshot: Snapshot): PanelSection {
       count: numbers.length,
       chip: volume.approved ? '已批准' : '待批准',
       tone: volume.approved ? 'done' : 'todo',
-      children: numbers.slice(0, CAP.beats).map((number) => ({
-        id: `plot.volume.${volume.number}.${number}`,
-        label: `第${number}章`,
-        tone: 'muted',
-      })),
+      children: numbers.slice(0, CAP.beats).map((number) => {
+        const plan = snapshot.plans.find((entry) => entry.number === number)
+        return {
+          id: `plot.volume.${volume.number}.${number}`,
+          label: `第${number}章 ${plan?.title ?? ''}`.trim(),
+          chip: plan?.approved ? undefined : '待批准',
+          tone: 'muted',
+        }
+      }),
     }
   })
 

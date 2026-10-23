@@ -185,6 +185,8 @@ describe('panel tree', () => {
     expect(spine?.chip).toBe('故事线')
     expect(spine?.count).toBeUndefined()
     expect(spine?.children?.map((row) => row.count)).toEqual([1, 1])
+    expect(spine?.children?.[0]?.children?.map((row) => row.label)).toEqual(['第1章 裂缝'])
+    expect(spine?.children?.[1]?.children?.map((row) => row.chip)).toEqual(['待批准'])
     expect(plot?.rows.find((row) => row.label === '剧情点')?.count).toBe(3)
     expect(plot?.rows.find((row) => row.label === '伏笔总览')?.count).toBe(1)
     const cards = plot?.rows.find((row) => row.label === '章卡')
