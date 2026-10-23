@@ -25,6 +25,8 @@ export interface ProjectFile {
   phase: Phase
   premise: string
   targetWords: number
+  /** Per-book model overrides, keyed by role id. Global config fills the gaps. */
+  roles?: Partial<Record<RoleId, RoleRoute>>
   createdAt: string
   updatedAt: string
 }
@@ -100,6 +102,19 @@ export interface ChapterDraft extends ChapterMeta {
   text: string
 }
 
+/** Role identifiers for the studio dispatch flow. */
+export const ROLE_IDS = ['writer', 'logic', 'character', 'chief'] as const
+
+/** One studio role. */
+export type RoleId = (typeof ROLE_IDS)[number]
+
+/** Per-role model route. Mirrors DSH `AgentOptions`; absent fields inherit. */
+export interface RoleRoute {
+  provider?: string | undefined
+  model?: string | undefined
+  maxTokens?: number | undefined
+}
+
 /** How much a finding matters. `error` blocks, `warn` asks for a rewrite, `info` is context. */
 export type Severity = 'error' | 'warn' | 'info'
 
@@ -142,4 +157,19 @@ export interface InkwellConfig {
   aiToneWarnPer1000: number
   aiToneWords: string[]
   beatCoverageMin: number
+  /** Per-role global model defaults. Each book can override a role's route. */
+  roles: Partial<Record<RoleId, RoleRoute>>
+}
+
+/** One review round on a chapter draft, persisted under drafts/. */
+export interface DraftRound {
+  number: number
+  /** Round number within this chapter, 1-based. */
+  round: number
+  text: string
+  words: number
+  summary: string
+  /** Findings from the deterministic contract + scan run at propose time. */
+  autoFindings: Finding[]
+  writtenAt: string
 }

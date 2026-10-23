@@ -12,6 +12,7 @@ import type {
   ChapterDraft,
   ChapterMeta,
   ChapterPlan,
+  DraftRound,
   LedgerEntry,
   ProjectFile,
   Snapshot,
@@ -275,6 +276,64 @@ export class ProjectStore {
   /** Absolute path of one chapter file. */
   chapterPath(number: number): string {
     return join(this.root, 'chapters', `${chapterKey(number)}.md`)
+  }
+
+  /** Directory holding every chapter's review drafts. */
+  private draftsDir(number: number): string {
+    return join(this.root, 'drafts', chapterKey(number))
+  }
+
+  /** Filename for one draft round, ordered so listdir stays sorted. */
+  private draftFile(number: number, round: number): string {
+    return join(this.draftsDir(number), `${String(round).padStart(2, '0')}.json`)
+  }
+
+  /** Persist one draft round. The caller computes `round` and `autoFindings`. */
+  async saveDraft(round: DraftRound): Promise<void> {
+    await writeJson(this.draftFile(round.number, round.round), round)
+  }
+
+  /** The latest draft round for a chapter, or `undefined` when none exists. */
+  async latestDraft(number: number): Promise<DraftRound | undefined> {
+    const dir = this.draftsDir(number)
+    const entries = await readdir(dir).catch(() => [] as string[])
+    const files = entries.filter((file) => file.endsWith('.json')).sort()
+    if (files.length === 0) return undefined
+    return readJson<DraftRound | undefined>(join(dir, files[files.length - 1]!), undefined)
+  }
+
+  /** Every draft round for a chapter, oldest first. */
+  async draftsOf(number: number): Promise<DraftRound[]> {
+    const dir = this.draftsDir(number)
+    const entries = await readdir(dir).catch(() => [] as string[])
+    const rounds: DraftRound[] = []
+    for (const file of entries.filter((file) => file.endsWith('.json')).sort()) {
+      const round = await readJson<DraftRound | undefined>(join(dir, file), undefined)
+      if (round) rounds.push(round)
+    }
+    return rounds
+  }
+
+  /**
+   * Promote the latest draft of a chapter into the manuscript.
+   *
+   * Drafts are kept so the review history survives a later rewrite; the chapter
+   * on disk is replaced by the latest approved prose.
+   *
+   * @returns the committed chapter metadata.
+   */
+  async commitDraft(number: number): Promise<ChapterMeta> {
+    const draft = await this.latestDraft(number)
+    if (!draft) throw new Error(`第${number}章没有草稿，无法 commit。先用 novel_chapter action="propose" 落草稿。`)
+    const meta: ChapterMeta = {
+      number: draft.number,
+      title: draft.summary ? draft.summary.slice(0, 40) : `第${draft.number}章`,
+      words: draft.words,
+      summary: draft.summary,
+      writtenAt: draft.writtenAt,
+    }
+    await this.writeChapter({ ...meta, text: draft.text })
+    return meta
   }
 
   /** Remove the whole project directory. Used by tests and explicit resets only. */

@@ -37,6 +37,7 @@ export const DEFAULTS: InkwellConfig = {
   aiToneWarnPer1000: 2,
   aiToneWords: DEFAULT_AI_TONE_WORDS,
   beatCoverageMin: 0.4,
+  roles: {},
 }
 
 /**
@@ -83,4 +84,12 @@ export const Config = z.object({
   aiToneWarnPer1000: z.number().default(DEFAULTS.aiToneWarnPer1000),
   aiToneWords: z.array(z.string()).default(DEFAULTS.aiToneWords),
   beatCoverageMin: z.number().default(DEFAULTS.beatCoverageMin),
+  roles: z
+    .object({
+      writer: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
+      logic: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
+      character: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
+      chief: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
+    })
+    .default({}),
 })
