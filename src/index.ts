@@ -8,7 +8,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveConfig, Config as ConfigSchema } from './config.ts'
 import { ProjectStore } from './domain/store.ts'
+import { sessionCwdById } from './domain/scope.ts'
 import { gateToolCall, isInkwellTool } from './gate.ts'
+import { createPanelHandler, PANEL_PREFIX } from './panel/serve.ts'
 import { createDeps } from './tools/deps.ts'
 import { registerBriefingTool } from './tools/briefing.ts'
 import { registerCanonTool } from './tools/canon.ts'
@@ -24,6 +26,21 @@ import type { InkwellConfig } from './domain/types.ts'
 export const name = 'inkwell'
 
 export const inject = ['tools', 'subagents']
+
+/**
+ * The one host service the panel route needs, described structurally.
+ *
+ * The plugin deliberately takes no build-time dependency on the web shell: a
+ * dsh that has no `webServer` never runs this branch, and the types here are
+ * the two fields actually used.
+ */
+interface PanelRouteHost {
+  register(route: {
+    kind: 'prefix'
+    path: string
+    handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
+  }): () => void
+}
 
 /**
  * Mount the plugin.
@@ -55,6 +72,26 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
     if (reason) return { kind: 'deny', reason }
     return next()
   })
+
+  // The workshop panel's data route. Waiting on `webServer` keeps this branch
+  // out of headless and CLI profiles entirely, where there is no browser to
+  // serve — and the tools above keep working there regardless.
+  ctx.inject(['webServer'], (child) => {
+    const host = child.get('webServer') as PanelRouteHost | undefined
+    if (host === undefined) return
+    child.effect(
+      () => host.register({
+        kind: 'prefix',
+        path: PANEL_PREFIX,
+        handler: createPanelHandler({
+          config: resolved,
+          baseStore,
+          cwdOf: (sessionId) => sessionCwdById(ctx, sessionId),
+        }),
+      }),
+      'inkwell: panel route',
+    )
+  })
 }
 
 export namespace apply {
@@ -63,4 +100,7 @@ export namespace apply {
 
 export const Config = ConfigSchema
 
-export default apply
+// No default export on purpose. The loader unwraps `exports.default ?? exports`
+// before handing the module to Cordis, so a default export would replace this
+// namespace with the bare `apply` function — and take `inject` with it, leaving
+// the plugin to reach for `ctx.tools` before the service exists.
