@@ -57,9 +57,9 @@ export async function gateToolCall(
     throw error
   }
 
-  if (name === 'novel_chapter' && action === 'write') {
+  if (name === 'novel_chapter' && (action === 'write' || action === 'propose')) {
     const number = readNumber(args, 'number')
-    if (number === undefined) return 'novel_chapter 的 write 需要 number。'
+    if (number === undefined) return 'novel_chapter 的 write/propose 需要 number。'
 
     if (!atLeast(snapshot.project.phase, 'drafting')) {
       const blockers = blockersFor('drafting', snapshot, config)
@@ -76,6 +76,32 @@ export async function gateToolCall(
     }
     if (!plan.approved) {
       return `第${number}章的章纲还没批准。先调用 novel_outline，action="approve_chapter"，确认节拍和出场人物后再动笔。`
+    }
+  }
+
+  if (name === 'novel_dispatch' && action === 'writer') {
+    const number = readNumber(args, 'number')
+    if (number === undefined) return 'novel_dispatch 的 writer 需要 number。'
+    if (!atLeast(snapshot.project.phase, 'drafting')) {
+      return [
+        `当前还在「${snapshot.project.phase}」阶段，不能派写手。`,
+        ...blockersFor('drafting', snapshot, config).map((item) => `- ${item}`),
+      ].join('\n')
+    }
+    const plan = snapshot.plans.find((item) => item.number === number)
+    if (!plan) return `第${number}章没有章纲，不能派写手。`
+    if (!plan.approved) return `第${number}章的章纲未批准，不能派写手。`
+  }
+
+  if (name === 'novel_dispatch' && (action === 'logic' || action === 'character' || action === 'chief')) {
+    const number = readNumber(args, 'number')
+    if (number === undefined) return `novel_dispatch 的 ${action} 需要 number。`
+    const plan = snapshot.plans.find((item) => item.number === number)
+    if (!plan) return `第${number}章没有章纲。`
+    // A reviewer needs a draft to read; the body re-checks, but failing here is cheaper.
+    const drafts = await store.draftsOf(number)
+    if (drafts.length === 0) {
+      return `第${number}章还没有草稿。先派 writer，再 novel_chapter action="propose"，然后才能审核。`
     }
   }
 

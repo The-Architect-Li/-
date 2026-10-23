@@ -13,15 +13,17 @@ import { registerBriefingTool } from './tools/briefing.ts'
 import { registerCanonTool } from './tools/canon.ts'
 import { registerChapterTool } from './tools/chapter.ts'
 import { registerCheckTool } from './tools/check.ts'
+import { registerDispatchTool } from './tools/dispatch.ts'
 import { registerLedgerTool } from './tools/ledger.ts'
 import { registerOutlineTool } from './tools/outline.ts'
 import { registerProjectTool } from './tools/project.ts'
+import { registerRolesTool } from './tools/roles.ts'
 
 /** Plugin name used by the Cordis fiber and the logger. */
 export const name = 'inkwell'
 
-/** Inkwell contributes tools; it must not load before the registry exists. */
-export const inject = ['tools']
+/** Inkwell contributes tools; it needs the tool registry and the subagent service. */
+export const inject = ['tools', 'subagents']
 
 /**
  * Mount the plugin.
@@ -41,6 +43,8 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerLedgerTool(ctx, deps)
   registerBriefingTool(ctx, deps)
   registerCheckTool(ctx, deps)
+  registerRolesTool(ctx, deps)
+  registerDispatchTool(ctx, deps)
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()

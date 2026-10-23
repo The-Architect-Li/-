@@ -1,4 +1,4 @@
-/** `novel_chapter`: write, read, and list chapter bodies. */
+/** `novel_chapter`: write, propose, commit, read, and list chapter bodies. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkContract, rank } from '../domain/contract.ts'
@@ -27,16 +27,16 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_chapter',
     description:
-      '章节正文。write 落笔（需要已批准的章纲，正文会经过章纲合同校验和确定性扫描：漏掉出场角色会被直接拒绝保存）；read 读取某章；list 列出全部章节与字数。写完一章建议接着用 novel_ledger 把新确立的设定记下来。',
+      '章节正文。studio 流程用 propose→commit：propose 把稿子存成草稿并跑章纲合同+确定性扫描（不挡，原样留待审核）；commit 把最新草稿定稿进 chapters（你点头后调）。write 是绕过流水线的直接落笔，合同 error 会拒绝保存。read 读某章；list 列出全部章节。写完一章建议接着 novel_ledger 记事实。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['write', 'read', 'list'],
-        description: 'write 写 / read 读 / list 列表',
+        enum: ['write', 'propose', 'commit', 'read', 'list'],
+        description: 'write 直接写 / propose 落草稿 / commit 定稿 / read 读 / list 列表',
       },
       number: { type: 'number', description: '章号，从 1 开始' },
-      text: { type: 'string', description: 'write 时的完整正文' },
+      text: { type: 'string', description: 'write 或 propose 时的完整正文' },
       summary: { type: 'string', description: '本章一句话摘要，供后续章节的上下文包使用；不填则自动取末段' },
       title: { type: 'string', description: '章节标题，默认沿用章纲标题' },
     },
@@ -99,12 +99,62 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
+      if (args.action === 'commit') {
+        const meta = await deps.store.commitDraft(number)
+        return {
+          number,
+          words: meta.words,
+          errors: 0,
+          warnings: 0,
+          chapters: [],
+          report: `第${number}章《${meta.title}》已定稿（${meta.words} 字），进入 chapters。可以接着写下一章，或用 novel_ledger 记本章新确立的设定。`,
+        }
+      }
+
       const text = args.text?.trim()
-      if (!text) throw new Error('write 需要 text。')
+      if (!text) throw new Error(`${args.action} 需要 text。`)
       const plan = snapshot.plans.find((item) => item.number === number)
       if (!plan) throw new Error(`第${number}章没有章纲，先写章纲再落笔。`)
 
       const contract = checkContract(plan, text, deps.config)
+
+      if (args.action === 'propose') {
+        // A draft is saved as-is so the review pipeline can judge it. The
+        // deterministic findings ride along on the round, never blocking.
+        const previous = await deps.store.allChapters()
+        const round = (await deps.store.draftsOf(number)).length + 1
+        const words = countChars(text)
+        const findings = rank([
+          ...contract,
+          ...scanChapter({ number, title: args.title?.trim() || plan.title, text, words, summary: args.summary?.trim() || deriveSummary(text), writtenAt: new Date().toISOString() }, previous, deps.config),
+        ])
+        const counts = tally(findings)
+        await deps.store.saveDraft({
+          number,
+          round,
+          text,
+          words,
+          summary: args.summary?.trim() || deriveSummary(text),
+          autoFindings: findings,
+          writtenAt: new Date().toISOString(),
+        })
+        return {
+          number,
+          words,
+          errors: counts.errors,
+          warnings: counts.warnings,
+          chapters: [],
+          report: [
+            `第${number}章草稿（第 ${round} 轮）已存，${words} 字，未进 chapters。`,
+            findings.length === 0 ? '自动体检无发现。' : '',
+            formatFindings(findings),
+            '',
+            '下一步：novel_dispatch action="logic"/"character" 审这章，再用 chief 汇总，最后你点头 novel_chapter commit。',
+          ].filter(Boolean).join('\n'),
+        }
+      }
+
+      // write: contract errors block the save so the manuscript stays clean.
       const blocking = contract.filter((finding) => finding.severity === 'error')
       if (blocking.length > 0) {
         throw new Error(
