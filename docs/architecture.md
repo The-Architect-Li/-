@@ -7,11 +7,11 @@
 ```text
 src/
   domain/    纯函数与磁盘读写，不认识 DSH，可以在 node 里直接测
-  panel/     面板投影与只读路由（model.ts 纯函数，serve.ts 一个 prefix handler）
+  panel/     面板投影、抽屉树与路由（model/tree/dirs 纯函数，serve.ts 一个 prefix handler）
   tools/     九个工具，只做参数翻译与结果格式化
   gate.ts    预执行门禁，唯一能拒绝调用的地方
   index.ts   挂载：注册工具 + 挂 tools/pre-execute + 挂面板路由
-client.js    浏览器半边：把面板注册成右侧栏的一个 tab 类型
+client.js    浏览器半边：把面板注册成右侧栏的一个 tab 类型，并调宿主的目录选择框
 ```
 
 `domain/` 不认识 Cordis，也不认识工具注册表。这是刻意的：约束逻辑必须是可单测的纯函数，否则「代码强制」会退化成「代码看起来在强制」。
@@ -152,19 +152,33 @@ resolveSessionRoot(exec, config, baseStore):
 
 ## 面板为什么不走 Remote
 
-DSH 有两套往界面送数据的办法：Remote 命名空间（宿主面 + 客户端面靠 bundle manifest 配对）和 HTTP 路由。面板选了后者，理由很实际：**它是只读的**。Remote 那一套的价值在于双向类型契约，而只读快照不需要写接口，也就不需要那层机械。
+DSH 有两套往界面送数据的办法：Remote 命名空间（宿主面 + 客户端面靠 bundle manifest 配对）和 HTTP 路由。面板选了后者，理由很实际：**它只有一处写，而且那一处已经是工具允许的**。Remote 那一套的价值在于双向类型契约，而这张快照是只读投影，写只有「建书」一个动作——为一个动作拉整层机械不值。
 
 于是形状变成：
 
 ```text
-src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、卡点、章表、字数进度、线索）
-src/panel/serve.ts   路由：读 model 的投影，序列化成 JSON
-client.js            浏览器半边：每 5 秒 GET 一次，渲染成 tab
+src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、进度、事实、线索）
+src/panel/tree.ts    纯函数：Snapshot → 四个抽屉（世界/人物/剧情/正文），带计数与状态
+src/panel/serve.ts   路由：读投影、序列化 JSON、处理 /init 与 /dirs
+src/panel/dirs.ts    纯函数 + 一层 readdir：列目录，回报该目录里有没有书
+client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树
 ```
 
-`model.ts` 不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：投影逻辑必须能在 node 里直接断言，否则面板上显示的东西无法验证。
+`model.ts`／`tree.ts`／`dirs.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
 
-服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个仪表盘不该有这种权力。
+服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个面板不该有这种权力。
+
+### 面板写操作只开一扇门
+
+建书是面板唯一的写。它没有另造一条路：`POST /api/inkwell/init` 直接调 `ProjectStore.init`，也就是 `novel_project action="init"` 调的那个函数，所以两条路落在磁盘上的字节相同。门禁本来就无条件放行 `init`（没有项目就没有可保护的东西），面板因此没有扩大任何权限。
+
+三个约束写在这个动作上，缺一条都会变成一次「安静的破坏」：
+
+1. **必须带 `x-dsh-plugin: inkwell` 头**——跨站的简单表单提交设不了自定义头，这是同源之外唯一能拦住的东西。
+2. **目录必须是绝对路径**——相对路径一律 400，绝不让宿主进程的 cwd 替用户猜一个位置。
+3. **插件的 `root` 是绝对路径时拒绝**（409）——那时全书只有一个固定位置，面板上的「选目录」是谎话，不如直接说清并让用户改用工具。
+
+选目录优先走宿主自己的选择框（`ctx.uiWorkspace.pickDirectory()`，由 `dsh-client-ui-workspace` 提供），读的是**惰性** `ctx.get('uiWorkspace')` 而不是声明进 `inject`：老宿主没有这个服务时，整个客户端包不该因此不激活，面板退回自己的目录浏览器。
 
 ### 右侧栏只有一条
 
@@ -188,6 +202,6 @@ cannot get property "tools" without inject
 
 ## 后续方向
 
-- **面板里的写操作**：现在面板只读。若要支持「在面板里批准章纲」，需要先决定一件事：门禁的唯一性。可行做法是面板的写请求仍走同一套 `gateToolCall` 校验，而不是另开一条绕过闸门的路。
+- **面板里能不能批准章纲**：v0.5 让面板建书（与 `init` 同一个函数，门禁本来就放行 init）。若要再往前一步到「批准章纲」，得先决定门禁的唯一性：可行做法是面板的写请求走同一套 `gateToolCall` 校验，而不是另开一条绕过闸门的路。
 - **章节级并发写**：同一章被两个会话同时写时目前后者覆盖；需要带版本号的乐观锁。
 - **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录，支持跨会话追溯「这条意见谁提的、改了没有」。

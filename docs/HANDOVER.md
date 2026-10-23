@@ -1,17 +1,17 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-23，对应 release v0.4.0。
+> 最后更新：2026-10-23，对应 release v0.5.0。
 
 ## 一句话
 
-dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）和右侧栏的小说工坊面板（v0.4）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
+dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）和面板里的抽屉树 + 选目录建书（v0.5）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
 
 ## 仓库现状
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -50,6 +50,14 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **面板浏览器侧**：`client.js`（手写，**不许打包**——它是 `__ModuleLoader__.load` 信封）注册侧栏 tab 类型 `ctx.sidebarRightTabs.register`，每 5 秒重取快照。只读，没有写操作。
 - **入口形状修复（重要）**：删掉 `export default apply`。装载器按 `exports.default ?? exports` 规整模块，`default` 导出会把 `inject` 挡在外面，真机启动报 `cannot get property "tools" without inject`。新增 `test/plugin-shape.test.ts` 钉住装载器看到的形状，`verify-install.mjs` 对构建产物再断一次。
 - **包声明**：`dsh.client`（`platform: web` + 依赖的客户端包 id）、`exports["./client"]`、`files` 增加 `client.js`。
+
+### v0.5 抽屉树 + 面板里选目录建书
+
+- **抽屉树**：`src/panel/tree.ts`（纯函数）把书投影成四个抽屉——世界 `◎`／人物设计 `◍`／剧情设计 `◷`／正文 `✎`，各自带计数、可折叠、可选中。人物按结构角色分组（概览/主角/反派/配角/路人，空组也保留一行，形状不跳）；剧情设计拆成「全书故事线（分卷→章数）／剧情点（beats 总数）／伏笔总览（hooks 总数）／章卡（章纲，标已批准/待批准）」；正文按分卷挂章，每章 `已完成／N 稿／可写／未写` + 字数。长列表截断到 25 行并补一行「还有 N 条」。
+- **面板建书**：`POST /api/inkwell/init` 调 `ProjectStore.init`——与 `novel_project action="init"` 同一个函数，两条路字节相同。只认带 `x-dsh-plugin: inkwell` 头的 POST；目录必须绝对路径（相对路径 400）；插件 `root` 是绝对路径时 409 并提示改用工具。目录里已有书则回报 `existing: true`，不覆盖。
+- **选目录**：优先 `ctx.uiWorkspace.pickDirectory()`（`dsh-client-ui-workspace` 提供，会走桌面桥或宿主 OS 选择框）；客户端用**惰性** `ctx.get('uiWorkspace')` 取它，不写进 `inject`，没有这个服务时退回面板自带的目录浏览器（`GET /api/inkwell/dirs?path=`，含盘符切换、每层最多 200 条）。
+- **指定书**：`GET /api/inkwell/snapshot?root=<绝对路径>`；面板把上次选中的 root 记在 `sessionStorage`（键 `inkwell.root.<sessionId>`）。
+- **验证**：164 个用例（v0.4 是 150）。真机：`/api/inkwell/dirs?path=E:\dshplugin` 返回 8 个目录、`/init` 无头 403、shell 预加载的 `plugins/??dsh-inkwell/client.js` 含新端点。
 
 ## 怎么本地跑
 
@@ -166,21 +174,21 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.5 候选，按性价比排序）
+## 下一步（v0.6 候选，按性价比排序）
 
-1. **面板的视觉验收**：v0.4 只验证了「模块被加载、路由返回数据」，没有截图证明渲染正确。第一步是用真实 GUI 打开侧栏看一眼，再把渲染形状（空态、有书态、卡点态）记进测试。
-2. **面板里的写操作**：现在只读。要做「在面板里批准章纲」，必须先决定门禁唯一性——写请求也得走同一套 `gateToolCall`，不能另开一条绕过闸门的路。
+1. **面板的视觉验收**：v0.5 的抽屉树是按参照截图手写的样式，仍没有截图证明渲染正确。第一步是用真实 GUI 打开侧栏看一眼（空态、有书态、卡点态），把渲染形状记进测试。
+2. **面板里的更多写操作**：v0.5 只开了「建书」一扇门（它复用了 `init`，门禁本来就放行）。要做「在面板里批准章纲」，必须先决定门禁唯一性——写请求也得走同一套 `gateToolCall`，不能另开一条绕过闸门的路。
 3. **章节级并发写保护**：同一章被两个会话同时 `write` 时后者覆盖。做带版本号的乐观锁（`chapters/index.json` 里存 `revision`），冲突时拒绝并提示先 `read`。
 4. **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录（谁提的、哪条、改了没有），支持跨会话追溯。
 5. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 150 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 164 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
-3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「入口形状是个陷阱」四节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/panel/`（面板）+ `client.js`（浏览器半边）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.5 列表的哪一项。
+3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「面板写操作只开一扇门」「入口形状是个陷阱」五节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/panel/`（面板）+ `client.js`（浏览器半边）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.6 列表的哪一项。
 
 ## 项目记忆
 

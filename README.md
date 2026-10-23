@@ -102,33 +102,68 @@ As of v0.4 the web shell's right Sidebar carries a **小说工坊** tab
 (`ctx.sidebarRightTabs.register`) — not a second right column, because there is
 only one and taking it over would push the Sidebar out.
 
-It does one thing: project the book on disk into a dashboard you can read at a
-glance — phase, what blocks the next transition, word progress against the
-target, the chapter table with draft rounds, the busiest characters, and the
-threads still owed a payoff.
+v0.5 turns it into a drawer tree, and gives it the one write it needs: creating a
+book without going back to the conversation.
 
-- **Read-only.** No button on the panel advances a phase or edits a contract;
-  that still goes through the tools, so the gate stays the only writer.
+```text
+📕 雾港  长篇
+◎ World          7
+◍ Cast          12
+    Overview
+    Protagonist   1
+    Supporting    3
+    Minor         8
+◷ Plot         223
+    Story line    [story line]
+    Beats        128
+    Foreshadows  2
+    Chapter cards 94
+✎ Manuscript    94
+    Volume I      94 chapters
+        Ch.1 The Crack   [done]      3200 words
+        Ch.2 Golden Boy  [done]      2950 words
+        Ch.3 Tide        [ready]
+```
+
+- **Four drawers** — world, cast, plot, manuscript — each with a count, a caret,
+  a selection state; cast groups by structural role, plot splits into story line
+  / beats / foreshadows / chapter cards, manuscript hangs chapters under their
+  volume and marks each `done` / `N drafts` / `ready` / `unwritten`. Long lists
+  cap at 25 rows plus "and N more", so a 300-chapter book is not a wall.
+- **It can create a book.** "New" opens the host's own directory chooser
+  (`ctx.uiWorkspace.pickDirectory()`), or you can walk the in-panel browser level
+  by level — including other drives on Windows. Creation goes through the same
+  `ProjectStore.init` as `novel_project action="init"`, so both doors produce the
+  same bytes on disk.
+- **It refuses to guess.** A directory that already holds a book answers "《…》 is
+  already here" with an *Open it* button instead of overwriting; a relative path
+  is a 400 rather than something resolved against the host's cwd.
 - **No tokens.** The snapshot is computed by `src/panel/model.ts` from disk.
 - **Per session.** With `perWorkspace` on, the panel resolves the book from the
   session's `cwd`, so switching sessions switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
   profile has no web server and still gets all nine tools.
 
-One host route, polled every 5 seconds by the browser half:
+Four host routes, polled every 5 seconds by the browser half:
 
 ```text
-GET /api/inkwell                 # the process-wide book
-GET /api/inkwell?session=<id>    # the book in that session's workspace
+GET  /api/inkwell                        # the process-wide book
+GET  /api/inkwell?session=<id>            # the book in that session's workspace
+GET  /api/inkwell/snapshot?root=<abs>     # a named book
+GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
+POST /api/inkwell/init                    # { dir, title?, targetWords? }
 ```
 
-Anything but GET answers 403/405 — a read-only panel needs no write surface.
+The two reads answer 405 to anything but GET. The one write requires
+`x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
+Advancing a phase, editing a contract and writing prose still go through the
+tools, so the gate stays the only writer.
 
 ## Non-goals
 
 It does not generate prose itself, does not judge literary quality, and does not
-encode any platform's content policy. The panel is a dashboard, not a second
-entry point: it holds no write operations.
+encode any platform's content policy. The panel creates books and nothing else:
+phase transitions, contracts and prose still go through the tools and their gate.
 
 ## Development
 
