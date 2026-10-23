@@ -16,12 +16,17 @@
  *      — the body, dispatched by that id.
  *   3. `ctx.sidebarRight.openTab('inkwell')` — open it.
  *
- * The header button and the guide capsule are the two ways a writer finds it.
+ * WHAT IT SHOWS. A drawer of drawers: 世界观 / 人物设计 / 剧情设计 / 正文, each
+ * with its own count, each expandable down to individual entries. The host
+ * half (`src/panel/tree.ts`) does the folding, so this file only draws: every
+ * row arrives with its own label, count, chip and children.
  *
- * DATA. The body cannot read `.novel/` — there is no browser filesystem — so it
- * fetches `/api/inkwell/snapshot?session=<id>` from this plugin's host half
- * (`src/panel/serve.ts`). The route resolves the book from the *session's* cwd,
- * so the panel in workspace A never reports workspace B's manuscript.
+ * MAKING A BOOK. `novel_project action="init"` in the conversation is still the
+ * fast path, but a panel that can only watch is a panel a writer stops opening.
+ * 「新建」 browses the host's disks one level at a time (`/api/inkwell/dirs`) and
+ * creates the project in the directory picked (`/api/inkwell/init`). Both go
+ * through the same `ProjectStore` the tool uses; the panel adds no new power,
+ * only a second door.
  *
  * STYLE. No stylesheet is shipped: a 47 KB `client.css` is what the recycle-bin
  * bundle carries for one screen. The panel draws with neutral, theme-relative
@@ -42,11 +47,45 @@ window.__ModuleLoader__.load({
     const KIND = 'inkwell'
     const ID = 'dsh-inkwell'
 
-    /** The host route this panel reads (`src/panel/serve.ts`, `PANEL_PREFIX`). */
-    const API = '/api/inkwell/snapshot'
+    /** Host routes (`src/panel/serve.ts`). */
+    const API_SNAPSHOT = '/api/inkwell/snapshot'
+    const API_DIRS = '/api/inkwell/dirs'
+    const API_INIT = '/api/inkwell/init'
+
+    /** The one header a write request must carry (CSRF guard, host-side). */
+    const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
 
     /** Chip and guide copy. */
     const LABEL = '小说工坊'
+
+    /**
+     * The client context, captured by `apply`.
+     *
+     * The views below are defined beside `apply`, not inside it, because the
+     * bundle is one factory: a module-scope handle is how a view reaches a host
+     * service without threading `ctx` through every component.
+     */
+    let hostContext = null
+
+    /**
+     * Open the host's own directory chooser.
+     *
+     * `uiWorkspace` ships with the web shell, so it is read lazily instead of
+     * being declared in `inject`: a host without it keeps the bundle loaded and
+     * falls back to the in-panel browser below.
+     *
+     * @returns the picked absolute directory, or `null` when the host has no
+     *   chooser or the operator cancelled.
+     */
+    function pickHostDirectory() {
+      const current = hostContext
+      if (current === null) return Promise.resolve(null)
+      const service = typeof current.get === 'function' ? current.get('uiWorkspace') : current.uiWorkspace
+      if (service === undefined || service === null || typeof service.pickDirectory !== 'function') {
+        return Promise.resolve(null)
+      }
+      return Promise.resolve(service.pickDirectory()).then((path) => (typeof path === 'string' && path !== '' ? path : null))
+    }
 
     /** How often a visible panel re-reads the book, in ms. */
     const POLL_MS = 15000
@@ -61,8 +100,76 @@ window.__ModuleLoader__.load({
       done: '完稿',
     }
 
-    /** Severity glyphs, matching the tool reports. */
-    const MARK = { error: '✗', warn: '!', info: '·' }
+    /** Section glyphs; monochrome so they inherit the theme. */
+    const SECTION_ICON = {
+      world: '◎',
+      cast: '◍',
+      plot: '◷',
+      text: '✎',
+    }
+
+    /** Tone → colour. `currentColor` keeps light and dark themes working. */
+    const TONE_STYLE = {
+      done: { opacity: 0.95 },
+      todo: { opacity: 1 },
+      warn: { color: 'color-mix(in srgb, #c9822f 82%, currentColor)' },
+      muted: { opacity: 0.5 },
+    }
+
+    /**
+     * Read the panel payload for one session.
+     * @param sessionId - the calling session, which decides the book.
+     * @param root - an explicit book directory, when the writer made one just now.
+     * @param signal - aborts the request when the tab hides or unmounts.
+     * @returns the payload, or throws with the host's message.
+     */
+    async function loadPanel(sessionId, root, signal) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const url = params.length > 0 ? `${API_SNAPSHOT}?${params.join('&')}` : API_SNAPSHOT
+      const response = await fetch(url, { headers: { accept: 'application/json' }, signal })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * List one directory level on the host.
+     * @param path - absolute directory, or empty for the home directory.
+     * @returns the listing.
+     */
+    async function loadDirs(path) {
+      const url = path ? `${API_DIRS}?path=${encodeURIComponent(path)}` : API_DIRS
+      const response = await fetch(url, { headers: { accept: 'application/json' } })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Create a book in a directory.
+     * @param dir - absolute parent directory for the project.
+     * @param title - the book's title.
+     * @param targetWords - planned length, `0` for "not set".
+     * @returns the created (or already existing) book.
+     */
+    async function createBook(dir, title, targetWords) {
+      const response = await fetch(API_INIT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ dir, title, targetWords }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
 
     /**
      * Format a number with thousands separators.
@@ -73,29 +180,11 @@ window.__ModuleLoader__.load({
       return typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('zh-CN') : '0'
     }
 
-    /**
-     * Read the panel payload for one session.
-     * @param sessionId - the calling session, which decides the book.
-     * @param signal - aborts the request when the tab hides or unmounts.
-     * @returns the payload, or throws with the host's message.
-     */
-    async function loadPanel(sessionId, signal) {
-      const url = sessionId ? `${API}?session=${encodeURIComponent(sessionId)}` : API
-      const response = await fetch(url, { headers: { accept: 'application/json' }, signal })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok || payload.ok === false) {
-        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
-      }
-      return payload.data
-    }
-
     /** Shared inline styles: one object per role, spread at use sites. */
     const S = {
       root: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
-        padding: '12px 14px 18px',
         font: 'inherit',
         fontSize: '12px',
         lineHeight: 1.5,
@@ -103,96 +192,100 @@ window.__ModuleLoader__.load({
         height: '100%',
         overflowY: 'auto',
         boxSizing: 'border-box',
+        padding: '6px 4px 14px',
       },
-      header: {
+      head: {
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
+        gap: '6px',
+        padding: '4px 8px 8px',
       },
-      title: {
+      bookIcon: { opacity: 0.7, fontSize: '12px' },
+      bookTitle: {
         fontWeight: 600,
         fontSize: '13px',
-        flex: '1 1 auto',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       },
+      pill: {
+        border: '1px solid color-mix(in srgb, currentColor 20%, transparent)',
+        borderRadius: '999px',
+        padding: '0 6px',
+        fontSize: '10.5px',
+        opacity: 0.7,
+        whiteSpace: 'nowrap',
+        lineHeight: '16px',
+      },
+      spacer: { flex: '1 1 auto' },
       iconButton: {
-        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+        border: '1px solid color-mix(in srgb, currentColor 20%, transparent)',
         background: 'transparent',
         color: 'inherit',
         borderRadius: '6px',
         font: 'inherit',
         fontSize: '11px',
-        padding: '2px 8px',
+        padding: '1px 7px',
         cursor: 'pointer',
-        lineHeight: 1.6,
-      },
-      badge: {
-        border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
-        borderRadius: '999px',
-        padding: '1px 8px',
-        fontSize: '11px',
+        lineHeight: '18px',
         whiteSpace: 'nowrap',
       },
-      section: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px',
-      },
-      sectionHead: {
-        fontSize: '11px',
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-        opacity: 0.55,
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: '6px',
-      },
-      bar: {
-        height: '4px',
-        borderRadius: '999px',
-        background: 'color-mix(in srgb, currentColor 14%, transparent)',
-        overflow: 'hidden',
-      },
-      barFill: {
-        height: '100%',
-        borderRadius: '999px',
-        background: 'currentColor',
-        opacity: 0.55,
+      primaryButton: {
+        border: '1px solid color-mix(in srgb, currentColor 34%, transparent)',
+        background: 'color-mix(in srgb, currentColor 12%, transparent)',
+        color: 'inherit',
+        borderRadius: '6px',
+        font: 'inherit',
+        fontSize: '11.5px',
+        padding: '3px 10px',
+        cursor: 'pointer',
       },
       row: {
         display: 'flex',
-        alignItems: 'baseline',
+        alignItems: 'center',
         gap: '6px',
-        padding: '3px 0',
-        borderTop: '1px solid color-mix(in srgb, currentColor 10%, transparent)',
+        padding: '3px 8px',
+        borderRadius: '6px',
+        cursor: 'default',
+        minHeight: '22px',
       },
-      rowName: {
-        flex: '1 1 auto',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+      rowHover: { background: 'color-mix(in srgb, currentColor 7%, transparent)' },
+      rowSelected: { background: 'color-mix(in srgb, currentColor 14%, transparent)' },
+      glyph: { width: '13px', textAlign: 'center', opacity: 0.75, flex: '0 0 auto', fontSize: '11px' },
+      label: { flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      aside: { opacity: 0.5, fontSize: '10.5px', whiteSpace: 'nowrap', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis' },
+      count: {
+        fontSize: '10.5px',
+        opacity: 0.55,
+        border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+        borderRadius: '999px',
+        padding: '0 5px',
+        lineHeight: '15px',
         whiteSpace: 'nowrap',
       },
-      dim: { opacity: 0.55, whiteSpace: 'nowrap' },
-      dot: { fontSize: '11px', width: '10px', textAlign: 'center', opacity: 0.8 },
+      sectionHead: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
+        padding: '7px 8px 4px',
+        fontWeight: 600,
+        fontSize: '12.5px',
+        cursor: 'pointer',
+      },
+      sectionCount: {
+        fontSize: '10.5px',
+        opacity: 0.55,
+        border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+        borderRadius: '999px',
+        padding: '0 6px',
+        lineHeight: '16px',
+      },
       note: {
-        border: '1px dashed color-mix(in srgb, currentColor 22%, transparent)',
+        border: '1px dashed color-mix(in srgb, currentColor 20%, transparent)',
         borderRadius: '8px',
         padding: '10px 12px',
-        opacity: 0.75,
-      },
-      blocker: {
-        display: 'flex',
-        gap: '6px',
-        alignItems: 'baseline',
-      },
-      footer: {
-        marginTop: 'auto',
-        paddingTop: '8px',
-        fontSize: '10.5px',
-        opacity: 0.45,
-        wordBreak: 'break-all',
+        opacity: 0.8,
+        margin: '4px 8px',
       },
       error: {
         border: '1px solid color-mix(in srgb, #d9534f 45%, transparent)',
@@ -200,62 +293,295 @@ window.__ModuleLoader__.load({
         borderRadius: '8px',
         padding: '8px 10px',
         whiteSpace: 'pre-wrap',
+        margin: '4px 8px',
       },
+      footer: {
+        marginTop: 'auto',
+        padding: '8px 8px 0',
+        fontSize: '10.5px',
+        opacity: 0.45,
+        wordBreak: 'break-all',
+      },
+      dirPath: {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '10.5px',
+        opacity: 0.75,
+        wordBreak: 'break-all',
+        padding: '2px 8px',
+      },
+      input: {
+        border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
+        background: 'transparent',
+        color: 'inherit',
+        borderRadius: '6px',
+        font: 'inherit',
+        fontSize: '11.5px',
+        padding: '3px 7px',
+        width: '100%',
+        boxSizing: 'border-box',
+      },
+      field: { display: 'flex', flexDirection: 'column', gap: '3px', padding: '4px 8px' },
+      fieldLabel: { fontSize: '10.5px', opacity: 0.55 },
+      actions: { display: 'flex', gap: '6px', padding: '8px 8px 4px', alignItems: 'center' },
+      spacerBlock: { height: '6px' },
     }
 
     /**
-     * One section heading, with an optional trailing count.
-     * @param props - children and the trailing text.
-     * @returns the heading element.
+     * One tree row, recursive through its children.
+     *
+     * @param props - the row, its depth, collapse state and selection.
+     * @returns the row element, plus its children when expanded.
      */
-    function SectionHead({ children, tail }) {
-      return h('div', { style: S.sectionHead }, h('span', null, children), tail ? h('span', { style: S.dim }, tail) : null)
+    function Row(props) {
+      const { row, depth, collapsed, onToggle, selected, onSelect } = props
+      const hasChildren = Array.isArray(row.children) && row.children.length > 0
+      const open = hasChildren && !collapsed.has(row.id)
+      const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
+      const isSelected = selected === row.id
+      const style = {
+        ...S.row,
+        paddingLeft: `${8 + depth * 14}px`,
+        ...(isSelected ? S.rowSelected : {}),
+      }
+      const glyph = hasChildren ? (open ? '▾' : '▸') : '▫'
+      const head = h(
+        'div',
+        {
+          key: 'row',
+          style,
+          title: row.aside ? `${row.label} · ${row.aside}` : row.label,
+          onClick: () => onSelect(isSelected ? null : row.id),
+        },
+        h('span', { style: S.glyph, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
+        h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
+        row.aside ? h('span', { style: S.aside }, row.aside) : null,
+        row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
+        typeof row.count === 'number' ? h('span', { style: S.count }, num(row.count)) : null,
+      )
+      if (!hasChildren || !open) return [head]
+      const children = row.children.map((child) =>
+        h(Row, {
+          key: child.id,
+          row: child,
+          depth: depth + 1,
+          collapsed,
+          onToggle,
+          selected,
+          onSelect,
+        }),
+      )
+      return [head, ...children]
     }
 
     /**
-     * The word-count progress line.
-     * @param props - written and target counts.
-     * @returns the progress block.
+     * One drawer: its heading (with count) and its rows.
+     *
+     * @param props - the section, collapse state and selection.
+     * @returns the section element.
      */
-    function Progress({ words, target }) {
-      const ratio = target > 0 ? Math.min(1, words / target) : 0
+    function Section(props) {
+      const { section, collapsed, onToggle, selected, onSelect } = props
+      const open = !collapsed.has(section.id)
       return h(
         'div',
-        { style: S.section },
+        { key: section.id },
         h(
           'div',
-          { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-          h('span', { style: { fontWeight: 500 } }, `${num(words)} 字`),
-          h('span', { style: S.dim }, target > 0 ? `/ ${num(target)}（${Math.round(ratio * 100)}%）` : '未设目标'),
+          { style: S.sectionHead, onClick: () => onToggle(section.id) },
+          h('span', { style: S.glyph }, SECTION_ICON[section.id] || '▫'),
+          h('span', null, section.label),
+          h('span', { style: S.sectionCount }, num(section.count)),
         ),
-        h('div', { style: S.bar }, h('div', { style: { ...S.barFill, width: `${Math.round(ratio * 100)}%` } })),
+        open
+          ? section.rows.length === 0
+            ? h('div', { style: { ...S.aside, padding: '2px 8px 4px 30px' } }, '还没有内容')
+            : section.rows.map((row) =>
+                h(Row, {
+                  key: row.id,
+                  row,
+                  depth: 1,
+                  collapsed,
+                  onToggle,
+                  selected,
+                  onSelect,
+                }),
+              )
+          : null,
       )
     }
 
     /**
-     * One chapter row: number, title, state, counts.
-     * @param props - the row's data.
-     * @returns the row element.
+     * The create-a-book view: browse directories, name the book, create it.
+     *
+     * @param props - session id, the directory the panel is about, and callbacks.
+     * @returns the view element.
      */
-    function ChapterRow({ chapter }) {
-      const state = chapter.written
-        ? chapter.errors > 0
-          ? { glyph: MARK.error, hint: `${chapter.errors} 处必改` }
-          : { glyph: '✓', hint: '已写' }
-        : chapter.approved
-          ? { glyph: '▸', hint: '可写' }
-          : chapter.drafts > 0
-            ? { glyph: MARK.info, hint: `${chapter.drafts} 稿待定` }
-            : { glyph: '·', hint: chapter.title ? '待批准' : '待规划' }
-      const tail = []
-      if (chapter.written) tail.push(`${num(chapter.words)} 字`)
-      if (!chapter.written && chapter.drafts > 0) tail.push(`${chapter.drafts} 稿`)
+    function NewBook(props) {
+      const { sessionId, suggestedDir, onCancel, onCreated } = props
+      const [listing, setListing] = useState(null)
+      const [status, setStatus] = useState({ kind: 'loading' })
+      const [target, setTarget] = useState('')
+      const [title, setTitle] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+
+      const go = useCallback(
+        (path) => {
+          setStatus({ kind: 'loading' })
+          loadDirs(path)
+            .then((data) => {
+              setListing(data)
+              setStatus({ kind: 'ready' })
+            })
+            .catch((failure) => setStatus({ kind: 'error', message: String(failure && failure.message) }))
+        },
+        [],
+      )
+
+      useEffect(() => {
+        go(suggestedDir || '')
+      }, [go, suggestedDir])
+
+      const submit = useCallback(() => {
+        if (!listing) return
+        setBusy(true)
+        setError('')
+        createBook(listing.path, title, Number(target) || 0)
+          .then((book) => {
+            setBusy(false)
+            onCreated(book)
+          })
+          .catch((failure) => {
+            setBusy(false)
+            setError(String(failure && failure.message))
+          })
+      }, [listing, title, target, onCreated])
+
+      // The host's own chooser when it has one: the operator knows that dialog,
+      // and it can reach drives this list cannot.
+      const choose = useCallback(() => {
+        setBusy(true)
+        setError('')
+        pickHostDirectory()
+          .then((path) => {
+            setBusy(false)
+            if (path === null) return
+            go(path)
+          })
+          .catch((failure) => {
+            setBusy(false)
+            setError(String((failure && failure.message) || failure))
+          })
+      }, [go])
+
+      const head = h(
+        'div',
+        { style: S.head },
+        h('span', { style: S.bookIcon }, '✎'),
+        h('span', { style: S.bookTitle }, '新建小说'),
+        h('span', { style: S.spacer }),
+        h('button', { type: 'button', style: S.iconButton, onClick: onCancel }, '返回'),
+      )
+
+      if (status.kind === 'loading' && !listing) {
+        return h('div', { style: S.root }, head, h('div', { style: S.note }, '正在读取目录…'))
+      }
+      if (status.kind === 'error' && !listing) {
+        return h(
+          'div',
+          { style: S.root },
+          head,
+          h('div', { style: S.error }, status.message || '目录读取失败'),
+        )
+      }
+
+      const rows = listing.entries.map((entry) =>
+        h(
+          'div',
+          { key: entry.path, style: S.row, onClick: () => go(entry.path) },
+          h('span', { style: S.glyph }, '▸'),
+          h('span', { style: S.label }, entry.name),
+        ),
+      )
+
       return h(
         'div',
-        { style: S.row, title: `${state.hint}${chapter.title ? ` · ${chapter.title}` : ''}` },
-        h('span', { style: S.dot }, state.glyph),
-        h('span', { style: S.rowName }, `第${chapter.number}章${chapter.title ? ` ${chapter.title}` : ''}`),
-        tail.length > 0 ? h('span', { style: S.dim }, tail.join(' · ')) : null,
+        { style: S.root },
+        head,
+        h('div', { style: S.dirPath }, listing.path),
+          h(
+            'div',
+            { style: S.actions },
+            listing.parent
+              ? h('button', { type: 'button', style: S.iconButton, onClick: () => go(listing.parent) }, '↑ 上一级')
+              : null,
+            h(
+              'button',
+              { type: 'button', style: S.iconButton, disabled: busy, onClick: choose, title: '用系统的目录选择框选一个文件夹' },
+              '选择目录…',
+            ),
+            listing.roots.map((root) =>
+              h('button', { key: root, type: 'button', style: S.iconButton, onClick: () => go(root) }, root),
+            ),
+            h('span', { style: S.spacer }),
+            h('span', { style: { ...S.aside, padding: 0 } }, `${listing.entries.length} 个子目录`),
+          ),
+        listing.truncated ? h('div', { style: { ...S.aside, padding: '0 8px' } }, '（目录太多，只列出一部分）') : null,
+        listing.book
+          ? h(
+              'div',
+              { style: S.note },
+              `这个目录里已经有《${listing.book.title}》。`,
+              h(
+                'div',
+                { style: { marginTop: '6px' } },
+                h(
+                  'button',
+                  { type: 'button', style: S.primaryButton, onClick: () => onCreated({ root: listing.book.root, title: listing.book.title, existing: true }) },
+                  '打开这本书',
+                ),
+              ),
+            )
+          : null,
+        rows.length > 0 ? h('div', null, ...rows) : h('div', { style: { ...S.aside, padding: '4px 8px' } }, '没有子目录，可以就在这里建书。'),
+
+        h('div', { style: S.spacerBlock }),
+        h(
+          'div',
+          { style: S.field },
+          h('span', { style: S.fieldLabel }, '书名'),
+          h('input', {
+            style: S.input,
+            value: title,
+            placeholder: '例如：雾港',
+            onChange: (event) => setTitle(event.target.value),
+          }),
+        ),
+        h(
+          'div',
+          { style: S.field },
+          h('span', { style: S.fieldLabel }, '目标字数（可留空）'),
+          h('input', {
+            style: S.input,
+            value: target,
+            inputMode: 'numeric',
+            placeholder: '例如：800000',
+            onChange: (event) => setTarget(event.target.value),
+          }),
+        ),
+        error ? h('div', { style: S.error }, error) : null,
+        h(
+          'div',
+          { style: S.actions },
+          h(
+            'button',
+            { type: 'button', style: S.primaryButton, disabled: busy, onClick: submit },
+            busy ? '正在创建…' : `在 ${listing.name} 里建书`,
+          ),
+          h('span', { style: S.spacer }),
+          h('span', { style: { ...S.aside, padding: 0 } }, sessionId ? '' : '无会话'),
+        ),
+        h('div', { style: S.footer }, '会在该目录下建立 .novel 文件夹，与 novel_project action="init" 完全等价。'),
       )
     }
 
@@ -273,18 +599,36 @@ window.__ModuleLoader__.load({
       const hooks = props.hooks
       const tabInfo = hooks !== undefined && typeof hooks.tabInfo === 'function' ? hooks.tabInfo() : undefined
       const visible = tabInfo && tabInfo.tab ? tabInfo.tab.visible : true
+      const storeKey = `inkwell.root.${sessionId || 'shared'}`
+      const [root, setRoot] = useState(() => {
+        try {
+          return window.sessionStorage.getItem(storeKey) || ''
+        } catch {
+          return ''
+        }
+      })
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
-      const abortRef = useRef(undefined)
+      const [view, setView] = useState('tree')
+      const [collapsed, setCollapsed] = useState(() => new Set())
+      const [selected, setSelected] = useState(null)
 
       const refresh = useCallback(() => setTick((n) => n + 1), [])
 
       useEffect(() => {
+        try {
+          if (root) window.sessionStorage.setItem(storeKey, root)
+          else window.sessionStorage.removeItem(storeKey)
+        } catch {
+          /* a browser with storage disabled still works, it just forgets */
+        }
+      }, [root, storeKey])
+
+      useEffect(() => {
         if (!visible) return undefined
         const controller = new AbortController()
-        abortRef.current = controller
         setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }))
-        loadPanel(sessionId, controller.signal)
+        loadPanel(sessionId, root, controller.signal)
           .then((data) => {
             if (!controller.signal.aborted) setState({ status: 'ready', data })
           })
@@ -293,7 +637,7 @@ window.__ModuleLoader__.load({
             if (!controller.signal.aborted) setState({ status: 'error', message: String(error && error.message) })
           })
         return () => controller.abort()
-      }, [sessionId, tick, visible])
+      }, [sessionId, root, tick, visible])
 
       useEffect(() => {
         if (!visible) return undefined
@@ -301,15 +645,45 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [visible, refresh])
 
+      const toggle = useCallback((id) => {
+        setCollapsed((previous) => {
+          const next = new Set(previous)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })
+      }, [])
+
+      const onCreated = useCallback(
+        (book) => {
+          setView('tree')
+          setRoot(book.root)
+          setTick((n) => n + 1)
+        },
+        [],
+      )
+
       const header = h(
         'div',
-        { style: S.header },
-        h('span', { style: S.title }, LABEL),
+        { style: S.head },
+        h('span', { style: S.bookIcon }, '▤'),
+        h('span', { style: S.bookTitle }, state.status === 'ready' && state.data.title ? state.data.title : LABEL),
         state.status === 'ready' && state.data.phase
-          ? h('span', { style: S.badge }, PHASE_LABEL[state.data.phase] || state.data.phase)
+          ? h('span', { style: S.pill }, PHASE_LABEL[state.data.phase] || state.data.phase)
           : null,
-        h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新'),
+        h('span', { style: S.spacer }),
+        view === 'tree'
+          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('new'), title: '在某个目录里新建一本书' }, '＋ 新建')
+          : null,
+        view === 'tree'
+          ? h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
+          : null,
       )
+
+      if (view === 'new') {
+        const suggested = state.status === 'ready' && state.data.root ? state.data.root.replace(/[\\/]\.novel[\\/]?$/, '') : ''
+        return h(NewBook, { sessionId, suggestedDir: suggested, onCancel: () => setView('tree'), onCreated })
+      }
 
       if (state.status === 'loading') {
         return h('div', { style: S.root }, header, h('div', { style: S.note }, '正在读取这一本书…'))
@@ -330,102 +704,81 @@ window.__ModuleLoader__.load({
           'div',
           { style: S.root },
           header,
-          h('div', { style: S.note }, '这个工作区还没有书。'),
           h(
             'div',
-            { style: S.dim },
-            '在对话里调用 novel_project（action="init"）建立项目，面板会自己出现。',
+            { style: S.note },
+            '这个目录还没有书。',
+            h(
+              'div',
+              { style: { marginTop: '8px' } },
+              h('button', { type: 'button', style: S.primaryButton, onClick: () => setView('new') }, '选择目录新建'),
+            ),
+            h(
+              'div',
+              { style: { marginTop: '8px', opacity: 0.7 } },
+              '也可以在对话里调用 novel_project（action="init"），面板会自己出现。',
+            ),
           ),
           h('div', { style: S.footer }, data.root || ''),
         )
       }
 
-      const findingsSummary = data.chapters.reduce(
-        (acc, chapter) => ({ errors: acc.errors + chapter.errors, warnings: acc.warnings + chapter.warnings }),
-        { errors: 0, warnings: 0 },
-      )
+      const sections = Array.isArray(data.sections) ? data.sections : []
+      const progress = data.targetWords > 0 ? Math.min(1, data.words / data.targetWords) : 0
 
       return h(
         'div',
         { style: S.root },
         header,
+        sections.map((section) =>
+          h(Section, {
+            key: section.id,
+            section,
+            collapsed,
+            onToggle: toggle,
+            selected,
+            onSelect: setSelected,
+          }),
+        ),
+        h('div', { style: S.spacerBlock }),
         h(
           'div',
-          { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-          h('span', { style: { fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `《${data.title}》`),
-          data.next ? h('span', { style: S.dim }, `→ ${PHASE_LABEL[data.next] || data.next}`) : null,
+          { style: { padding: '0 8px', display: 'flex', alignItems: 'center', gap: '6px' } },
+          h('span', { style: { ...S.aside, padding: 0 } }, `${num(data.words)} 字`),
+          h('span', { style: { ...S.aside, padding: 0 } }, data.targetWords > 0 ? `/ ${num(data.targetWords)}（${Math.round(progress * 100)}%）` : '未设目标'),
+          h('span', { style: S.spacer }),
+          data.next ? h('span', { style: S.aside }, `→ ${PHASE_LABEL[data.next] || data.next}`) : null,
         ),
-
-        h(Progress, { words: data.words, target: data.targetWords }),
-
         data.blockers.length > 0
           ? h(
               'div',
-              { style: S.section },
-              h(SectionHead, { tail: `${data.blockers.length} 项` }, '进入下一阶段还缺'),
-              ...data.blockers.slice(0, 6).map((line, index) =>
-                h('div', { key: `b${index}`, style: S.blocker }, h('span', { style: S.dot }, MARK.info), h('span', null, line)),
+              { style: { padding: '6px 8px 0' } },
+              h('div', { style: { ...S.fieldLabel, paddingBottom: '2px' } }, `进入下一阶段还缺 ${data.blockers.length} 项`),
+              ...data.blockers.slice(0, 4).map((line, index) =>
+                h('div', { key: `b${index}`, style: { ...S.aside, maxWidth: '100%', padding: '1px 0' } }, `· ${line}`),
               ),
             )
           : null,
-
-        h(
-          'div',
-          { style: S.section },
-          h(
-            SectionHead,
-            { tail: `已写 ${data.written} · 章纲 ${data.approved}/${data.planned}` },
-            '章',
-          ),
-          data.chapters.length === 0
-            ? h('div', { style: S.dim }, '还没有章纲。')
-            : h('div', null, ...data.chapters.slice(0, 40).map((chapter) => h(ChapterRow, { key: chapter.number, chapter }))),
-        ),
-
-        findingsSummary.errors + findingsSummary.warnings > 0
+        data.facts.length > 0
           ? h(
               'div',
-              { style: S.section },
-              h(SectionHead, null, '草稿自带体检'),
-              h(
-                'div',
-                { style: { display: 'flex', gap: '10px' } },
-                h('span', null, `${MARK.error} ${findingsSummary.errors} 必改`),
-                h('span', null, `${MARK.warn} ${findingsSummary.warnings} 建议`),
-              ),
+              { style: { padding: '8px 8px 0' } },
+              h('div', { style: { ...S.fieldLabel, paddingBottom: '2px' } }, `已确立事实 ${data.facts.length} 条`),
+              ...data.facts
+                .slice(-3)
+                .reverse()
+                .map((fact) =>
+                  h(
+                    'div',
+                    { key: fact.id, style: { ...S.aside, maxWidth: '100%', padding: '1px 0' } },
+                    `${fact.subject}·${fact.predicate}＝${fact.value}`,
+                  ),
+                ),
             )
           : null,
-
-        h(
-          'div',
-          { style: S.section },
-          h(SectionHead, { tail: data.retired > 0 ? `${data.facts.length} 条在册 · ${data.retired} 条作废` : `${data.facts.length} 条` }, '已确立事实'),
-          data.facts.length === 0
-            ? h('div', { style: S.dim }, '账本还是空的。')
-            : h(
-                'div',
-                null,
-                ...data.facts
-                  .slice(-4)
-                  .reverse()
-                  .map((fact) =>
-                    h(
-                      'div',
-                      { key: fact.id, style: S.row, title: `第${fact.chapter}章 · ${fact.id}` },
-                      h('span', { style: S.rowName }, `${fact.subject}·${fact.predicate}＝${fact.value}`),
-                    ),
-                  ),
-              ),
-        ),
-
-        h(
-          'div',
-          { style: { display: 'flex', gap: '10px' } },
-          h('span', { style: S.dim }, `人物 ${data.characterCount}`),
-          h('span', { style: S.dim }, `世界观 ${data.worldCount}`),
-          h('span', { style: S.dim }, `分卷 ${data.volumeCount}`),
-        ),
-
+        selected
+          ? h('div', { style: { ...S.footer, opacity: 0.6 } }, `已选中：${selected}`)
+          : null,
         h('div', { style: S.footer }, data.root),
       )
     }
@@ -470,7 +823,7 @@ window.__ModuleLoader__.load({
             id: 'open',
             order: 40,
             title: () => LABEL,
-            description: () => '这一本书的阶段、章纲、草稿体检与已确立事实',
+            description: () => '世界观 / 人物设计 / 剧情设计 / 正文，并可在任意目录新建小说',
           },
         ],
       }
@@ -481,6 +834,8 @@ window.__ModuleLoader__.load({
      * @param ctx - client root context, carrying the slot registry and the right Sidebar.
      */
     function apply(ctx) {
+      hostContext = ctx
+
       ctx.effect(() => ctx.sidebarRightTabs.register(definition()), 'inkwell: tab type')
 
       ctx.effect(

@@ -8,13 +8,22 @@
  * facts strip, the empty state, and the route's own guards.
  */
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveConfig } from '../src/config.ts'
 import { ProjectStore } from '../src/domain/store.ts'
-import type { ChapterPlan, DraftRound, LedgerEntry, Snapshot } from '../src/domain/types.ts'
+import type {
+  ChapterMeta,
+  ChapterPlan,
+  CharacterCard,
+  DraftRound,
+  LedgerEntry,
+  Snapshot,
+  VolumeOutline,
+  WorldEntry,
+} from '../src/domain/types.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot } from '../src/panel/model.ts'
 import { PANEL_HEADER, PANEL_HEADER_VALUE, PANEL_PREFIX, readPanel } from '../src/panel/serve.ts'
 import { createHarness, type Harness } from './helpers.ts'
@@ -88,6 +97,134 @@ function fact(id: string, supersedes: string | null, chapter: number): LedgerEnt
     createdAt: '2026-01-01T00:00:00.000Z',
   }
 }
+
+/** One character card. */
+function card(name: string, role: CharacterCard['role'], goal = ''): CharacterCard {
+  return { name, role, voice: '低沉', appearance: '', goal, secret: '', updatedAt: '2026-01-01T00:00:00.000Z' }
+}
+
+/** One world entry. */
+function place(name: string, kind = '地点'): WorldEntry {
+  return { name, kind, detail: '', updatedAt: '2026-01-01T00:00:00.000Z' }
+}
+
+/** One volume outline. */
+function volume(number: number, title: string, approved = true): VolumeOutline {
+  return { number, title, summary: '', approved }
+}
+
+/** One committed chapter. */
+function written(number: number, title: string, words: number): ChapterMeta {
+  return { number, title, words, summary: '', writtenAt: '2026-01-05T00:00:00.000Z' }
+}
+
+describe('panel tree', () => {
+  const config = resolveConfig({})
+
+  /** Project the book and index the drawers by id. */
+  function drawers(snapshot: Snapshot, drafts: DraftRound[] = []): Map<string, { count: number; rows: unknown[] }> {
+    const built = buildPanelSnapshot(
+      snapshot,
+      config,
+      drafts.length > 0 ? [{ number: drafts[0]?.number ?? 1, rounds: drafts }] : [],
+      '/nowhere',
+    )
+    return new Map(built.sections.map((section) => [section.id, section]))
+  }
+
+  it('counts the four drawers the panel shows', () => {
+    const found = drawers(
+      book({
+        characters: [card('沈砚', 'protagonist'), card('阿鸢', 'supporting')],
+        world: [place('雾港'), place('黑潮会', '势力')],
+        volumes: [volume(1, '雾起')],
+        plans: [{ ...plan(1, true, '裂缝'), beats: ['a', 'b'], hooks: ['h'] }],
+        chapters: [written(1, '裂缝', 3000)],
+      }),
+    )
+    expect(found.get('world')?.count).toBe(2)
+    expect(found.get('cast')?.count).toBe(2)
+    expect(found.get('plot')?.count).toBe(2 + 1 + 1) // beats + hooks + cards
+    expect(found.get('text')?.count).toBe(1)
+  })
+
+  it('groups the cast by structural role, with an overview row first', () => {
+    const sections = buildPanelSnapshot(
+      book({ characters: [card('沈砚', 'protagonist'), card('阿鸢', 'supporting'), card('老周', 'supporting')] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const cast = sections.find((section) => section.id === 'cast')
+    const overview = cast?.rows[0]
+    expect(overview?.label).toBe('概览')
+    const protagonist = cast?.rows.find((row) => row.label === '主角')
+    const supporting = cast?.rows.find((row) => row.label === '配角')
+    expect(protagonist?.count).toBe(1)
+    expect(supporting?.count).toBe(2)
+    expect(supporting?.children?.map((row) => row.label)).toEqual(['阿鸢', '老周'])
+    // A role with nobody in it is still a row, muted, so the shape never jumps.
+    expect(cast?.rows.find((row) => row.label === '反派')?.count).toBe(0)
+  })
+
+  it('builds the plot drawer from the spine, the beats, the hooks and the cards', () => {
+    const sections = buildPanelSnapshot(
+      book({
+        volumes: [volume(1, '雾起'), volume(2, '潮落', false)],
+        plans: [
+          { ...plan(1, true, '裂缝'), beats: ['血从船舱渗出来', '他认出了妹妹'], hooks: ['谁改了航向'] },
+          { ...plan(2, false, '金童玉女'), volume: 2, beats: ['码头空了'] },
+        ],
+      }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const plot = sections.find((section) => section.id === 'plot')
+    const spine = plot?.rows.find((row) => row.label === '全书故事线')
+    expect(spine?.chip).toBe('故事线')
+    expect(spine?.count).toBeUndefined()
+    expect(spine?.children?.map((row) => row.count)).toEqual([1, 1])
+    expect(plot?.rows.find((row) => row.label === '剧情点')?.count).toBe(3)
+    expect(plot?.rows.find((row) => row.label === '伏笔总览')?.count).toBe(1)
+    const cards = plot?.rows.find((row) => row.label === '章卡')
+    expect(cards?.count).toBe(2)
+    expect(cards?.children?.map((row) => row.chip)).toEqual(['已批准', '待批准'])
+  })
+
+  it('marks each manuscript row with its real state', () => {
+    const sections = buildPanelSnapshot(
+      book({
+        volumes: [volume(1, '雾起')],
+        plans: [{ ...plan(1, true, '裂缝') }, { ...plan(2, false, '金童玉女') }, { ...plan(3, true, '潮声') }],
+        chapters: [written(1, '裂缝', 3200)],
+      }),
+      config,
+      [{ number: 2, rounds: [round(2, 1, 0, 0)] }],
+      '/nowhere',
+    ).sections
+    const text = sections.find((section) => section.id === 'text')
+    const rows = text?.rows.find((row) => row.id === 'text.volume.1')?.children ?? []
+    expect(rows.map((row) => row.chip)).toEqual(['已完成', '1 稿', '可写'])
+    expect(rows[0]?.aside).toBe('3200 字')
+    expect(rows[0]?.tone).toBe('done')
+    expect(rows[1]?.tone).toBe('warn')
+  })
+
+  it('caps a long list instead of shipping every row', () => {
+    const plans: ChapterPlan[] = Array.from({ length: 30 }, (_unused, index) => plan(index + 1, true, `第${index + 1}章`))
+    const sections = buildPanelSnapshot(book({ plans }), config, [], '/nowhere').sections
+    const cards = sections.find((section) => section.id === 'plot')?.rows.find((row) => row.label === '章卡')
+    expect(cards?.children).toHaveLength(25)
+    expect(cards?.children?.at(-1)?.label).toBe('还有 6 条')
+  })
+
+  it('describes an empty book with four empty drawers', () => {
+    const sections = buildPanelSnapshot(book(), config, [], '/nowhere').sections
+    expect(sections.map((section) => section.count)).toEqual([0, 0, 0, 0])
+    expect(sections.map((section) => section.rows.length)).toEqual([0, 5, 4, 0])
+  })
+})
 
 describe('buildPanelSnapshot', () => {
   const config = resolveConfig({})
@@ -321,6 +458,141 @@ describe('panel route', () => {
       method: 'POST',
       headers: { [PANEL_HEADER]: PANEL_HEADER_VALUE },
     })
+    expect(response.status).toBe(405)
+  })
+})
+
+describe('panel create route', () => {
+  // This harness pins a relative root, so `init` has somewhere to put the book
+  // and the picker can report one that already exists.
+  let server: Server | undefined
+  let harness: Harness | undefined
+  let space: string | undefined
+
+  afterEach(async () => {
+    if (server) {
+      const open = server
+      server = undefined
+      await new Promise<void>((done) => open.close(() => done()))
+    }
+    if (harness) await harness.cleanup()
+    harness = undefined
+    if (space) await rm(space, { recursive: true, force: true })
+    space = undefined
+  })
+
+  /** Mount the plugin over a relative root and serve its panel route. */
+  async function serve(): Promise<{ base: string; space: string }> {
+    harness ??= await createHarness({ root: '.novel' })
+    space ??= await mkdtemp(join(tmpdir(), 'inkwell-create-'))
+    const routes = harness.routes.filter((route) => route.path === PANEL_PREFIX)
+    const route = routes[0]
+    if (!route) throw new Error('the plugin registered no panel route')
+    const created = createServer((req, res) => void route.handler(req, res))
+    server = created
+    await new Promise<void>((done) => created.listen(0, '127.0.0.1', () => done()))
+    const address = created.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    return { base: `http://127.0.0.1:${address.port}`, space }
+  }
+
+  /** POST one create request with the plugin header. */
+  async function postCreate(base: string, body: unknown): Promise<Response> {
+    return fetch(`${base}${PANEL_PREFIX}/init`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it('refuses to create without the plugin header', async () => {
+    const { base, space } = await serve()
+    const response = await fetch(`${base}${PANEL_PREFIX}/init`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dir: space, title: '雾港' }),
+    })
+    expect(response.status).toBe(403)
+  })
+
+  it('lists the child directories of a path the picker names', async () => {
+    const { base, space } = await serve()
+    await mkdir(join(space, '雾港'))
+    await mkdir(join(space, '旧稿'))
+    const response = await fetch(`${base}${PANEL_PREFIX}/dirs?path=${encodeURIComponent(space)}`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { ok: boolean; data: { path: string; entries: Array<{ name: string }>; book: unknown } }
+    expect(body.ok).toBe(true)
+    expect(body.data.path).toBe(space)
+    expect(body.data.entries.map((entry) => entry.name)).toEqual(['旧稿', '雾港'])
+    expect(body.data.book).toBeNull()
+  })
+
+  it('refuses a relative directory instead of resolving it against the host', async () => {
+    const { base } = await serve()
+    const response = await fetch(`${base}${PANEL_PREFIX}/dirs?path=.novel`)
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { ok: boolean; error: { message: string } }
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toContain('绝对路径')
+  })
+
+  it('creates a book in the chosen directory', async () => {
+    const { base, space } = await serve()
+    const response = await postCreate(base, { dir: space, title: '雾港', targetWords: 120000 })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { ok: boolean; data: { root: string; title: string; existing: boolean } }
+    expect(body.data.title).toBe('雾港')
+    expect(body.data.existing).toBe(false)
+    expect(body.data.root).toBe(join(space, '.novel'))
+
+    const store = new ProjectStore(body.data.root)
+    expect(await store.exists()).toBe(true)
+    expect((await store.readProject()).targetWords).toBe(120000)
+
+    // The panel then reads that book through `?root=`, so a book outside the
+    // session's own workspace is still reachable.
+    const snapshot = await fetch(`${base}${PANEL_PREFIX}/snapshot?root=${encodeURIComponent(body.data.root)}`)
+    expect(snapshot.status).toBe(200)
+    expect((await snapshot.json())).toMatchObject({ ok: true, data: { title: '雾港', phase: 'premise' } })
+  })
+
+  it('reports an existing book instead of overwriting it', async () => {
+    const { base, space } = await serve()
+    await postCreate(base, { dir: space, title: '雾港' })
+    const again = await postCreate(base, { dir: space, title: '另一本' })
+    const body = (await again.json()) as { data: { title: string; existing: boolean } }
+    expect(body.data.existing).toBe(true)
+    expect(body.data.title).toBe('雾港')
+  })
+
+  it('names an untitled book so the panel never shows a blank shield', async () => {
+    const { base, space } = await serve()
+    const response = await postCreate(base, { dir: space, title: '   ' })
+    const body = (await response.json()) as { data: { title: string } }
+    expect(body.data.title).toBe('未命名')
+  })
+
+  it('refuses to create when the configured root is absolute', async () => {
+    harness = await createHarness()
+    space = await mkdtemp(join(tmpdir(), 'inkwell-create-'))
+    const routes = harness.routes.filter((route) => route.path === PANEL_PREFIX)
+    const route = routes[0]
+    if (!route) throw new Error('the plugin registered no panel route')
+    const created = createServer((req, res) => void route.handler(req, res))
+    server = created
+    await new Promise<void>((done) => created.listen(0, '127.0.0.1', () => done()))
+    const address = created.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    const response = await postCreate(`http://127.0.0.1:${address.port}`, { dir: space, title: '雾港' })
+    expect(response.status).toBe(409)
+    const body = (await response.json()) as { error: { message: string } }
+    expect(body.error.message).toContain('root 被固定')
+  })
+
+  it('accepts only POST on the create route', async () => {
+    const { base } = await serve()
+    const response = await fetch(`${base}${PANEL_PREFIX}/init`)
     expect(response.status).toBe(405)
   })
 })

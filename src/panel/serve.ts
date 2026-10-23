@@ -1,24 +1,37 @@
 /**
  * The workshop panel's host side.
  *
- * One prefix route, two verbs, no state: the browser asks "what is this
- * session's book?" and gets the projection from {@link buildPanelSnapshot}.
+ * Three routes, all under one prefix:
+ *
+ * - `GET /api/inkwell` — the book this session is looking at, projected for the
+ *   panel. `?root=<abs>` pins a specific book (the one the create flow just
+ *   made, which may sit outside the session's workspace).
+ * - `GET /api/inkwell/dirs?path=<abs>` — one directory level, for the create
+ *   flow's picker.
+ * - `POST /api/inkwell/init` — create a book in a chosen directory.
  *
  * Why an HTTP route instead of a Remote namespace: the Remote carrier pairs a
  * host face with a client face through the bundle manifest, which is more
- * machinery than a read-only panel needs. A route under `/api/inkwell` is the
- * same-origin path the recycle-bin and market bundles use, and it needs no
- * client-side contract package.
+ * machinery than a panel needs. A route under `/api/inkwell` is the same-origin
+ * path the recycle-bin and market bundles use.
  *
- * Which book: the route takes the calling session's id and resolves that
- * session's `cwd`, so a panel in workspace A never reports workspace B's book
- * once `perWorkspace` is on. Without the query parameter it falls back to the
- * process-wide store — the v0.2 behaviour.
+ * Which book: without `?root`, the route takes the calling session's id and
+ * resolves that session's `cwd`, so a panel in workspace A never reports
+ * workspace B's book once `perWorkspace` is on.
+ *
+ * What this panel may write: exactly one thing — a new project directory. The
+ * creation goes through the same `ProjectStore.init` the `novel_project` tool
+ * uses, so the only difference from typing `novel_project action="init"` in the
+ * conversation is who picked the directory. Everything that changes a *book*
+ * (chapters, canon, ledger) stays behind the tools and their gate; the panel
+ * has no route for any of it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { isAbsolute, resolve } from 'node:path'
 import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
 import type { InkwellConfig } from '../domain/types.ts'
+import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 
 /** Route prefix the browser half fetches under. */
@@ -29,6 +42,9 @@ export const PANEL_HEADER = 'x-dsh-plugin'
 
 /** Header value the panel sends. */
 export const PANEL_HEADER_VALUE = 'inkwell'
+
+/** Largest request body the create route will read. */
+const MAX_BODY_BYTES = 16 * 1024
 
 /** What the host needs in order to answer one request. */
 export interface PanelDeps {
@@ -43,6 +59,14 @@ export interface PanelDeps {
 export interface PanelAnswer {
   status: number
   body: unknown
+}
+
+/** A book the create route has just made (or found already there). */
+export interface CreatedBook {
+  root: string
+  title: string
+  /** True when a project already lived at that root and nothing was written. */
+  existing: boolean
 }
 
 /**
@@ -69,11 +93,21 @@ async function readDrafts(store: ProjectStore, numbers: readonly number[]): Prom
 /**
  * Resolve the book a request is about.
  *
+ * An explicit `root` wins over everything: the create flow hands back the
+ * directory it just used, and the panel then reads that book even though the
+ * session's own workspace is somewhere else. Without one, the session decides.
+ *
  * @param deps - route dependencies.
  * @param sessionId - the calling session, when the browser named one.
+ * @param root - an absolute project directory, when the browser named one.
  * @returns the store for that book.
+ * @throws {PanelInputError} when `root` is not absolute.
  */
-function storeFor(deps: PanelDeps, sessionId: string | undefined): ProjectStore {
+function storeFor(deps: PanelDeps, sessionId: string | undefined, root: string | undefined): ProjectStore {
+  if (root !== undefined && root !== '') {
+    if (!isAbsolute(root)) throw new PanelInputError('root 必须是绝对路径。')
+    return new ProjectStore(resolve(root))
+  }
   if (!deps.config.perWorkspace) return deps.baseStore
   if (sessionId === undefined || deps.cwdOf === undefined) return deps.baseStore
   const cwd = deps.cwdOf(sessionId)
@@ -85,14 +119,27 @@ function storeFor(deps: PanelDeps, sessionId: string | undefined): ProjectStore 
  * Build the payload for one GET.
  *
  * Absence of a project is a normal answer, not an error: the panel shows its
- * "no book here yet" state with the directory it looked in.
+ * "no book here yet" state with the directory it looked in, which is also what
+ * it offers to create in.
  *
  * @param deps - route dependencies.
  * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory, when the browser named one.
  * @returns status and body.
  */
-export async function readPanel(deps: PanelDeps, sessionId: string | undefined): Promise<PanelAnswer> {
-  const store = storeFor(deps, sessionId)
+export async function readPanel(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  root?: string | undefined,
+): Promise<PanelAnswer> {
+  let store: ProjectStore
+  try {
+    store = storeFor(deps, sessionId, root)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = error instanceof PanelInputError ? error.status : 400
+    return { status, body: { ok: false, error: { message } } }
+  }
   try {
     if (!(await store.exists())) {
       const empty: PanelSnapshot = emptyPanelSnapshot(store.root)
@@ -106,6 +153,111 @@ export async function readPanel(deps: PanelDeps, sessionId: string | undefined):
     const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root)
     return { status: 200, body: { ok: true, data } }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * Read a request body as JSON.
+ *
+ * @param req - the request to read.
+ * @returns the parsed body; `{}` when it is empty.
+ * @throws {PanelInputError} for an oversized or malformed body.
+ */
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    size += buffer.length
+    if (size > MAX_BODY_BYTES) throw new PanelInputError('请求体太大。', 413)
+    chunks.push(buffer)
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (text === '') return {}
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new PanelInputError('请求体必须是一个 JSON 对象。')
+    }
+    return parsed as Record<string, unknown>
+  } catch (error) {
+    if (error instanceof PanelInputError) throw error
+    throw new PanelInputError('请求体不是合法 JSON。')
+  }
+}
+
+/**
+ * Create a book in a directory the writer picked.
+ *
+ * Same door as `novel_project action="init"`, different hand on the handle:
+ * the tool gate allows `init` unconditionally, so the panel is not opening a
+ * way around the gate — it is opening the gate's own front door.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ dir, title?, targetWords? }`.
+ * @returns the created (or already existing) book.
+ * @throws {PanelInputError} for a missing directory, a pinned root, or bad input.
+ */
+export async function createBook(deps: PanelDeps, body: Record<string, unknown>): Promise<PanelAnswer> {
+  try {
+    if (isAbsolute(deps.config.root)) {
+      throw new PanelInputError(
+        `插件的 root 被固定成了 ${deps.config.root}，面板不能在其他目录建书。改用 novel_project action="init"，或把 root 配成相对路径（如 .novel）。`,
+        409,
+      )
+    }
+    const dir = await requireDirectory(body.dir)
+    const root = resolveRoot(deps.config.root, dir)
+    const store = new ProjectStore(root)
+    if (await store.exists()) {
+      const project = await store.readProject()
+      const created: CreatedBook = { root, title: project.title, existing: true }
+      return { status: 200, body: { ok: true, data: created } }
+    }
+    const rawTitle = typeof body.title === 'string' ? body.title.trim() : ''
+    const title = rawTitle === '' ? '未命名' : rawTitle.slice(0, 120)
+    const rawTarget = body.targetWords
+    const targetWords =
+      typeof rawTarget === 'number' && Number.isFinite(rawTarget) && rawTarget > 0 ? Math.floor(rawTarget) : undefined
+    await store.init(title, targetWords ?? 0)
+    const created: CreatedBook = { root, title, existing: false }
+    return { status: 200, body: { ok: true, data: created } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * List one directory level for the picker.
+ *
+ * Also reports a book that already lives there, so the picker can offer to
+ * open it instead of creating a second one beside it.
+ *
+ * @param deps - route dependencies.
+ * @param requested - the `path` query parameter; absent lists the home directory.
+ * @returns the listing.
+ */
+export async function listPanelDirs(deps: PanelDeps, requested: string | undefined): Promise<PanelAnswer> {
+  try {
+    const listing = await listDirectories(requested)
+    if (!isAbsolute(deps.config.root)) {
+      const store = new ProjectStore(resolveRoot(deps.config.root, listing.path))
+      if (await store.exists()) {
+        const project = await store.readProject()
+        return { status: 200, body: { ok: true, data: { ...listing, book: { title: project.title, phase: project.phase, root: store.root } } } }
+      }
+    }
+    return { status: 200, body: { ok: true, data: { ...listing, book: null } } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
     const message = error instanceof Error ? error.message : String(error)
     return { status: 500, body: { ok: false, error: { message } } }
   }
@@ -138,25 +290,57 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
     try {
       const url = new URL(req.url ?? '/', 'http://localhost')
       const path = url.pathname.slice(PANEL_PREFIX.length) || '/'
-      if (path !== '/' && path !== '/snapshot') {
-        send(res, { status: 404, body: { ok: false, error: { message: `unknown panel path ${url.pathname}` } } })
+      const method = req.method ?? 'GET'
+      const isRead = method === 'GET' || method === 'HEAD'
+
+      if (!isRead && method !== 'POST') {
+        send(res, { status: 405, body: { ok: false, error: { message: `不支持的请求方法 ${method}` } } })
         return
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
+
+      if (!isRead) {
         // The one CSRF guard the host's routes share: a simple form post cannot
         // set a custom header, so demanding one makes the request preflighted.
         if (req.headers[PANEL_HEADER] !== PANEL_HEADER_VALUE) {
           send(res, { status: 403, body: { ok: false, error: { message: `missing ${PANEL_HEADER} header` } } })
           return
         }
-        send(res, { status: 405, body: { ok: false, error: { message: 'the panel is read-only' } } })
+      }
+
+      if (path === '/' || path === '/snapshot') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: `${path} 只读，用 /init 建书` } } })
+          return
+        }
+        const sessionId = url.searchParams.get('session') ?? undefined
+        const root = url.searchParams.get('root') ?? undefined
+        send(res, await readPanel(deps, sessionId, root))
         return
       }
-      const sessionId = url.searchParams.get('session') ?? undefined
-      send(res, await readPanel(deps, sessionId))
+
+      if (path === '/dirs') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/dirs 只读' } } })
+          return
+        }
+        send(res, await listPanelDirs(deps, url.searchParams.get('path') ?? undefined))
+        return
+      }
+
+      if (path === '/init') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/init 需要 POST' } } })
+          return
+        }
+        send(res, await createBook(deps, await readJson(req)))
+        return
+      }
+
+      send(res, { status: 404, body: { ok: false, error: { message: `unknown panel path ${url.pathname}` } } })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (!res.headersSent) send(res, { status: 500, body: { ok: false, error: { message } } })
+      const status = error instanceof PanelInputError ? error.status : 500
+      if (!res.headersSent) send(res, { status, body: { ok: false, error: { message } } })
       else res.end()
     }
   }
