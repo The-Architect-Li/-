@@ -106,23 +106,20 @@ describe('per-workspace projects', () => {
   it('restores the v0.2 shared book when perWorkspace is off', async () => {
     const spaces = await twoWorkspaces()
     cleanups.push(spaces.cleanup)
+    harness = await createHarness({ perWorkspace: false })
 
-    // perWorkspace off means "resolve once, against the process directory", so
-    // the process directory has to move for this test to mean anything.
-    const before = process.cwd()
-    process.chdir(spaces.two)
-    try {
-      harness = await createHarness({ root: '.novel', perWorkspace: false })
-      await harness.call('novel_project', { action: 'init', title: '共享书' }, { cwd: spaces.one })
-      const fromOther = await harness.call('novel_project', { action: 'status' }, { cwd: spaces.one })
-      expect(fromOther.ok).toBe(true)
-      expect((fromOther as { value: { title: string } }).value.title).toBe('共享书')
-      // The book sits at the process directory, not in the session's workspace.
-      expect((await projectAt(join(spaces.two, '.novel'))).title).toBe('共享书')
-      expect(await readdir(spaces.one)).not.toContain('.novel')
-    } finally {
-      process.chdir(before)
-    }
+    // Two sessions, two workspaces, one book: the v0.2 behaviour, on purpose.
+    // (The "resolves against the process directory" half is a pure-function
+    // assertion in test/scope.test.ts; doing it here would write outside the
+    // harness's temp root.)
+    await harness.call('novel_project', { action: 'init', title: '共享书' }, { cwd: spaces.one })
+    const fromOther = await harness.call('novel_project', { action: 'status' }, { cwd: spaces.two })
+    expect(fromOther.ok).toBe(true)
+    expect((fromOther as { value: { title: string } }).value.title).toBe('共享书')
+
+    expect((await projectAt(harness.root)).title).toBe('共享书')
+    expect(await readdir(spaces.one)).not.toContain('.novel')
+    expect(await readdir(spaces.two)).not.toContain('.novel')
   })
 
   it('gates a call against the book the calling session owns', async () => {
