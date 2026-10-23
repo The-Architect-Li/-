@@ -54,6 +54,33 @@ describe('resolveRoleRoute', () => {
     const cfg = resolveConfig({ roles: { writer: { provider: 'zai' } } }) as InkwellConfig
     expect(resolveRoleRoute('writer', cfg, { writer: { model: 'glm-x' } })).toEqual({ provider: 'zai', model: 'glm-x' })
   })
+
+  it('carries reasoningEffort through to the route', () => {
+    const cfg = resolveConfig({ roles: { writer: { model: 'glm-x', reasoningEffort: 'high' } } }) as InkwellConfig
+    expect(resolveRoleRoute('writer', cfg, undefined)).toEqual({ model: 'glm-x', reasoningEffort: 'high' })
+  })
+
+  it('lets the book override the global effort', () => {
+    const cfg = resolveConfig({ roles: { writer: { reasoningEffort: 'high' } } }) as InkwellConfig
+    expect(resolveRoleRoute('writer', cfg, { writer: { reasoningEffort: 'minimal' } }))
+      .toEqual({ reasoningEffort: 'minimal' })
+  })
+
+  it('treats a null in the book as an explicit clear, not as "inherit"', () => {
+    const cfg = resolveConfig({ roles: { writer: { model: 'glm-x', reasoningEffort: 'high' } } }) as InkwellConfig
+    // The book says "no effort for this one" and must keep the model it inherits.
+    expect(resolveRoleRoute('writer', cfg, { writer: { reasoningEffort: null } })).toEqual({ model: 'glm-x' })
+  })
+
+  it('keeps clearing one field from wiping its neighbours', () => {
+    const cfg = resolveConfig({ roles: { writer: { provider: 'zai', model: 'glm-x', maxTokens: 4096 } } }) as InkwellConfig
+    const route = resolveRoleRoute('writer', cfg, { writer: { maxTokens: null } })
+    expect(route).toEqual({ provider: 'zai', model: 'glm-x' })
+  })
+
+  it('drops fields a book cleared even when nothing else supplies them', () => {
+    expect(resolveRoleRoute('writer', resolveConfig(), { writer: { provider: null } })).toBeUndefined()
+  })
 })
 
 describe('describeRoute', () => {
@@ -62,6 +89,9 @@ describe('describeRoute', () => {
   })
   it('formats a set route', () => {
     expect(describeRoute({ provider: 'zai', model: 'glm' })).toBe('zai/glm')
+  })
+  it('mentions the effort when one is set', () => {
+    expect(describeRoute({ provider: 'zai', model: 'glm', reasoningEffort: 'high' })).toBe('zai/glm effort=high')
   })
 })
 

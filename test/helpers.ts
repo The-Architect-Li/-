@@ -35,12 +35,20 @@ export type CallResult =
   | { ok: true; value: Record<string, never> | unknown }
   | { ok: false; error: string }
 
+/** Extra execution-context details a test wants the host to report. */
+export interface CallOptions {
+  /** The session's working directory; omit to model a host that reports none. */
+  cwd?: string
+  /** Drop the agent entirely, to model a call made outside any session. */
+  noAgent?: boolean
+}
+
 /** A mounted plugin plus the helpers to call it. */
 export interface Harness {
   root: string
   tools: Map<string, AnyTool>
   subagents: FakeSubagents
-  call(name: string, args: Record<string, unknown>): Promise<CallResult>
+  call(name: string, args: Record<string, unknown>, options?: CallOptions): Promise<CallResult>
   cleanup(): Promise<void>
 }
 
@@ -104,24 +112,36 @@ export async function createHarness(
     root,
     tools,
     subagents: subs,
-    async call(name, args) {
+    async call(name, args, options = {}) {
       const tool = tools.get(name)
       if (!tool) return { ok: false, error: `tool ${name} is not registered` }
 
+      // The real host hands the gate and the tool the same execution context,
+      // agent included. Anything less lets the gate judge a different book than
+      // the tool edits, which is exactly the bug these tests guard against.
+      const exec = {
+        callId: 'test-call',
+        name,
+        arguments: args,
+        signal: new AbortController().signal,
+        token: Symbol('test-token'),
+        agent: options.noAgent
+          ? undefined
+          : {
+              session: {
+                id: 'parent-session',
+                ...(options.cwd === undefined ? {} : { header: { cwd: options.cwd } }),
+              },
+            },
+      }
+
       for (const gate of gates) {
-        const decision = await gate({ name, arguments: args }, async () => ({ kind: 'allow' }))
+        const decision = await gate(exec, async () => ({ kind: 'allow' }))
         if (decision.kind === 'deny') return { ok: false, error: decision.reason ?? 'denied' }
       }
 
       try {
-        const value = await tool.execute(args, {
-          callId: 'test-call',
-          name,
-          arguments: args,
-          signal: new AbortController().signal,
-          token: Symbol('test-token'),
-          agent: { session: { id: 'parent-session' } },
-        })
+        const value = await tool.execute(args, exec)
         return { ok: true, value }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }

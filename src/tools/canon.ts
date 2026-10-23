@@ -55,8 +55,9 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const project = await deps.store.readProject()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const project = await store.readProject()
 
       if (args.action === 'upsert_character') {
         const name = args.name?.trim()
@@ -70,7 +71,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           secret: args.secret?.trim() ?? '',
           updatedAt: new Date().toISOString(),
         }
-        const list = await deps.store.upsertCharacter(card)
+        const list = await store.upsertCharacter(card)
         const warnings = card.voice.trim() === ''
           ? ['\n注意：voice 为空。没有说话方式的角色，写出来会和别人一个腔调，建议补上。']
           : []
@@ -78,7 +79,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           action: args.action,
           name,
           characters: list.map((item) => item.name),
-          world: (await deps.store.world()).map((item) => item.name),
+          world: (await store.world()).map((item) => item.name),
           report: [`已写入角色「${name}」（${card.role}），当前 ${list.length} 个角色。`, ...warnings].join('\n'),
         }
       }
@@ -88,7 +89,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         if (!name) throw new Error('upsert_world 需要 name。')
         const detail = args.detail?.trim() ?? ''
         if (detail === '') throw new Error('upsert_world 需要 detail，写清楚这条设定的内容。')
-        const list = await deps.store.upsertWorld({
+        const list = await store.upsertWorld({
           name,
           kind: args.kind?.trim() || '设定',
           detail,
@@ -97,14 +98,14 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         return {
           action: args.action,
           name,
-          characters: (await deps.store.characters()).map((item) => item.name),
+          characters: (await store.characters()).map((item) => item.name),
           world: list.map((item) => item.name),
           report: `已写入设定「${name}」，当前 ${list.length} 条世界观。`,
         }
       }
 
-      const characters = await deps.store.characters()
-      const world = await deps.store.world()
+      const characters = await store.characters()
+      const world = await store.world()
       return {
         action: 'list',
         name: '',

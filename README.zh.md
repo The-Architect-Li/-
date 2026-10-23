@@ -30,18 +30,35 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add dsh-inkwell
+dsh plugin --profile <你的 profile> add dsh-inkwell
 ```
 
-装完**必须重启 dsh 进程**（客户端 bundle 在启动时快照），硬刷新页面后，会话里就能看到 7 个 `novel_*` 工具。
+装完**必须重启 dsh 进程**（插件在启动时装载），之后会话里就能看到 9 个 `novel_*` 工具。
 
-从源码开发：
+从 git 装也行，但 pnpm 默认拦构建脚本，要先在 profile 的 `pnpm-workspace.yaml` 里放行：
+
+```yaml
+allowBuilds:
+  dsh-inkwell: true
+```
+
+否则装上去的是没有 `lib/` 的空壳。从源码开发：
 
 ```sh
 git clone <repo> && cd dsh-inkwell
 npm install --legacy-peer-deps
-npm run check          # typecheck + test + build
+npm run check          # typecheck + test + build + 打包冒烟
 ```
+
+## 一本书跟一个工作区走
+
+一个 dsh 进程同时开着几个工作区是常态。墨井的项目根**按会话自己的工作目录解析**，不是按进程目录：
+
+- `root` 是相对路径（默认 `.novel`）时，每个会话在自己的工作区里找书——两个窗口两本书，互不串稿；
+- `root` 是绝对路径时，所有会话共用那一本；
+- `perWorkspace: false` 回到 v0.2 的「进程目录那一本」。
+
+找不到项目时，拒绝理由会告诉你在**哪个目录**找过，而不是只说「还没有项目」。
 
 ## 一条完整的工作流
 
@@ -74,7 +91,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 你：novel_ledger action="record" subject="沈砚" predicate="左眼颜色" value="黑" chapter=1 quote="他的左眼黑得像井"
 ```
 
-## 七个工具
+## 九个工具
 
 | 工具 | 作用 | 会拒绝你的情况 |
 |---|---|---|
@@ -85,7 +102,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_ledger` | 记事实、查事实、全量体检 | 与已有设定冲突且未指名替换 |
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
 | `novel_check` | 确定性体检（零 token） | 不会拒绝，只报告 |
-| `novel_roles` | 查看/设置各角色用的模型 | set 缺 role |
+| `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
 | `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
 
 ## 小说工坊流水线（v0.2）
@@ -103,6 +120,16 @@ v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派�
 ```
 
 **按角色配模型：** 写手用 GLM、审核用 DeepSeek，随你。`novel_roles set` 把选择存进**这本书**的 `project.json`，不动全局；没设的角色继承当前会话模型。模型密钥永远留在 DSH 设置里，插件只记 provider/model 名字——它不知道你的 key。
+
+每个角色还能单独钉 `reasoningEffort`（推理档位）。取值由供应商适配器决定，插件只透传不校验：
+
+```text
+novel_roles action="set" role="writer" provider="zai" model="glm-4.6" reasoningEffort="high"
+novel_roles action="set" role="logic"  reasoningEffort="low"     # 只改这一项，模型照旧
+novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 = 本书这一项显式不设
+```
+
+最后那行是「三态覆盖」：不填 = 继承下一级，填值 = 本书钉住，填空 = 本书明确不要（压住全局默认）。清掉一项不会顺手把同角色的其他字段一起抹掉。
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
@@ -126,6 +153,7 @@ v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派�
 - id: inkwell
   config:
     root: .novel
+    perWorkspace: true          # 相对 root 按会话工作区解析；false 回到进程目录
     premiseMinChars: 80
     chapterMinWords: 1800
     chapterMaxWords: 4200
@@ -134,29 +162,33 @@ v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派�
     repeatWarnRatio: 0.06
     aiToneWarnPer1000: 2
     aiToneWords: ["仿佛", "似乎", "不禁", "微微", "嘴角勾起"]
+    roles:                      # 全局默认；每本书可用 novel_roles 覆盖
+      writer: { provider: zai, model: glm-4.6, reasoningEffort: high }
 ```
 
 阈值没有写死在代码里——每个项目对「套路」的定义不一样。
 
 ## 它不做什么
 
-- **不续写、不代笔。** 它没有生成文字的模型调用，一个字都不替你写。
+- **不续写、不代笔。** 插件自己没有生成文字的模型调用，一个字都不替你写（`novel_dispatch` 派出去的是子智能体，不是本插件）。
 - **不判断文学质量。** 「这段好不好」不是确定性函数能回答的，所以它不装作能。
 - **不做平台敏感词审核。** 各平台规则不同且常变，硬编码在插件里很快会过期。
-- **不带 UI 面板。** v0.1 只有工具，全部能力在对话里可完成。
+- **不带 UI 面板。** 全部能力在对话里可完成。
 
 ## 已知边界
 
 - 节拍覆盖率用二元字组估算，是提醒不是判决；它宁可漏报也不误杀。
-- 没有并发写保护：同一个项目目录同时被两个会话写会互相覆盖。
+- 同一本书同一章并发写会互相覆盖（章纲与账本仍是单写者模型）。
 - 账本只防「同一属性给出不同值」，不防逻辑矛盾（比如一个人同时出现在两地）。
 
 ## 开发
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，74 个用例，含端到端流程
+npm test            # vitest，125 个用例，含端到端流程与双工作区隔离
 npm run build       # 产出 lib/
+npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了
+npm run check       # 以上全部
 ```
 
 架构细节见 [docs/architecture.md](docs/architecture.md)，贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。

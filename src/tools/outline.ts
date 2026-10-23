@@ -51,20 +51,21 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const snapshot = await deps.store.snapshot()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const snapshot = await store.snapshot()
 
       if (args.action === 'add_volume') {
         const number = requireNumber(args.number, 'number')
         const title = args.title?.trim()
         if (!title) throw new Error('add_volume 需要 title。')
-        await deps.store.upsertVolume({
+        await store.upsertVolume({
           number,
           title,
           summary: args.summary?.trim() ?? '',
           approved: false,
         })
-        const volumes = await deps.store.volumes()
+        const volumes = await store.volumes()
         return {
           action: args.action,
           volumes: volumes.map((item) => `${item.number}. ${item.title}${item.approved ? '（已批准）' : ''}`),
@@ -77,8 +78,8 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
         const number = requireNumber(args.number, 'number')
         const target = snapshot.volumes.find((item) => item.number === number)
         if (!target) throw new Error(`第${number}卷不存在。`)
-        await deps.store.upsertVolume({ ...target, approved: true })
-        const volumes = await deps.store.volumes()
+        await store.upsertVolume({ ...target, approved: true })
+        const volumes = await store.volumes()
         return {
           action: args.action,
           volumes: volumes.map((item) => `${item.number}. ${item.title}${item.approved ? '（已批准）' : ''}`),
@@ -116,8 +117,8 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
           // Any edit invalidates the approval: the contract must be re-read after it changes.
           approved: false,
         }
-        await deps.store.upsertPlan(plan)
-        const plans = await deps.store.plans()
+        await store.upsertPlan(plan)
+        const plans = await store.plans()
         return {
           action: args.action,
           volumes: snapshot.volumes.map((item) => `${item.number}. ${item.title}`),
@@ -133,8 +134,8 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
         const number = requireNumber(args.number, 'number')
         const target = snapshot.plans.find((item) => item.number === number)
         if (!target) throw new Error(`第${number}章还没有章纲。`)
-        await deps.store.upsertPlan({ ...target, approved: true })
-        const plans = await deps.store.plans()
+        await store.upsertPlan({ ...target, approved: true })
+        const plans = await store.plans()
         return {
           action: args.action,
           volumes: [],

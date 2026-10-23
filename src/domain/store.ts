@@ -20,7 +20,8 @@ import type {
   WorldEntry,
 } from './types.ts'
 
-const PROJECT_FILE = 'project.json'
+/** The file whose presence marks a directory as an Inkwell project. */
+export const PROJECT_FILE = 'project.json'
 const CHARACTERS_FILE = 'canon/characters.json'
 const WORLD_FILE = 'canon/world.json'
 const VOLUMES_FILE = 'outline/volumes.json'

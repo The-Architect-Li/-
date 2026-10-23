@@ -55,11 +55,12 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const snapshot = await deps.store.snapshot()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const snapshot = await store.snapshot()
 
       if (args.action === 'list') {
-        const chapters = await deps.store.chapters()
+        const chapters = await store.chapters()
         const written = new Set(chapters.map((item) => item.number))
         return {
           number: 0,
@@ -82,7 +83,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       }
 
       if (args.action === 'read') {
-        const draft = await deps.store.chapter(number)
+        const draft = await store.chapter(number)
         if (!draft) throw new Error(`第${number}章还没写。`)
         return {
           number,
@@ -100,7 +101,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       }
 
       if (args.action === 'commit') {
-        const meta = await deps.store.commitDraft(number)
+        const meta = await store.commitDraft(number)
         return {
           number,
           words: meta.words,
@@ -121,15 +122,15 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       if (args.action === 'propose') {
         // A draft is saved as-is so the review pipeline can judge it. The
         // deterministic findings ride along on the round, never blocking.
-        const previous = await deps.store.allChapters()
-        const round = (await deps.store.draftsOf(number)).length + 1
+        const previous = await store.allChapters()
+        const round = (await store.draftsOf(number)).length + 1
         const words = countChars(text)
         const findings = rank([
           ...contract,
           ...scanChapter({ number, title: args.title?.trim() || plan.title, text, words, summary: args.summary?.trim() || deriveSummary(text), writtenAt: new Date().toISOString() }, previous, deps.config),
         ])
         const counts = tally(findings)
-        await deps.store.saveDraft({
+        await store.saveDraft({
           number,
           round,
           text,
@@ -167,7 +168,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
         )
       }
 
-      const previous = await deps.store.allChapters()
+      const previous = await store.allChapters()
       const draft: ChapterDraft = {
         number,
         title: args.title?.trim() || plan.title,
@@ -177,7 +178,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
         text,
       }
       const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, deps.config)])
-      await deps.store.writeChapter(draft)
+      await store.writeChapter(draft)
       const counts = tally(findings)
 
       return {

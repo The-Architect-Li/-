@@ -38,6 +38,7 @@ export const DEFAULTS: InkwellConfig = {
   aiToneWords: DEFAULT_AI_TONE_WORDS,
   beatCoverageMin: 0.4,
   roles: {},
+  perWorkspace: true,
 }
 
 /**
@@ -66,6 +67,22 @@ export function resolveConfig(input: Partial<InkwellConfig> = {}): InkwellConfig
   return merged
 }
 
+/**
+ * One role's global default route.
+ *
+ * Every field is optional, so a config file can pin just the model and let the
+ * rest inherit. `reasoningEffort` is a free-form string on purpose: which
+ * values are legal is decided by the provider adapter, not by this plugin.
+ */
+const RouteSchema = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    maxTokens: z.number(),
+    reasoningEffort: z.string(),
+  })
+  .default({})
+
 /** Loader-facing schema. Mirrors {@link DEFAULTS}. */
 export const Config = z.object({
   root: z.string().default(DEFAULTS.root),
@@ -86,10 +103,11 @@ export const Config = z.object({
   beatCoverageMin: z.number().default(DEFAULTS.beatCoverageMin),
   roles: z
     .object({
-      writer: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
-      logic: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
-      character: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
-      chief: z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }),
+      writer: RouteSchema,
+      logic: RouteSchema,
+      character: RouteSchema,
+      chief: RouteSchema,
     })
     .default({}),
+  perWorkspace: z.boolean().default(DEFAULTS.perWorkspace),
 })

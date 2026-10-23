@@ -7,6 +7,7 @@
  * role is a prompt edit, not a bundle republish.
  */
 import { buildBriefing } from './domain/briefing.ts'
+import { mergeField } from './domain/fields.ts'
 import { activeEntries, factsAbout, formatFact } from './domain/ledger.ts'
 import { countChars } from './domain/text.ts'
 import type {
@@ -14,6 +15,7 @@ import type {
   ChapterPlan,
   Finding,
   InkwellConfig,
+  ProjectRoles,
   RoleId,
   RoleRoute,
   Snapshot,
@@ -93,24 +95,40 @@ export const ROLES: Record<RoleId, RoleDef> = {
 }
 
 /**
- * Resolve a role's model route: per-book override wins, global config fills the
- * gaps, and anything still unset is left for the child to inherit from parent.
+ * Resolve a role's model route.
+ *
+ * Three layers, strongest first: the book's own override, the plugin's global
+ * config, then the child inheriting the parent session's model. Each field is
+ * merged on its own, so a book can pin the model and still inherit the global
+ * `maxTokens`.
+ *
+ * A book override may carry `null` for a field: that is an explicit "unset",
+ * which beats the global default and keeps it out of the result. Without that
+ * third state, clearing one field would silently delete the rest of the route.
+ *
+ * @param roleId - which studio role.
+ * @param config - resolved plugin configuration.
+ * @param projectRoles - the book's overrides from `project.json`.
+ * @returns the merged route, or `undefined` when the child should inherit.
  */
 export function resolveRoleRoute(
   roleId: RoleId,
   config: InkwellConfig,
-  projectRoles?: Partial<Record<RoleId, RoleRoute>>,
+  projectRoles?: ProjectRoles,
 ): RoleRoute | undefined {
   const project = projectRoles?.[roleId]
   const global = config.roles?.[roleId]
+  const layers = [project, global]
   const merged: RoleRoute = {}
-  const provider = project?.provider ?? global?.provider
-  const model = project?.model ?? global?.model
-  const maxTokens = project?.maxTokens ?? global?.maxTokens
-  if (provider) merged.provider = provider
-  if (model) merged.model = model
-  if (maxTokens) merged.maxTokens = maxTokens
-  if (provider === undefined && model === undefined && maxTokens === undefined) return undefined
+  const provider = mergeField(layers, 'provider')
+  const model = mergeField(layers, 'model')
+  const maxTokens = mergeField(layers, 'maxTokens')
+  const reasoningEffort = mergeField(layers, 'reasoningEffort')
+  if (typeof provider === 'string' && provider !== '') merged.provider = provider
+  if (typeof model === 'string' && model !== '') merged.model = model
+  if (typeof maxTokens === 'number') merged.maxTokens = maxTokens
+  if (typeof reasoningEffort === 'string' && reasoningEffort !== '') merged.reasoningEffort = reasoningEffort
+  if (Object.keys(merged).length === 0) return undefined
   return merged
 }
 
@@ -119,6 +137,7 @@ export function describeRoute(route: RoleRoute | undefined): string {
   if (!route) return '继承当前会话模型'
   const parts = [route.provider ? `${route.provider}/${route.model ?? '?'}` : route.model ?? '?']
   if (route.maxTokens) parts.push(`maxTokens=${route.maxTokens}`)
+  if (route.reasoningEffort) parts.push(`effort=${route.reasoningEffort}`)
   return parts.join(' ')
 }
 

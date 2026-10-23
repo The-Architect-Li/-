@@ -102,16 +102,17 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
     },
     timeoutMs: ROLES.writer.timeoutMs,
     async execute(args, exec) {
+      const store = deps.storeFor(exec)
       const roleId = args.action as RoleId
       const role = ROLES[roleId]
       const number = args.number
-      const snapshot = await deps.store.snapshot()
+      const snapshot = await store.snapshot()
       const plan = snapshot.plans.find((item) => item.number === number)
       if (!plan) {
         throw new Error(`第${number}章没有章纲。先 novel_outline add_chapter + approve_chapter，再派发。`)
       }
 
-      const drafts = await deps.store.allChapters()
+      const drafts = await store.allChapters()
       const route = resolveRoleRoute(roleId, deps.config, snapshot.project.roles)
       const routeText = describeRoute(route)
 
@@ -131,7 +132,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
-      const draft = await deps.store.latestDraft(number)
+      const draft = await store.latestDraft(number)
       if (!draft) {
         throw new Error(`第${number}章还没有草稿。先派 writer，再 novel_chapter action="propose"，然后才能审核。`)
       }

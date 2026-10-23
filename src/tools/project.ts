@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { evaluateAdvance, nextPhase, requirementsFor } from '../domain/phase.ts'
+import type { ProjectStore } from '../domain/store.ts'
 import { countChars } from '../domain/text.ts'
 import type { ToolDeps } from './deps.ts'
 
@@ -41,17 +42,18 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
       if (args.action === 'init') {
         const title = args.title?.trim() || '未命名'
-        const project = await deps.store.init(title, args.targetWords ?? 800000)
+        const project = await store.init(title, args.targetWords ?? 800000)
         return {
           phase: project.phase,
           title: project.title,
           next: 'canon',
           blockers: [],
           report: [
-            `已创建项目《${project.title}》于 ${deps.store.root}`,
+            `已创建项目《${project.title}》于 ${store.root}`,
             `阶段：${project.phase}`,
             '',
             '接下来：用 novel_project action="premise" 写一句话前提（主角/欲望/阻力），再 advance 进入 canon。',
@@ -60,12 +62,12 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
       }
 
       if (args.action === 'premise') {
-        const project = await deps.store.readProject()
+        const project = await store.readProject()
         const premise = args.premise?.trim()
         if (!premise) {
           throw new Error('premise 不能为空。')
         }
-        await deps.store.writeProject({ ...project, premise })
+        await store.writeProject({ ...project, premise })
         const length = countChars(premise)
         const ok = length >= deps.config.premiseMinChars
         return {
@@ -82,7 +84,7 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
-      const snapshot = await deps.store.snapshot()
+      const snapshot = await store.snapshot()
 
       if (args.action === 'advance') {
         const result = evaluateAdvance(snapshot, deps.config)
@@ -107,7 +109,7 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
             ].join('\n'),
           }
         }
-        await deps.store.writeProject({ ...snapshot.project, phase: result.next })
+        await store.writeProject({ ...snapshot.project, phase: result.next })
         const upcoming = nextPhase(result.next)
         return {
           phase: result.next,
@@ -116,7 +118,7 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
           blockers: [],
           report: [
             `已进入「${result.next}」阶段。`,
-            upcoming ? describeNext(upcoming, snapshot, deps) : '',
+            upcoming ? describeNext(upcoming, snapshot, deps, store) : '',
           ].filter(Boolean).join('\n'),
         }
       }
@@ -146,7 +148,12 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
   }))
 }
 
-function describeNext(target: string, snapshot: Awaited<ReturnType<ToolDeps['store']['snapshot']>>, deps: ToolDeps): string {
+function describeNext(
+  target: string,
+  snapshot: Awaited<ReturnType<ProjectStore['snapshot']>>,
+  deps: ToolDeps,
+  store: ProjectStore,
+): string {
   switch (target) {
     case 'canon':
       return '接下来用 novel_canon 建立角色卡（至少 1 主角 + 1 配角，每人要有 voice）和世界观条目。'
@@ -157,6 +164,6 @@ function describeNext(target: string, snapshot: Awaited<ReturnType<ToolDeps['sto
     case 'review':
       return `共 ${snapshot.chapters.length} 章待审。用 novel_check action="all" 做确定性体检。`
     default:
-      return `可以继续，也可以随时用 novel_project action="status" 查看卡点（root=${deps.store.root}）。`
+      return `可以继续，也可以随时用 novel_project action="status" 查看卡点（root=${store.root}）。`
   }
 }

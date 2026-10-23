@@ -7,7 +7,7 @@
 ```text
 src/
   domain/    纯函数与磁盘读写，不认识 DSH，可以在 node 里直接测
-  tools/     七个工具，只做参数翻译与结果格式化
+  tools/     九个工具，只做参数翻译与结果格式化
   gate.ts    预执行门禁，唯一能拒绝调用的地方
   index.ts   挂载：注册工具 + 挂 tools/pre-execute
 ```
@@ -25,8 +25,8 @@ src/
 所以墨井把状态落在 `<root>/` 下，纯 JSON + Markdown：
 
 ```text
-.novel/
-  project.json          阶段、前提、目标字数
+<root>/
+  project.json          阶段、前提、目标字数、本书的角色路由覆盖
   canon/characters.json 角色卡（含 voice）
   canon/world.json      世界观条目
   outline/volumes.json  分卷
@@ -34,9 +34,33 @@ src/
   ledger/facts.json     事实账本
   chapters/index.json   章节索引（字数、摘要）
   chapters/001.md       正文，一章一文件
+  drafts/001/01.json    草稿轮次（propose 落在这里，commit 才进 chapters）
 ```
 
 写入统一走「临时文件 + rename」，进程被杀不会留下半截设定。正文用 Markdown，用户随时可以用编辑器直接改，改完再让工具读。
+
+### 根目录属于会话，不属于进程
+
+v0.2 在挂载时就把 `root` resolve 成绝对路径，存进一个长生命周期的 `ProjectStore`。单个工作区时没问题，多个工作区时第二个窗口会静默接管第一本书的 canon——这是最难查的一类串稿。
+
+现在这条规则只有一个实现，在 `src/domain/scope.ts`：
+
+```text
+resolveSessionRoot(exec, config, baseStore):
+  perWorkspace 关 → baseStore                    （v0.2 行为）
+  root 是绝对路径 → baseStore                    （一本书，钉死）
+  否则读 exec.agent.session.header.cwd
+    有这个 cwd → new ProjectStore(resolve(cwd, root))
+    没有       → baseStore                       （宁可共用，不可猜错书）
+```
+
+三个关键选择：
+
+1. **`cwd` 来自会话头**，不是 `process.cwd()`。`SessionHeader.cwd` 是 DSH 在创建会话时记录的绝对工作目录，正是「这个窗口在看哪个项目」的权威答案。
+2. **工具和门禁共用同一个解析**。`gateToolCall` 拿到的 `exec` 和 `execute` 拿到的是同一个，两边必须算出同一本书，否则会出现「在这本书上批准、往另一本书里写」。
+3. **读不到 `cwd` 就退回共享 store**。猜错书的代价（写坏别人的书）远大于共用一本（用户看到「这本书里没这个项目」）。
+
+`ToolDeps` 因此不再持有 `store`，而是持有 `storeFor(exec)`。这个接口变化是刻意的：让「哪本书」变成一个必须用调用上下文回答的问题，而不是一个可以在挂载时拍死的常量。
 
 ## 阶段机
 
@@ -97,6 +121,20 @@ src/
 
 提醒类的阈值全部可配。不同题材对「套路」的定义不同，写死在代码里就是把作者的品味强加给用户。
 
+## 角色路由的三态
+
+每个角色的模型路由是四个字段（`provider` / `model` / `maxTokens` / `reasoningEffort`），每层都可以对某个字段说话，也可以什么都不说。三种状态，缺一不可：
+
+| 状态 | 写法 | 含义 |
+|---|---|---|
+| 不提 | 字段缺失 | 交给下一层 |
+| 钉住 | 一个值 | 本书就用这个 |
+| 显式不设 | `null`（工具层用空串 / `0` 表达） | 压住下一层，本书这一项就是空 |
+
+只有前两态是不够的：全局配了 `reasoningEffort: high`，某本书想对写手关掉它，如果没有第三态，唯一办法是把整个角色覆盖删掉，顺手把 `model` 也丢了。合并逻辑在 `src/domain/fields.ts`，逐字段独立求值，所以清一项不会连累邻居。
+
+`reasoningEffort` 的类型是 `ReasoningEffortId`（DSH 的 branded 字符串），取值由供应商适配器决定，插件只透传——把 `low/high` 写死在插件里，等于替所有人选了同一家的档位。
+
 ## 与 DSH 的接缝
 
 只用了两个扩展点：
@@ -104,10 +142,18 @@ src/
 1. `ctx.tools.register(defineTool({...}))` —— 注册工具，schema 自动进入系统提示词组装。
 2. `ctx.on('tools/pre-execute', (exec, next) => ...)` —— 预执行瀑布，返回 `{kind:'deny', reason}` 即拦截，`next()` 放行。
 
+派发角色时多用一层 `ctx.subagents.start('spawn', …)`，但它不是「拒绝」通道：那里只负责起子智能体并收集文本。
+
 门禁放在 `pre-execute` 而不是 `execute` 里，是为了让被拒的调用**不产生任何副作用**，同时把拒绝原因作为工具结果回给模型——模型看到的是「还缺什么」，而不是一个异常堆栈。
+
+## 发售形状
+
+`files` 只发 `lib/`，所以**构建必须发生在安装时**：从 git 安装的包没有预构建产物，靠 `prepare` 脚本在 install 后跑 `tsc`。pnpm 默认拦构建脚本，这也是为什么 README 要求 `allowBuilds: { dsh-inkwell: true }`——少了这一条，装上去是一个没有 `lib/` 的空壳，而 `dsh` 只会在装载时报一个看不出原因的错。
+
+`npm run verify`（`scripts/verify-install.mjs`）专治这类回归：它用假上下文挂载**构建产物**，断言 9 个工具和 1 个门禁都出现了。测试跑的是 `src/`，打包错误它看不见。
 
 ## 后续方向
 
-- **v0.2 审稿 DAG**：把 `novel_check` 的结构化输出接成多域评审，保留证据链。
-- **v0.3 工作室预设**：用 agent preset 把主笔/设定/大纲/审稿拆成四个角色，用 `ctx.tools.restrict` 收窄每个角色能碰的工具。
-- **v0.4 分任务模型路由**：草稿、审稿、扫描各用不同模型，配置化。
+- **侧边栏「小说工坊」**：客户端 React 插件，项目创建面板与章节目录树。
+- **章节级并发写**：同一章被两个会话同时写时目前后者覆盖；需要带版本号的乐观锁。
+- **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录，支持跨会话追溯「这条意见谁提的、改了没有」。

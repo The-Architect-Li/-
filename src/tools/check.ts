@@ -42,9 +42,10 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const snapshot = await deps.store.snapshot()
-      const drafts = await deps.store.allChapters()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const snapshot = await store.snapshot()
+      const drafts = await store.allChapters()
       const findings: Finding[] = []
 
       if (args.action === 'ledger' || args.action === 'all') {

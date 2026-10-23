@@ -124,4 +124,35 @@ describe('studio pipeline', () => {
     const postCommit = await h.call('novel_chapter', { action: 'read', number: 1 })
     expect(postCommit.ok).toBe(true)
   })
+
+  it('passes a per-role reasoning effort down to the child session', async () => {
+    await setUpToDrafting()
+    await h.call('novel_roles', {
+      action: 'set',
+      role: 'writer',
+      provider: 'zai',
+      model: 'glm-test',
+      reasoningEffort: 'high',
+    })
+
+    await h.call('novel_dispatch', { action: 'writer', number: 1 })
+    expect(h.subagents.calls[0]?.request.agentOptions).toEqual({
+      provider: 'zai',
+      model: 'glm-test',
+      reasoningEffort: 'high',
+    })
+  })
+
+  it('drops the effort again once the book clears that field', async () => {
+    await setUpToDrafting()
+    await h.call('novel_roles', { action: 'set', role: 'writer', provider: 'zai', model: 'glm-test', reasoningEffort: 'high' })
+    // Clearing one field must keep the rest of the route intact.
+    const cleared = valueOf<{ report: string }>(
+      await h.call('novel_roles', { action: 'set', role: 'writer', reasoningEffort: '' }),
+    )
+    expect(cleared.report).toContain('zai/glm-test')
+
+    await h.call('novel_dispatch', { action: 'writer', number: 1 })
+    expect(h.subagents.calls[0]?.request.agentOptions).toEqual({ provider: 'zai', model: 'glm-test' })
+  })
 })

@@ -119,8 +119,9 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const entries = await deps.store.ledger()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const entries = await store.ledger()
 
       if (args.action === 'record') {
         const chapter = args.chapter
@@ -148,7 +149,7 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
           }
         }
 
-        const record = await deps.store.appendLedger({
+        const record = await store.appendLedger({
           subject: args.subject?.trim() ?? '',
           predicate: args.predicate?.trim() ?? '',
           value: args.value?.trim() ?? '',
@@ -181,7 +182,7 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
-      const written = (await deps.store.chapters()).length
+      const written = (await store.chapters()).length
       const findings = auditLedger(entries, written)
       const errors = findings.filter((item) => item.severity === 'error')
       return {

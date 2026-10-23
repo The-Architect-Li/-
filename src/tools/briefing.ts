@@ -32,9 +32,10 @@ export function registerBriefingTool(ctx: Context, deps: ToolDeps): void {
       },
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
-    async execute(args) {
-      const snapshot = await deps.store.snapshot()
-      const drafts = await deps.store.allChapters()
+    async execute(args, exec) {
+      const store = deps.storeFor(exec)
+      const snapshot = await store.snapshot()
+      const drafts = await store.allChapters()
       const chapter = args.chapter
       if (!Number.isInteger(chapter) || chapter < 1) throw new Error('chapter 必须是正整数。')
 

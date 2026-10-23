@@ -7,7 +7,7 @@
  * act on.
  */
 import type { InkwellConfig, Snapshot } from './domain/types.ts'
-import { ProjectMissingError, ProjectStore } from './domain/store.ts'
+import { PROJECT_FILE, ProjectMissingError, ProjectStore } from './domain/store.ts'
 import { atLeast, blockersFor } from './domain/phase.ts'
 
 /** Tools this plugin owns. Anything else is none of its business. */
@@ -46,7 +46,13 @@ export async function gateToolCall(
   if (name === 'novel_project' && action === 'init') return null
 
   if (!(await store.exists())) {
-    return '还没有 Inkwell 项目。先调用 novel_project，action="init"。'
+    // Naming the directory is the whole point: with per-workspace roots, "no
+    // project" is ambiguous until the caller sees where we looked.
+    return [
+      `还没有 Inkwell 项目（在 ${store.root} 没找到 ${PROJECT_FILE}）。`,
+      '先调用 novel_project，action="init"。',
+      '如果书在别处：确认当前会话的工作目录，或把配置 root 设成绝对路径、或用 perWorkspace=false 固定到进程目录。',
+    ].join('')
   }
 
   let snapshot: Snapshot

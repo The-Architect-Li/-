@@ -26,7 +26,7 @@ export interface ProjectFile {
   premise: string
   targetWords: number
   /** Per-book model overrides, keyed by role id. Global config fills the gaps. */
-  roles?: Partial<Record<RoleId, RoleRoute>>
+  roles?: ProjectRoles
   createdAt: string
   updatedAt: string
 }
@@ -112,8 +112,28 @@ export type RoleId = (typeof ROLE_IDS)[number]
 export interface RoleRoute {
   provider?: string | undefined
   model?: string | undefined
+  /** Output ceiling for each call. */
   maxTokens?: number | undefined
+  /** Adapter-owned reasoning effort for the selected provider/model route. */
+  reasoningEffort?: string | undefined
 }
+
+/**
+ * One role's route override as the book stores it.
+ *
+ * `null` is the third state, not a bug: it means "this book says this field is
+ * unset on purpose", which stops the global default from filling it back in.
+ * Clearing `reasoningEffort` on one role must not drag down the other fields.
+ */
+export type RoleRoutePatch = {
+  provider?: string | null | undefined
+  model?: string | null | undefined
+  maxTokens?: number | null | undefined
+  reasoningEffort?: string | null | undefined
+}
+
+/** A role's route as one book stores it: the same fields, each tri-state. */
+export type ProjectRoles = Partial<Record<RoleId, RoleRoutePatch>>
 
 /** How much a finding matters. `error` blocks, `warn` asks for a rewrite, `info` is context. */
 export type Severity = 'error' | 'warn' | 'info'
@@ -159,6 +179,12 @@ export interface InkwellConfig {
   beatCoverageMin: number
   /** Per-role global model defaults. Each book can override a role's route. */
   roles: Partial<Record<RoleId, RoleRoute>>
+  /**
+   * Resolve `root` against each session's working directory instead of the
+   * process's. Off by default: one dsh process serves many workspaces, and a
+   * relative root resolved once would point every book at the same folder.
+   */
+  perWorkspace: boolean
 }
 
 /** One review round on a chapter draft, persisted under drafts/. */
