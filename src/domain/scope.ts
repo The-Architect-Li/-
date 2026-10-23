@@ -57,6 +57,35 @@ export function resolveRoot(root: string, cwd: string | undefined): string {
 }
 
 /**
+ * Look a session's cwd up by id, for callers that hold no execution context.
+ *
+ * The panel's HTTP route is one such caller: the browser names a session, not
+ * an agent. Every step is guarded so a host without a session service (or a
+ * test fake) simply yields `undefined`, which the caller treats as "use the
+ * shared book".
+ *
+ * @param ctx - the host context, consulted for a `sessions` service.
+ * @param sessionId - the session the request names.
+ * @returns that session's absolute cwd, when known.
+ */
+export function sessionCwdById(ctx: unknown, sessionId: string): string | undefined {
+  if (typeof ctx !== 'object' || ctx === null) return undefined
+  const get = (ctx as { get?: unknown }).get
+  if (typeof get !== 'function') return undefined
+  const sessions = (get as (name: string) => unknown).call(ctx, 'sessions')
+  if (typeof sessions !== 'object' || sessions === null) return undefined
+  const lookup = (sessions as { get?: unknown }).get
+  if (typeof lookup !== 'function') return undefined
+  const session = (lookup as (id: string) => unknown).call(sessions, sessionId)
+  if (typeof session !== 'object' || session === null) return undefined
+  const header = (session as { header?: unknown }).header
+  if (typeof header !== 'object' || header === null) return undefined
+  const cwd = (header as { cwd?: unknown }).cwd
+  if (typeof cwd !== 'string' || cwd.trim() === '') return undefined
+  return cwd
+}
+
+/**
  * Pick the store one call should use.
  *
  * With `perWorkspace` on (the default), a relative root is resolved against the
