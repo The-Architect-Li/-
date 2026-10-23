@@ -87,7 +87,7 @@ npm 走外网很慢（装 43 个包要 4 分钟左右），不是卡死，耐心
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 146 个用例全过（vitest，14 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与路由（200/403/404/405、按会话分书）、模块装载形状
+- ✅ 150 个用例全过（vitest，14 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与路由（200/403/404/405、按会话分书）、模块装载形状
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**：`dsh plugin --profile inkwell-verify add E:\dshplugin` 成功，profile 里 `dsh-inkwell: link:E:/dshplugin`
 - ✅ **真机 boot**（v0.4）：独立 profile 带 `@deepseek-ai/dsh-web-app` 启动后，shell 里出现 `plugins/??dsh-inkwell/client.js` 预加载；`GET /api/inkwell` 返回真实书的快照（HTTP 200，JSON）；`/api/inkwell/snapshot` 同样 200
@@ -176,7 +176,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 146 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install --legacy-peer-deps`，`npm run check` 确认 150 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「入口形状是个陷阱」四节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/panel/`（面板）+ `client.js`（浏览器半边）+ `src/gate.ts`（门禁）。

@@ -2,7 +2,7 @@
 import { isAbsolute, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/domain/store.ts'
-import { resolveRoot, resolveSessionRoot, sessionCwdOf } from '../src/domain/scope.ts'
+import { resolveRoot, resolveSessionRoot, sessionCwdById, sessionCwdOf } from '../src/domain/scope.ts'
 import { resolveConfig } from '../src/config.ts'
 
 /** Wrap a cwd the way a real tool execution context would carry it. */
@@ -32,6 +32,32 @@ describe('sessionCwdOf', () => {
 
   it('ignores a non-string cwd', () => {
     expect(sessionCwdOf({ agent: { session: { header: { cwd: 42 } } } })).toBeUndefined()
+  })
+})
+
+describe('sessionCwdById', () => {
+  /** A host context whose `sessions` service knows one session. */
+  function hostWithSessions(): unknown {
+    const sessions = new Map([['s-1', { header: { cwd: 'C:/books/one' } }], ['s-2', { header: {} }]])
+    return { get: (name: string) => (name === 'sessions' ? { get: (id: string) => sessions.get(id) } : undefined) }
+  }
+
+  it('reads the cwd of the session the browser named', () => {
+    expect(sessionCwdById(hostWithSessions(), 's-1')).toBe('C:/books/one')
+  })
+
+  it('returns undefined for an unknown session', () => {
+    expect(sessionCwdById(hostWithSessions(), 's-nope')).toBeUndefined()
+  })
+
+  it('returns undefined when the session recorded no cwd', () => {
+    expect(sessionCwdById(hostWithSessions(), 's-2')).toBeUndefined()
+  })
+
+  it('returns undefined when the host exposes no sessions service', () => {
+    expect(sessionCwdById({ get: () => undefined }, 's-1')).toBeUndefined()
+    expect(sessionCwdById({}, 's-1')).toBeUndefined()
+    expect(sessionCwdById(null, 's-1')).toBeUndefined()
   })
 })
 

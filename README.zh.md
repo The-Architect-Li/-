@@ -213,7 +213,7 @@ GET /api/inkwell?session=<id>   # 该会话工作区里的那一本
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，146 个用例，含端到端流程、双工作区隔离与面板投影
+npm test            # vitest，150 个用例，含端到端流程、双工作区隔离与面板投影
 npm run build       # 产出 lib/
 npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部
