@@ -380,6 +380,81 @@ window.__ModuleLoader__.load({
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
       },
+      // The second-level header's trail: 人物设计 › 主角 › 沈砚.
+      crumb: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        fontSize: '10.5px',
+        opacity: 0.5,
+        padding: '0 10px 4px',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+      },
+      editField: { padding: '0 10px 6px' },
+      editLabel: {
+        fontSize: '10.5px',
+        opacity: 0.5,
+        letterSpacing: '0.02em',
+        paddingBottom: '2px',
+      },
+      input: {
+        width: '100%',
+        boxSizing: 'border-box',
+        font: 'inherit',
+        fontSize: '12px',
+        padding: '4px 6px',
+        borderRadius: '6px',
+        color: 'inherit',
+        background: 'transparent',
+        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+      },
+      textarea: {
+        width: '100%',
+        boxSizing: 'border-box',
+        font: 'inherit',
+        fontSize: '12px',
+        lineHeight: '1.7',
+        padding: '6px 8px',
+        borderRadius: '6px',
+        color: 'inherit',
+        background: 'transparent',
+        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+        minHeight: '84px',
+        resize: 'vertical',
+      },
+      // A chapter's prose: a column of paragraphs, not one pre-wrapped blob.
+      prose: {
+        padding: '0 10px 4px',
+        fontSize: '12.5px',
+        lineHeight: '1.75',
+      },
+      proseLine: {
+        margin: '0 0 9px',
+        textIndent: '2em',
+        wordBreak: 'break-word',
+      },
+      blocked: {
+        margin: '2px 10px 8px',
+        padding: '6px 8px',
+        borderRadius: '6px',
+        fontSize: '11px',
+        lineHeight: '1.55',
+        whiteSpace: 'pre-wrap',
+        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+        background: 'color-mix(in srgb, currentColor 6%, transparent)',
+      },
+      editHint: {
+        padding: '0 10px 8px',
+        fontSize: '10.5px',
+        opacity: 0.5,
+      },
+      editBar: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '0 10px 6px',
+      },
       row: {
         display: 'flex',
         alignItems: 'center',
@@ -962,20 +1037,32 @@ window.__ModuleLoader__.load({
     /**
      * The page behind a row: a character's card, a world entry, a chapter.
      *
-     * The shape comes from the host (`/entry` returns `fields` plus `lists`), so
-     * this component never decides what a character is — it only lays the page
-     * out. That is what keeps adding a fourth kind a host-side change.
+     * It is a *page*, not a preview: the whole sidebar is this thing until you
+     * go back, the header names where you are, and the fields can be typed into.
+     * The shape still comes from the host (`/entry` returns `fields`, `lists` and
+     * `edit`), so this component never decides what a character is — it only
+     * lays the page out and posts the fields back.
      *
-     * @param props - session, book root, the row's kind and key, and the way back.
+     * @param props - session, book root, the row's kind and key, the way back,
+     *   and a refresh hook for the tree behind the page.
      * @returns the page.
      */
     function Detail(props) {
-      const { sessionId, root, target, onBack } = props
+      const { sessionId, root, target, onBack, onChanged } = props
       const [state, setState] = useState({ status: 'loading' })
+      const [editing, setEditing] = useState(false)
+      const [draft, setDraft] = useState({})
+      const [saving, setSaving] = useState(false)
+      const [error, setError] = useState('')
+      const [mode, setMode] = useState('preview')
 
       useEffect(() => {
         const controller = new AbortController()
         setState({ status: 'loading' })
+        setEditing(false)
+        setDraft({})
+        setError('')
+        setMode('preview')
         loadEntry(sessionId, root, target.kind, target.key, controller.signal)
           .then((data) => setState({ status: 'ready', data }))
           .catch((failure) => {
@@ -985,11 +1072,74 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [sessionId, root, target.kind, target.key])
 
+      const data = state.status === 'ready' ? state.data : null
+      const inputs = data && data.edit && Array.isArray(data.edit.inputs) ? data.edit.inputs : []
+      const prose = data && data.edit && data.edit.body ? data.edit.body : null
+      const editable = inputs.length > 0 || prose !== null
+
+      /** Start editing from the values the page was loaded with. */
+      function beginEdit() {
+        const seed = {}
+        for (const input of inputs) seed[input.key] = input.value
+        if (prose) seed[prose.key] = prose.value
+        setDraft(seed)
+        setError('')
+        setMode('edit')
+        setEditing(true)
+      }
+
+      /** Drop the edit and go back to what the book says. */
+      function cancelEdit() {
+        setEditing(false)
+        setError('')
+        setMode('preview')
+      }
+
+      /** Post the typed fields; the host re-renders the page from the store. */
+      async function saveEdit() {
+        const fields = {}
+        for (const input of inputs) fields[input.key] = draft[input.key] === undefined ? input.value : String(draft[input.key])
+        if (prose) fields[prose.key] = draft[prose.key] === undefined ? prose.value : String(draft[prose.key])
+        setSaving(true)
+        setError('')
+        try {
+          const params = [`session=${encodeURIComponent(sessionId || '')}`, `root=${encodeURIComponent(root || '')}`]
+          const response = await fetch(`${API_ENTRY}?${params.join('&')}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+            body: JSON.stringify({ kind: target.kind, key: target.key, fields }),
+          })
+          const payload = await response.json().catch(() => ({}))
+          if (!response.ok || payload.ok === false) {
+            throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+          }
+          setState({ status: 'ready', data: payload.data })
+          setEditing(false)
+          setMode('preview')
+          if (onChanged) onChanged()
+        } catch (failure) {
+          setError(String((failure && failure.message) || failure))
+        } finally {
+          setSaving(false)
+        }
+      }
+
       const head = h(
         'div',
         { style: S.head },
         h('button', { type: 'button', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
-        h('span', { style: S.bookTitle }, target.label || ''),
+        h('span', { style: S.bookTitle }, (data && data.title) || target.label || ''),
+        h('span', { style: S.spacer }),
+        data && editable
+          ? editing
+            ? h(
+                'span',
+                { style: { display: 'flex', gap: '4px' } },
+                h('button', { type: 'button', style: S.iconButton, onClick: cancelEdit, disabled: saving }, '取消'),
+                h('button', { type: 'button', style: S.primaryButton, onClick: saveEdit, disabled: saving }, saving ? '保存中…' : '保存'),
+              )
+            : h('button', { type: 'button', style: S.iconButton, onClick: beginEdit }, '编辑')
+          : null,
       )
 
       if (state.status === 'loading') {
@@ -999,33 +1149,140 @@ window.__ModuleLoader__.load({
         return h('div', { style: S.root }, head, h('div', { style: S.error }, state.message || '读取失败'))
       }
 
-      const data = state.data
       const fields = Array.isArray(data.fields) ? data.fields : []
       const lists = Array.isArray(data.lists) ? data.lists : []
+      const crumb = Array.isArray(data.breadcrumb) ? data.breadcrumb.filter((part) => part) : []
+
+      const crumbLine =
+        crumb.length > 0
+          ? h(
+              'div',
+              { style: S.crumb },
+              ...crumb.flatMap((part, index) => [
+                index === 0 ? null : h('span', { key: `c${index}s`, style: { opacity: 0.6 } }, '›'),
+                h('span', { key: `c${index}` }, part),
+              ]).filter(Boolean),
+            )
+          : null
+
+      const heading = h(
+        'div',
+        { style: { padding: '0 10px 6px' } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
+          h('span', { style: { fontSize: '13px', fontWeight: '500' } }, data.title),
+          data.chip ? h('span', { style: S.pill }, data.chip) : null,
+        ),
+        data.subtitle ? h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, data.subtitle) : null,
+      )
+
+      const notice = data.blocked ? h('div', { style: S.blocked }, data.blocked) : null
+
+      // Chapter prose: the page's main body. Preview renders one paragraph per
+      // block; editing swaps in a box, and the count under it is the same
+      // whitespace-stripped count the store records.
+      const bodyValue = prose === null ? '' : String(draft[prose.key] === undefined ? prose.value : draft[prose.key])
+      const paragraphs = (text) =>
+        text.trim() === ''
+          ? [h('div', { key: 'pn', style: S.editHint }, '还没有正文。点“编辑”开始写，或者让聊天窗口派写手。')]
+          : text
+              .split(/\n\s*\n/)
+              .filter((line) => line.trim() !== '')
+              .map((line, index) => h('p', { key: `pp${index}`, style: S.proseLine }, line.trim()))
+
+      const prosePreview =
+        prose === null ? null : [h('div', { key: 'ph', style: S.entryListHead }, prose.label), ...paragraphs(prose.value)]
+
+      const proseEditor =
+        prose === null
+          ? null
+          : h(
+              'div',
+              { key: 'pe', style: S.editField },
+              h('div', { style: S.editLabel }, prose.label),
+              h('textarea', {
+                style: { ...S.textarea, minHeight: '320px' },
+                value: bodyValue,
+                onChange: (event) => setDraft({ ...draft, [prose.key]: event.target.value }),
+                spellCheck: false,
+              }),
+              h(
+                'div',
+                { style: { ...S.editHint, padding: '3px 0 0' } },
+                `${bodyValue.replace(/\s/g, '').length} 字`,
+              ),
+            )
+
+      const proseToggle =
+        prose === null || !editing
+          ? null
+          : h(
+              'div',
+              { key: 'pt', style: S.editBar },
+              h(
+                'button',
+                { type: 'button', style: S.iconButton, onClick: () => setMode(mode === 'edit' ? 'preview' : 'edit') },
+                mode === 'edit' ? '预览正文' : '改正文',
+              ),
+            )
+
+      const editForm = editing
+        ? inputs.map((input, index) =>
+            h(
+              'div',
+              { key: `e${index}`, style: S.editField },
+              h('div', { style: S.editLabel }, input.label),
+              Array.isArray(input.options) && input.options.length > 0
+                ? h(
+                    'select',
+                    {
+                      style: S.select,
+                      value: draft[input.key] === undefined ? input.value : draft[input.key],
+                      onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
+                    },
+                    ...input.options.map((option) =>
+                      h('option', { key: `o${option.value}`, value: option.value }, option.label),
+                    ),
+                  )
+                : input.multiline
+                  ? h('textarea', {
+                      style: S.textarea,
+                      value: draft[input.key] === undefined ? input.value : draft[input.key],
+                      onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
+                      spellCheck: false,
+                    })
+                  : h('input', {
+                      style: S.input,
+                      type: 'text',
+                      value: draft[input.key] === undefined ? input.value : draft[input.key],
+                      onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
+                    }),
+            ),
+          )
+        : []
 
       return h(
         'div',
         { style: S.root },
         head,
-        h(
-          'div',
-          { style: { padding: '4px 10px 6px' } },
-          h(
-            'div',
-            { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-            h('span', { style: { fontSize: '13px', fontWeight: '500' } }, data.title),
-            data.chip ? h('span', { style: S.pill }, data.chip) : null,
-          ),
-          data.subtitle ? h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, data.subtitle) : null,
-        ),
-        ...fields.map((field, index) =>
-          h(
-            'div',
-            { key: `f${index}`, style: S.entryBlock },
-            h('div', { style: S.entryLabel }, field.label),
-            h('div', { style: S.entryValue }, field.value),
-          ),
-        ),
+        crumbLine,
+        heading,
+        notice,
+        error ? h('div', { style: S.error }, error) : null,
+        ...editForm,
+        proseToggle,
+        editing && prose !== null && mode === 'edit' ? proseEditor : prosePreview,
+        ...(editing
+          ? []
+          : fields.map((field, index) =>
+              h(
+                'div',
+                { key: `f${index}`, style: S.entryBlock },
+                h('div', { style: S.entryLabel }, field.label),
+                h('div', { style: S.entryValue }, field.value),
+              ),
+            )),
         ...lists.flatMap((list, index) => [
           h('div', { key: `lh${index}`, style: S.entryListHead }, list.label),
           ...list.items.map((item, itemIndex) =>
@@ -1220,6 +1477,9 @@ window.__ModuleLoader__.load({
           root: root || '',
           target: detail,
           onBack: () => setView('tree'),
+          // A save can change a count (a chapter's words) or a state chip, so the
+          // tree behind the page is re-read rather than left stale.
+          onChanged: refresh,
         })
       }
 

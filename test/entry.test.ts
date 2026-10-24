@@ -173,6 +173,54 @@ describe('chapter page', () => {
   })
 })
 
+describe('editable projection', () => {
+  it('gives a character page a breadcrumb and typed-in inputs', () => {
+    const snapshot = book({ characters: [card('沈砚', 'protagonist', { voice: '短句', goal: '找到妹妹' })] })
+    const page = buildEntry(snapshot, 'character', '沈砚', [], ROOT)
+    expect(page?.breadcrumb).toEqual(['人物设计', '主角'])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['role', 'voice', 'appearance', 'goal', 'secret'])
+    expect(page?.edit.inputs.find((input) => input.key === 'voice')?.value).toBe('短句')
+    // Role is a choice, not free text: the host supplies the options.
+    expect(page?.edit.inputs.find((input) => input.key === 'role')?.options?.length).toBeGreaterThan(0)
+    expect(page?.edit.body).toBeUndefined()
+  })
+
+  it('gives a world page its kind and detail', () => {
+    const snapshot = book({ world: [place('秤房', '势力', '只有一家还开着')] })
+    const page = buildEntry(snapshot, 'world', '秤房', [], ROOT)
+    expect(page?.breadcrumb).toEqual(['世界观', '势力'])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['kind', 'detail'])
+    expect(page?.edit.inputs.find((input) => input.key === 'detail')?.multiline).toBe(true)
+  })
+
+  it('hands the chapter body to the page when the caller passes it', () => {
+    const snapshot = book({
+      volumes: [volume(1, '雾里的货单')],
+      plans: [plan(1, { title: '裂缝' })],
+      chapters: [written(1, '裂缝', 10)],
+    })
+    const page = buildEntry(snapshot, 'chapter', '1', [{ number: 1, rounds: [] }], ROOT, '沈砚发现船底藏着尸体。\n')
+    expect(page?.breadcrumb).toEqual(['正文', '第1卷'])
+    expect(page?.edit.body?.key).toBe('text')
+    expect(page?.edit.body?.value).toBe('沈砚发现船底藏着尸体。\n')
+    expect(page?.edit.inputs[0]?.value).toBe('裂缝')
+  })
+
+  it('prefers the written chapter title over the outline title', () => {
+    const snapshot = book({ plans: [plan(1, { title: '裂缝' })], chapters: [written(1, '改过的标题', 10)] })
+    const page = buildEntry(snapshot, 'chapter', '1', [], ROOT)
+    expect(page?.title).toBe('第1章 改过的标题')
+    expect(page?.edit.inputs[0]?.value).toBe('改过的标题')
+  })
+
+  it('leaves the body empty for a chapter nobody has written yet', () => {
+    const snapshot = book({ volumes: [volume(1, '雾里的货单')], plans: [plan(2, { title: '过秤' })] })
+    const page = buildEntry(snapshot, 'chapter', '2', [], ROOT)
+    expect(page?.edit.body?.value).toBe('')
+    expect(page?.breadcrumb).toEqual(['正文', '第1卷'])
+  })
+})
+
 describe('buildEntry', () => {
   it('treats an empty key as gone rather than as a match', () => {
     expect(buildEntry(book({ characters: [card('', 'minor')] }), 'character', '', [], ROOT)).toBeUndefined()

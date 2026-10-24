@@ -628,6 +628,9 @@ describe('panel entry route', () => {
     const root = join(space, '.novel')
     const store = new ProjectStore(root)
     await store.init('雾港', 120_000)
+    // The book has an approved outline, so it is a drafting book: every chapter
+    // write below has to clear the same phase gate the tools go through.
+    await store.writeProject({ ...(await store.readProject()), phase: 'drafting' })
     await store.upsertCharacter({
       name: '沈砚',
       role: 'protagonist',
@@ -714,12 +717,145 @@ describe('panel entry route', () => {
     expect(missing.status).toBe(400)
   })
 
-  it('takes only GET', async () => {
+  it('takes only GET and POST', async () => {
     const { base } = await serveBook()
     const response = await fetch(`${base}${PANEL_PREFIX}/entry?kind=character&key=x`, {
-      method: 'POST',
+      method: 'PUT',
       headers: { [PANEL_HEADER]: PANEL_HEADER_VALUE },
     })
     expect(response.status).toBe(405)
   })
+
+  it('writes a character back through the same store the tools use', async () => {
+    const { base, root } = await serveBook()
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'character',
+      key: '沈砚',
+      fields: { voice: '长句，爱绕弯', goal: '把货单烧掉', role: 'antagonist' },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { ok: boolean; data: { chip: string; fields: Array<{ label: string; value: string }> } }
+    expect(body.ok).toBe(true)
+    expect(body.data.chip).toBe('反派')
+    expect(body.data.fields.find((field) => field.label === '说话方式')?.value).toBe('长句，爱绕弯')
+    const stored = await new ProjectStore(root).characters()
+    expect(stored[0]?.voice).toBe('长句，爱绕弯')
+    expect(stored[0]?.role).toBe('antagonist')
+    expect(stored[0]?.name).toBe('沈砚')
+  })
+
+  it('writes a world entry', async () => {
+    const { base, root } = await serveBook()
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'world',
+      key: '雾港',
+      fields: { kind: '势力', detail: '整座港口只有一家还开着的秤房' },
+    })
+    expect(response.status).toBe(200)
+    const stored = await new ProjectStore(root).world()
+    expect(stored[0]?.kind).toBe('势力')
+    expect(stored[0]?.detail).toBe('整座港口只有一家还开着的秤房')
+  })
+
+  it('writes a chapter body and re-derives its word count', async () => {
+    const { base, root } = await serveBook()
+    const text = '沈砚把货单折好塞回怀里，灯焰歪了一下。'
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'chapter',
+      key: '1',
+      fields: { title: '改过的标题', text },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { title: string; edit: { body: { value: string } } } }
+    expect(body.data.title).toBe('第1章 改过的标题')
+    // A chapter file keeps one trailing newline; the page shows the file as it is.
+    expect(body.data.edit.body.value.trim()).toBe(text)
+    const stored = await new ProjectStore(root).chapter(1)
+    expect(stored?.text.trim()).toBe(text)
+    expect(stored?.words).toBe(text.replace(/\s/g, '').length)
+  })
+
+  it('refuses a chapter body that breaks the chapter outline contract', async () => {
+    const { base, root } = await serveBook()
+    const store = new ProjectStore(root)
+    const before = await store.chapter(1)
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'chapter',
+      key: '1',
+      fields: { text: '风很大。灯灭了。' },
+    })
+    expect(response.status).toBe(409)
+    const body = (await response.json()) as { ok: boolean; error: { message: string } }
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toContain('沈砚')
+    const after = await store.chapter(1)
+    expect(after?.text).toBe(before?.text)
+  })
+
+  it('refuses a chapter whose plan is not approved yet', async () => {
+    const { base, root } = await serveBook()
+    const store = new ProjectStore(root)
+    await store.upsertPlan({
+      number: 2,
+      volume: 1,
+      title: '过秤',
+      pov: '沈砚',
+      characters: ['沈砚'],
+      beats: ['过秤', '发现缺口'],
+      hooks: ['秤房的账'],
+      approved: false,
+    })
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'chapter',
+      key: '2',
+      fields: { text: '沈砚走进秤房。' },
+    })
+    expect(response.status).toBe(409)
+    const body = (await response.json()) as { error: { message: string } }
+    expect(body.error.message).toContain('批准')
+    expect(await store.chapter(2)).toBeUndefined()
+  })
+
+  it('rejects an unknown role and an empty body', async () => {
+    const { base, root } = await serveBook()
+    const badRole = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'character',
+      key: '沈砚',
+      fields: { role: 'narrator' },
+    })
+    expect(badRole.status).toBe(400)
+    const empty = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'chapter',
+      key: '1',
+      fields: { text: '   ' },
+    })
+    expect(empty.status).toBe(400)
+  })
+
+  it('refuses an edit without the plugin header', async () => {
+    const { base, root } = await serveBook()
+    const response = await fetch(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'character', key: '沈砚', fields: { voice: 'x' } }),
+    })
+    expect(response.status).toBe(403)
+    const stored = await new ProjectStore(root).characters()
+    expect(stored[0]?.voice).toBe('短句，问句多')
+  })
+
+  /**
+   * Post a JSON body the way the panel does, header included.
+   *
+   * @param url - the full route URL.
+   * @param body - the JSON payload.
+   * @returns the response, unread.
+   */
+  function post(url: string, body: unknown): Promise<Response> {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: JSON.stringify(body),
+    })
+  }
 })

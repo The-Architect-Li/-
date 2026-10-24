@@ -2,16 +2,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkContract, rank } from '../domain/contract.ts'
+import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/save.ts'
 import { scanChapter } from '../domain/scan.ts'
 import { countChars, splitParagraphs } from '../domain/text.ts'
 import type { ChapterDraft, Finding } from '../domain/types.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
-
-function deriveSummary(text: string): string {
-  const paragraphs = splitParagraphs(text)
-  const last = paragraphs[paragraphs.length - 1] ?? ''
-  return last.length > 80 ? `${last.slice(0, 80)}…` : last
-}
 
 /**
  * Register the chapter tool.
@@ -156,29 +151,28 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       }
 
       // write: contract errors block the save so the manuscript stays clean.
-      const blocking = contract.filter((finding) => finding.severity === 'error')
-      if (blocking.length > 0) {
+      let saved: { draft: ChapterDraft; findings: Finding[] }
+      try {
+        saved = await saveChapterBody(store, deps.config, {
+          number,
+          text,
+          title: args.title,
+          summary: args.summary,
+        })
+      } catch (error) {
+        if (!(error instanceof ChapterBlockedError)) throw error
         throw new Error(
           [
             `第${number}章未通过章纲合同，没有保存：`,
-            formatFindings(blocking),
+            formatFindings(error.blockers),
             '',
             '两条路：改正文让这些角色出场，或者改章纲（novel_outline action="add_chapter" 会重置批准，需要重新 approve_chapter）。',
           ].join('\n'),
         )
       }
 
-      const previous = await store.allChapters()
-      const draft: ChapterDraft = {
-        number,
-        title: args.title?.trim() || plan.title,
-        words: countChars(text),
-        summary: args.summary?.trim() || deriveSummary(text),
-        writtenAt: new Date().toISOString(),
-        text,
-      }
-      const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, deps.config)])
-      await store.writeChapter(draft)
+      const draft = saved.draft
+      const findings = saved.findings
       const counts = tally(findings)
 
       return {

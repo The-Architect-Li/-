@@ -1,7 +1,7 @@
 /**
  * The workshop panel's host side.
  *
- * Three routes, all under one prefix:
+ * Every route lives under one prefix:
  *
  * - `GET /api/inkwell` — the book this session is looking at, projected for the
  *   panel. `?root=<abs>` pins a specific book (the one the create flow just
@@ -9,6 +9,10 @@
  * - `GET /api/inkwell/dirs?path=<abs>` — one directory level, for the create
  *   flow's picker.
  * - `POST /api/inkwell/init` — create a book in a chosen directory.
+ * - `GET /api/inkwell/entry?kind=&key=` — the page behind one row.
+ * - `POST /api/inkwell/entry` — save an edit to a character, world entry, or
+ *   chapter body.
+ * - `GET|POST /api/inkwell/roles` — the agent team, and each role's model.
  *
  * Why an HTTP route instead of a Remote namespace: the Remote carrier pairs a
  * host face with a client face through the bundle manifest, which is more
@@ -19,20 +23,26 @@
  * resolves that session's `cwd`, so a panel in workspace A never reports
  * workspace B's book once `perWorkspace` is on.
  *
- * What this panel may write: exactly one thing — a new project directory. The
- * creation goes through the same `ProjectStore.init` the `novel_project` tool
- * uses, so the only difference from typing `novel_project action="init"` in the
- * conversation is who picked the directory. Everything that changes a *book*
- * (chapters, canon, ledger) stays behind the tools and their gate; the panel
- * has no route for any of it.
+ * What this panel may write: three doors — a new project directory, a role's
+ * model route, and the body of one character/setting/chapter. None of them is a
+ * way around a rule: creation is `ProjectStore.init` (the gate allows `init`
+ * unconditionally), the chapter body runs the same `gateToolCall` and
+ * `saveChapterBody` the conversation does, and canon edits are what `novel_canon`
+ * writes. What the panel still cannot do is anything the tools can only do with
+ * judgement: advance a phase, approve an outline, commit a draft, or record a
+ * ledger fact. Those stay conversation-only on purpose — each one is a decision
+ * someone should have to argue for in words.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, resolve } from 'node:path'
+import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
-import type { InkwellConfig } from '../domain/types.ts'
+import type { CharacterCard, Finding, InkwellConfig } from '../domain/types.ts'
+import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
+import { readChapterPatch, readCharacterPatch, readWorldPatch } from './edit.ts'
 import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 import type { LlmCatalogSource } from './ports.ts'
@@ -50,6 +60,15 @@ export const PANEL_HEADER_VALUE = 'inkwell'
 
 /** Largest request body the create route will read. */
 const MAX_BODY_BYTES = 16 * 1024
+
+/**
+ * Largest body the edit route will read.
+ *
+ * A chapter body is the biggest legitimate payload: {@link MAX_CHAPTER_CHARS}
+ * characters of CJK is roughly 600 KB on the wire, so this leaves room and still
+ * refuses an upload that is clearly not a chapter.
+ */
+const MAX_WRITE_BYTES = 1024 * 1024
 
 /** What the host needs in order to answer one request. */
 export interface PanelDeps {
@@ -175,16 +194,17 @@ export async function readPanel(
  * Read a request body as JSON.
  *
  * @param req - the request to read.
+ * @param limit - largest body to accept, in bytes.
  * @returns the parsed body; `{}` when it is empty.
  * @throws {PanelInputError} for an oversized or malformed body.
  */
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(req: IncomingMessage, limit: number = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.length
-    if (size > MAX_BODY_BYTES) throw new PanelInputError('请求体太大。', 413)
+    if (size > limit) throw new PanelInputError('请求体太大。', 413)
     chunks.push(buffer)
   }
   const text = Buffer.concat(chunks).toString('utf8').trim()
@@ -424,14 +444,150 @@ export async function readEntry(
       kind === 'chapter' && Number.isInteger(number) && number > 0
         ? [{ number, rounds: await store.draftsOf(number) }]
         : []
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root)
+    // The prose is the chapter page's main body, so it rides along with the page
+    // rather than costing the browser a second request to show a preview.
+    const prose =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? (await store.chapter(number))?.text
+        : undefined
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose)
     if (entry === undefined) {
       return {
         status: 404,
         body: { ok: false, error: { message: `找不到 ${kind}「${key}」。它可能刚被改名或删掉，刷新一下。` } },
       }
     }
+    if (kind === 'chapter') {
+      // Ask the gate now, not after the writer typed: the page can then explain
+      // why the body is not editable yet, using the same sentence the model gets.
+      const reason = await gateToolCall('novel_chapter', { action: 'write', number }, store, deps.config)
+      if (reason !== null) entry.blocked = reason
+    }
     return { status: 200, body: { ok: true, data: entry } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * Render blocking findings the way the tools do, so the panel and the
+ * conversation say the same sentence about the same refusal.
+ *
+ * @param findings - contract errors.
+ * @returns one line per finding.
+ */
+function formatBlockers(findings: readonly Finding[]): string {
+  return findings.map((finding) => `✗ [${finding.code}] ${finding.message}`).join('\n')
+}
+
+/**
+ * Save an edit to one character, world entry, or chapter body.
+ *
+ * This is the panel's third and last write door, and it is a narrower handle on
+ * doors that already exist: a canon edit is what `novel_canon` writes, a chapter
+ * body goes through {@link saveChapterBody} — the exact code `novel_chapter
+ * action="write"` runs — and the phase/outline/approval checks come from
+ * {@link gateToolCall}, not from a second copy of the rules. So the answer to
+ * "may the panel skip the gate?" is structurally no: it calls it.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, when known.
+ * @param body - `{ kind, key, fields }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the refreshed page for that entry, or the reason it was refused.
+ */
+export async function writeEntry(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const kind = body.kind
+    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter') {
+      throw new PanelInputError(`未知的条目类型 ${String(kind)}，只支持 character／world／chapter。`)
+    }
+    const key = typeof body.key === 'string' ? body.key.trim() : ''
+    if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名或章号。')
+    const fields = body.fields
+    if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
+      throw new PanelInputError('fields 必须是一个对象。')
+    }
+    const patch = fields as Record<string, unknown>
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) {
+      throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    }
+
+    if (kind === 'character') {
+      const edit = readCharacterPatch(key, patch)
+      const existing = (await store.characters()).find((card) => card.name === key)
+      if (existing === undefined) {
+        throw new PanelInputError(`找不到角色「${key}」。它可能刚被改名或删掉，刷新一下。`, 404)
+      }
+      const card: CharacterCard = {
+        name: key,
+        role: edit.role ?? existing.role,
+        voice: edit.voice ?? existing.voice,
+        appearance: edit.appearance ?? existing.appearance,
+        goal: edit.goal ?? existing.goal,
+        secret: edit.secret ?? existing.secret,
+        updatedAt: new Date().toISOString(),
+      }
+      await store.upsertCharacter(card)
+    } else if (kind === 'world') {
+      const edit = readWorldPatch(key, patch)
+      const existing = (await store.world()).find((entry) => entry.name === key)
+      if (existing === undefined) {
+        throw new PanelInputError(`找不到设定「${key}」。它可能刚被改名或删掉，刷新一下。`, 404)
+      }
+      const detail = edit.detail ?? existing.detail
+      if (detail === '') throw new PanelInputError('设定内容不能为空。')
+      await store.upsertWorld({
+        name: key,
+        kind: edit.kind || existing.kind,
+        detail,
+        updatedAt: new Date().toISOString(),
+      })
+    } else {
+      const edit = readChapterPatch(key, patch)
+      // Same refusal the model gets in the conversation, before anything is written.
+      const reason = await gateToolCall(
+        'novel_chapter',
+        { action: 'write', number: edit.number },
+        store,
+        deps.config,
+      )
+      if (reason !== null) throw new PanelInputError(reason, 409)
+      try {
+        await saveChapterBody(store, deps.config, edit)
+      } catch (error) {
+        if (error instanceof ChapterBlockedError) {
+          throw new PanelInputError(
+            `第${edit.number}章未通过章纲合同，没有保存：\n${formatBlockers(error.blockers)}\n\n改正文让这些角色出场，或者去改章纲（改完章纲要重新批准）。`,
+            409,
+          )
+        }
+        throw error
+      }
+    }
+
+    const snapshot = await store.snapshot()
+    const number = Number(key)
+    const drafts: ChapterDrafts[] =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? [{ number, rounds: await store.draftsOf(number) }]
+        : []
+    const prose =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? (await store.chapter(number))?.text
+        : undefined
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose)
+    return { status: 200, body: { ok: true, data: entry ?? null } }
   } catch (error) {
     if (error instanceof PanelInputError) {
       return { status: error.status, body: { ok: false, error: { message: error.message } } }
@@ -518,20 +674,24 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
       }
 
       if (path === '/entry') {
-        if (!isRead) {
-          send(res, { status: 405, body: { ok: false, error: { message: '/entry 只读' } } })
+        const sessionId = url.searchParams.get('session') ?? undefined
+        const root = url.searchParams.get('root') ?? undefined
+        if (isRead) {
+          send(
+            res,
+            await readEntry(
+              deps,
+              sessionId,
+              url.searchParams.get('kind') ?? undefined,
+              url.searchParams.get('key') ?? undefined,
+              root,
+            ),
+          )
           return
         }
-        send(
-          res,
-          await readEntry(
-            deps,
-            url.searchParams.get('session') ?? undefined,
-            url.searchParams.get('kind') ?? undefined,
-            url.searchParams.get('key') ?? undefined,
-            url.searchParams.get('root') ?? undefined,
-          ),
-        )
+        // A chapter body is the largest thing this route accepts, so the cap is
+        // the chapter cap rather than the create-flow's small one.
+        send(res, await writeEntry(deps, sessionId, await readJson(req, MAX_WRITE_BYTES), root))
         return
       }
 
