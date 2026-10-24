@@ -1,0 +1,180 @@
+/**
+ * The page behind a tree row.
+ *
+ * A reader who clicks a row expects that thing's card, not a highlight, so the
+ * projection has to survive three shapes: a complete entry, a half-written one
+ * (fields still empty), and one that has been deleted since the tree was drawn.
+ * The last case must be `undefined` — a blank page is worse than "刷新一下".
+ */
+import { describe, expect, it } from 'vitest'
+import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, LedgerEntry, Snapshot, VolumeOutline, WorldEntry } from '../src/domain/types.ts'
+import { buildEntry } from '../src/panel/entry.ts'
+
+const PREMISE = '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4)
+const ROOT = 'C:/books/雾港/.novel'
+
+/** A book with one of everything, so a page can be read end to end. */
+function book(overrides: Partial<Snapshot> = {}): Snapshot {
+  return {
+    project: {
+      formatVersion: 1,
+      title: '雾港',
+      phase: 'drafting',
+      premise: PREMISE,
+      targetWords: 200_000,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+    characters: [],
+    world: [],
+    volumes: [],
+    plans: [],
+    ledger: [],
+    chapters: [],
+    ...overrides,
+  }
+}
+
+/** One character card. */
+function card(name: string, role: CharacterCard['role'], extra: Partial<CharacterCard> = {}): CharacterCard {
+  return { name, role, voice: '', appearance: '', goal: '', secret: '', updatedAt: '2026-01-01T00:00:00.000Z', ...extra }
+}
+
+/** One world entry. */
+function place(name: string, kind = '地点', detail = ''): WorldEntry {
+  return { name, kind, detail, updatedAt: '2026-01-01T00:00:00.000Z' }
+}
+
+/** One chapter outline. */
+function plan(number: number, extra: Partial<ChapterPlan> = {}): ChapterPlan {
+  return { number, volume: 1, title: '', pov: '', characters: [], beats: [], hooks: [], approved: true, ...extra }
+}
+
+/** One committed chapter. */
+function written(number: number, title: string, words: number): ChapterMeta {
+  return { number, title, words, summary: '', writtenAt: '2026-01-05T00:00:00.000Z' }
+}
+
+/** One volume. */
+function volume(number: number, title: string): VolumeOutline {
+  return { number, title, summary: '', approved: true }
+}
+
+/** One ledger fact. */
+function fact(subject: string, predicate: string, value: string, chapter: number, supersedes: string | null = null): LedgerEntry {
+  return { id: `f-${subject}-${predicate}`, subject, predicate, value, chapter, quote: '原文', supersedes, createdAt: '2026-01-01T00:00:00.000Z' }
+}
+
+/** One draft round. */
+function round(errors: number, words = 1200): DraftRound {
+  return {
+    number: 1,
+    round: 1,
+    text: '正文',
+    words,
+    summary: '摘要',
+    autoFindings: Array.from({ length: errors }, (_unused, index) => ({
+      severity: 'error' as const,
+      code: `test/${index}`,
+      message: `问题${index}`,
+      evidence: '',
+    })),
+    writtenAt: '2026-01-03T00:00:00.000Z',
+  }
+}
+
+describe('character page', () => {
+  it('shows the card as labelled fields', () => {
+    const snapshot = book({
+      characters: [card('沈砚', 'protagonist', { voice: '短句，问句多', appearance: '手上有绳茧', goal: '找到妹妹', secret: '他签过那张货单' })],
+      plans: [plan(1, { title: '裂缝', characters: ['沈砚'] }), plan(2, { title: '过秤', characters: ['沈砚'] })],
+      ledger: [fact('沈砚', '身份', '船工', 1), fact('沈砚', '旧身份', '替人销赃', 0, 'f-x')],
+    })
+    const page = buildEntry(snapshot, 'character', '沈砚', [], ROOT)
+    expect(page).toBeDefined()
+    if (page === undefined) return
+    expect(page.title).toBe('沈砚')
+    expect(page.subtitle).toBe('主角 · 找到妹妹')
+    expect(page.chip).toBe('主角')
+    expect(page.fields.map((field) => field.label)).toEqual(['说话方式', '外貌', '目标', '秘密', '最近改动'])
+    expect(page.fields[0]?.value).toBe('短句，问句多')
+    // Only live facts belong on the card: a superseded one is history.
+    const facts = page.lists.find((list) => list.label === '账本里的事实')
+    expect(facts?.items).toEqual(['身份＝船工（第1章）'])
+    const appearances = page.lists.find((list) => list.label === '出场章节')
+    expect(appearances?.items).toEqual(['第1章 裂缝', '第2章 过秤'])
+    expect(page.root).toBe(ROOT)
+  })
+
+  it('says so instead of inventing text for an empty card', () => {
+    const snapshot = book({ characters: [card('阿鸢', 'supporting')] })
+    const page = buildEntry(snapshot, 'character', '阿鸢', [], ROOT)
+    expect(page?.subtitle).toBe('配角')
+    expect(page?.fields[0]?.value).toBe('（还没写）')
+    // Nothing to list means no empty heading.
+    expect(page?.lists).toEqual([])
+  })
+
+  it('returns undefined for a name the book no longer has', () => {
+    expect(buildEntry(book({ characters: [card('沈砚', 'protagonist')] }), 'character', '闻莺', [], ROOT)).toBeUndefined()
+  })
+})
+
+describe('world page', () => {
+  it('shows the entry and the facts recorded about it', () => {
+    const snapshot = book({
+      world: [place('雾港', '地点', '终年不散的雾，靠铜哨领航')],
+      ledger: [fact('雾港', '规矩', '入港必须买引水', 3)],
+    })
+    const page = buildEntry(snapshot, 'world', '雾港', [], ROOT)
+    expect(page?.subtitle).toBe('地点')
+    expect(page?.chip).toBe('地点')
+    expect(page?.fields.find((field) => field.label === '细节')?.value).toBe('终年不散的雾，靠铜哨领航')
+    expect(page?.lists[0]?.items).toEqual(['规矩＝入港必须买引水（第3章）'])
+  })
+
+  it('falls back to 设定 when the entry has no kind', () => {
+    const snapshot = book({ world: [{ name: '铜哨', kind: '', detail: '', updatedAt: '2026-01-01T00:00:00.000Z' }] })
+    const page = buildEntry(snapshot, 'world', '铜哨', [], ROOT)
+    expect(page?.subtitle).toBe('设定')
+    expect(page?.chip).toBeUndefined()
+  })
+})
+
+describe('chapter page', () => {
+  it('describes a committed chapter with its outline', () => {
+    const snapshot = book({
+      volumes: [volume(1, '雾里的货单')],
+      plans: [plan(1, { title: '裂缝', pov: '沈砚', characters: ['沈砚', '阿鸢'], beats: ['发现尸体', '改航向'], hooks: ['岸上有人等他'] })],
+      chapters: [written(1, '裂缝', 2140)],
+    })
+    const page = buildEntry(snapshot, 'chapter', '1', [{ number: 1, rounds: [] }], ROOT)
+    expect(page?.title).toBe('第1章 裂缝')
+    expect(page?.chip).toBe('已完成')
+    expect(page?.subtitle).toBe('第1卷 雾里的货单 · 2140 字')
+    expect(page?.fields.find((field) => field.label === '字数')?.value).toBe('2140 字')
+    expect(page?.lists.map((list) => list.label)).toEqual(['出场人物', '必写节拍', '章末钩子'])
+  })
+
+  it('counts drafts when nothing is committed yet', () => {
+    const snapshot = book({ plans: [plan(2, { title: '过秤', approved: false })] })
+    const page = buildEntry(snapshot, 'chapter', '2', [{ number: 2, rounds: [round(2, 900)] }], ROOT)
+    expect(page?.chip).toBe('1 稿')
+    expect(page?.fields.find((field) => field.label === '章纲')?.value).toBe('待批准')
+    expect(page?.fields.find((field) => field.label === '字数')?.value).toBe('900 字（草稿）')
+    // The newest draft's findings are the reason the writer is on round two.
+    expect(page?.lists.find((list) => list.label === '最新一稿的自动发现')?.items).toEqual(['✗ 问题0', '✗ 问题1'])
+  })
+
+  it('returns undefined for a chapter that never existed', () => {
+    const snapshot = book({ plans: [plan(1)], chapters: [written(1, '裂缝', 100)] })
+    expect(buildEntry(snapshot, 'chapter', '9', [], ROOT)).toBeUndefined()
+    expect(buildEntry(snapshot, 'chapter', '零', [], ROOT)).toBeUndefined()
+  })
+})
+
+describe('buildEntry', () => {
+  it('treats an empty key as gone rather than as a match', () => {
+    expect(buildEntry(book({ characters: [card('', 'minor')] }), 'character', '', [], ROOT)).toBeUndefined()
+  })
+})

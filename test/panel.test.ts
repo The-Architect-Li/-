@@ -598,3 +598,128 @@ describe('panel create route', () => {
     expect(response.status).toBe(405)
   })
 })
+
+describe('panel entry route', () => {
+  let server: Server | undefined
+  let harness: Harness | undefined
+  let space: string | undefined
+
+  afterEach(async () => {
+    if (server) {
+      const open = server
+      server = undefined
+      await new Promise<void>((done) => open.close(() => done()))
+    }
+    if (harness) await harness.cleanup()
+    harness = undefined
+    if (space) await rm(space, { recursive: true, force: true })
+    space = undefined
+  })
+
+  /**
+   * Serve a book that already has one character, one place, and one chapter.
+   *
+   * The route is exercised against a real store rather than a mocked snapshot:
+   * the whole point of `/entry` is that it reads the same files the tools do.
+   */
+  async function serveBook(): Promise<{ base: string; root: string }> {
+    harness = await createHarness({ root: '.novel' })
+    space = await mkdtemp(join(tmpdir(), 'inkwell-entry-'))
+    const root = join(space, '.novel')
+    const store = new ProjectStore(root)
+    await store.init('雾港', 120_000)
+    await store.upsertCharacter({
+      name: '沈砚',
+      role: 'protagonist',
+      voice: '短句，问句多',
+      appearance: '',
+      goal: '找到妹妹',
+      secret: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    await store.upsertWorld({ name: '雾港', kind: '地点', detail: '终年不散的雾', updatedAt: '2026-01-01T00:00:00.000Z' })
+    await store.upsertVolume({ number: 1, title: '雾里的货单', summary: '', approved: true })
+    await store.upsertPlan({
+      number: 1,
+      volume: 1,
+      title: '裂缝',
+      pov: '沈砚',
+      characters: ['沈砚'],
+      beats: ['发现尸体', '改航向'],
+      hooks: ['岸上有人等他'],
+      approved: true,
+    })
+    const text = '沈砚发现船底藏着尸体。'.repeat(80)
+    await store.writeChapter({
+      number: 1,
+      title: '裂缝',
+      text,
+      words: text.length,
+      summary: '第一章',
+      writtenAt: '2026-01-05T00:00:00.000Z',
+    })
+    const route = harness.routes.filter((entry) => entry.path === PANEL_PREFIX)[0]
+    if (!route) throw new Error('the plugin registered no panel route')
+    const created = createServer((req, res) => void route.handler(req, res))
+    server = created
+    await new Promise<void>((done) => created.listen(0, '127.0.0.1', () => done()))
+    const address = created.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    return { base: `http://127.0.0.1:${address.port}`, root }
+  }
+
+  it('serves a character page from the book on disk', async () => {
+    const { base, root } = await serveBook()
+    const response = await fetch(
+      `${base}${PANEL_PREFIX}/entry?kind=character&key=${encodeURIComponent('沈砚')}&root=${encodeURIComponent(root)}`,
+    )
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      ok: boolean
+      data: { title: string; subtitle: string; fields: Array<{ label: string; value: string }>; lists: Array<{ label: string; items: string[] }> }
+    }
+    expect(body.ok).toBe(true)
+    expect(body.data.title).toBe('沈砚')
+    expect(body.data.subtitle).toBe('主角 · 找到妹妹')
+    expect(body.data.fields.find((field) => field.label === '说话方式')?.value).toBe('短句，问句多')
+    expect(body.data.lists.find((list) => list.label === '出场章节')?.items).toEqual(['第1章 裂缝'])
+  })
+
+  it('serves a chapter page, drafts included', async () => {
+    const { base, root } = await serveBook()
+    const response = await fetch(`${base}${PANEL_PREFIX}/entry?kind=chapter&key=1&root=${encodeURIComponent(root)}`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { title: string; chip: string; lists: Array<{ label: string; items: string[] }> } }
+    expect(body.data.title).toBe('第1章 裂缝')
+    expect(body.data.chip).toBe('已完成')
+    expect(body.data.lists.find((list) => list.label === '必写节拍')?.items).toEqual(['发现尸体', '改航向'])
+  })
+
+  it('answers 404 for a row the book no longer has', async () => {
+    const { base, root } = await serveBook()
+    const response = await fetch(
+      `${base}${PANEL_PREFIX}/entry?kind=character&key=${encodeURIComponent('闻莺')}&root=${encodeURIComponent(root)}`,
+    )
+    expect(response.status).toBe(404)
+    const body = (await response.json()) as { ok: boolean; error: { message: string } }
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toContain('刷新')
+  })
+
+  it('rejects an unknown kind and a missing key with 400', async () => {
+    const { base } = await serveBook()
+    const unknown = await fetch(`${base}${PANEL_PREFIX}/entry?kind=creature&key=x`)
+    expect(unknown.status).toBe(400)
+    const missing = await fetch(`${base}${PANEL_PREFIX}/entry?kind=character`)
+    expect(missing.status).toBe(400)
+  })
+
+  it('takes only GET', async () => {
+    const { base } = await serveBook()
+    const response = await fetch(`${base}${PANEL_PREFIX}/entry?kind=character&key=x`, {
+      method: 'POST',
+      headers: { [PANEL_HEADER]: PANEL_HEADER_VALUE },
+    })
+    expect(response.status).toBe(405)
+  })
+})

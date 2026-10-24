@@ -52,6 +52,7 @@ window.__ModuleLoader__.load({
     const API_DIRS = '/api/inkwell/dirs'
     const API_INIT = '/api/inkwell/init'
     const API_ROLES = '/api/inkwell/roles'
+    const API_ENTRY = '/api/inkwell/entry'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -164,6 +165,31 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ dir, title, targetWords }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Read the page behind one tree row.
+     *
+     * @param sessionId - the calling session.
+     * @param root - an explicit book directory, when the panel pinned one.
+     * @param kind - `character`, `world`, or `chapter`.
+     * @param key - the name, or the chapter number as a string.
+     * @param signal - aborts the request when the view unmounts.
+     * @returns the entry payload.
+     */
+    async function loadEntry(sessionId, root, kind, key, signal) {
+      const params = [`kind=${encodeURIComponent(kind)}`, `key=${encodeURIComponent(key)}`]
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_ENTRY}?${params.join('&')}`, {
+        headers: { accept: 'application/json' },
+        signal,
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -325,6 +351,35 @@ window.__ModuleLoader__.load({
         fontWeight: '500',
         letterSpacing: '0.01em',
       },
+      // The page behind a row: label above value, so long prose wraps cleanly
+      // instead of being squeezed into a two-column table.
+      entryBlock: {
+        padding: '2px 10px 0',
+      },
+      entryLabel: {
+        fontSize: '10.5px',
+        opacity: '0.5',
+        letterSpacing: '0.02em',
+      },
+      entryValue: {
+        fontSize: '12px',
+        lineHeight: '1.55',
+        paddingBottom: '7px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      },
+      entryListHead: {
+        fontSize: '10.5px',
+        opacity: '0.5',
+        padding: '4px 10px 1px',
+      },
+      entryItem: {
+        fontSize: '12px',
+        lineHeight: '1.5',
+        padding: '0 10px 2px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      },
       row: {
         display: 'flex',
         alignItems: 'center',
@@ -468,14 +523,14 @@ window.__ModuleLoader__.load({
         paddingLeft: `${8 + depth * 14}px`,
         ...(isSelected ? S.rowSelected : {}),
       }
-      const glyph = hasChildren ? (open ? '▾' : '▸') : '▫'
+      const glyph = hasChildren ? (open ? '▾' : '▸') : row.kind ? '◦' : '▫'
       const head = h(
         'div',
         {
           key: 'row',
           style,
           title: row.aside ? `${row.label} · ${row.aside}` : row.label,
-          onClick: () => onSelect(isSelected ? null : row.id),
+          onClick: () => onSelect(row),
         },
         h('span', { style: S.glyph, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
@@ -905,6 +960,84 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The page behind a row: a character's card, a world entry, a chapter.
+     *
+     * The shape comes from the host (`/entry` returns `fields` plus `lists`), so
+     * this component never decides what a character is — it only lays the page
+     * out. That is what keeps adding a fourth kind a host-side change.
+     *
+     * @param props - session, book root, the row's kind and key, and the way back.
+     * @returns the page.
+     */
+    function Detail(props) {
+      const { sessionId, root, target, onBack } = props
+      const [state, setState] = useState({ status: 'loading' })
+
+      useEffect(() => {
+        const controller = new AbortController()
+        setState({ status: 'loading' })
+        loadEntry(sessionId, root, target.kind, target.key, controller.signal)
+          .then((data) => setState({ status: 'ready', data }))
+          .catch((failure) => {
+            if (failure && failure.name === 'AbortError') return
+            setState({ status: 'error', message: String((failure && failure.message) || failure) })
+          })
+        return () => controller.abort()
+      }, [sessionId, root, target.kind, target.key])
+
+      const head = h(
+        'div',
+        { style: S.head },
+        h('button', { type: 'button', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
+        h('span', { style: S.bookTitle }, target.label || ''),
+      )
+
+      if (state.status === 'loading') {
+        return h('div', { style: S.root }, head, h('div', { style: S.note }, '正在读取…'))
+      }
+      if (state.status === 'error') {
+        return h('div', { style: S.root }, head, h('div', { style: S.error }, state.message || '读取失败'))
+      }
+
+      const data = state.data
+      const fields = Array.isArray(data.fields) ? data.fields : []
+      const lists = Array.isArray(data.lists) ? data.lists : []
+
+      return h(
+        'div',
+        { style: S.root },
+        head,
+        h(
+          'div',
+          { style: { padding: '4px 10px 6px' } },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
+            h('span', { style: { fontSize: '13px', fontWeight: '500' } }, data.title),
+            data.chip ? h('span', { style: S.pill }, data.chip) : null,
+          ),
+          data.subtitle ? h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, data.subtitle) : null,
+        ),
+        ...fields.map((field, index) =>
+          h(
+            'div',
+            { key: `f${index}`, style: S.entryBlock },
+            h('div', { style: S.entryLabel }, field.label),
+            h('div', { style: S.entryValue }, field.value),
+          ),
+        ),
+        ...lists.flatMap((list, index) => [
+          h('div', { key: `lh${index}`, style: S.entryListHead }, list.label),
+          ...list.items.map((item, itemIndex) =>
+            h('div', { key: `li${index}.${itemIndex}`, style: S.entryItem }, `· ${item}`),
+          ),
+        ]),
+        h('div', { style: S.spacerBlock }),
+        h('div', { style: S.footer }, data.root || root || ''),
+      )
+    }
+
+    /**
      * The settings page: a list of doors, one of which is the team.
      *
      * @param props - session, book root, and navigation callbacks.
@@ -972,8 +1105,11 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
       const [view, setView] = useState('tree')
-      const [collapsed, setCollapsed] = useState(() => new Set())
+      // Every drawer starts folded: the panel opens as a table of contents, not
+      // as a wall of ninety-four chapter rows.
+      const [collapsed, setCollapsed] = useState(() => new Set(['world', 'cast', 'plot', 'text']))
       const [selected, setSelected] = useState(null)
+      const [detail, setDetail] = useState(null)
 
       const refresh = useCallback(() => setTick((n) => n + 1), [])
 
@@ -1053,9 +1189,38 @@ window.__ModuleLoader__.load({
         h('span', { style: S.aside }, '智能体团队'),
       )
 
+      // A row that stands for a thing opens its page; a plain row only highlights.
+      // The browser never looks a character up itself — `/entry` answers.
+      const onRowClick = useCallback((row) => {
+        if (row && row.kind && row.key) {
+          setDetail({ kind: row.kind, key: row.key, label: row.label })
+          setView('detail')
+          return
+        }
+        if (row && Array.isArray(row.children) && row.children.length > 0) {
+          setCollapsed((previous) => {
+            const next = new Set(previous)
+            if (next.has(row.id)) next.delete(row.id)
+            else next.add(row.id)
+            return next
+          })
+          return
+        }
+        setSelected((current) => (current === row.id ? null : row.id))
+      }, [])
+
       if (view === 'new') {
         const suggested = state.status === 'ready' && state.data.root ? state.data.root.replace(/[\\/]\.novel[\\/]?$/, '') : ''
         return h(NewBook, { sessionId, suggestedDir: suggested, onCancel: () => setView('tree'), onCreated })
+      }
+
+      if (view === 'detail' && detail !== null) {
+        return h(Detail, {
+          sessionId,
+          root: root || '',
+          target: detail,
+          onBack: () => setView('tree'),
+        })
       }
 
       if (view === 'settings') {

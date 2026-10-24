@@ -159,12 +159,15 @@ DSH 有两套往界面送数据的办法：Remote 命名空间（宿主面 + 客
 ```text
 src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、进度、事实、线索）
 src/panel/tree.ts    纯函数：Snapshot → 四个抽屉（世界/人物/剧情/正文），带计数与状态
-src/panel/serve.ts   路由：读投影、序列化 JSON、处理 /init 与 /dirs
+src/panel/entry.ts   纯函数：一行 → 一页（fields + lists），角色/设定/章节三种
+src/panel/serve.ts   路由：读投影与详情、序列化 JSON、处理 /init 与 /dirs
 src/panel/dirs.ts    纯函数 + 一层 readdir：列目录，回报该目录里有没有书
-client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树
+client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树与详情页
 ```
 
-`model.ts`／`tree.ts`／`dirs.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
+`model.ts`／`tree.ts`／`entry.ts`／`dirs.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
+
+详情页的载荷是**通用形状**（`fields` 加 `lists`），不是三套写死的模板：加第四种页面只改 `entry.ts`，`client.js` 那半边一行都不用动。这是把一个组件写两次和写一次的分界——浏览器不该知道「角色」有什么字段。
 
 服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个面板不该有这种权力。
 

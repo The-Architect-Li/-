@@ -114,10 +114,11 @@ As of v0.4 the web shell's right Sidebar carries a **小说工坊** tab
 only one and taking it over would push the Sidebar out.
 
 v0.5 turns it into a drawer tree, and gives it the one write it needs: creating a
-book without going back to the conversation.
+book without going back to the conversation. v0.7 folds every drawer on open and
+makes each row open its own page.
 
 ```text
-📕 雾港  长篇
+▤ 雾港  novel
 ◎ World          7
 ◍ Cast          12
     Overview
@@ -141,6 +142,11 @@ book without going back to the conversation.
   / beats / foreshadows / chapter cards, manuscript hangs chapters under their
   volume and marks each `done` / `N drafts` / `ready` / `unwritten`. Long lists
   cap at 25 rows plus "and N more", so a 300-chapter book is not a wall.
+- **Folded on open** (v0.7): the panel lands as a table of contents, not as
+  ninety-four chapter rows; collapse state is kept for the panel's session.
+- **A row opens its page** (v0.7): click 沈砚 and the whole sidebar becomes his
+  card — voice, appearance, goal, secret, the chapters he appears in, the facts
+  the ledger holds about him. Group rows (Protagonist, Volume I) expand instead.
 - **It can create a book.** "New" opens the host's own directory chooser
   (`ctx.uiWorkspace.pickDirectory()`), or you can walk the in-panel browser level
   by level — including other drives on Windows. Creation goes through the same
@@ -149,13 +155,14 @@ book without going back to the conversation.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
-- **No tokens.** The snapshot is computed by `src/panel/model.ts` from disk.
+- **No tokens.** The snapshot is `src/panel/model.ts`, the pages are
+  `src/panel/entry.ts`; both are computed from disk.
 - **Per session.** With `perWorkspace` on, the panel resolves the book from the
   session's `cwd`, so switching sessions switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
   profile has no web server and still gets all nine tools.
 
-Five host routes, polled every 5 seconds by the browser half:
+The host routes, polled by the browser half:
 
 ```text
 GET  /api/inkwell                        # the process-wide book
@@ -163,14 +170,17 @@ GET  /api/inkwell?session=<id>            # the book in that session's workspace
 GET  /api/inkwell/snapshot?root=<abs>     # a named book
 GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
 POST /api/inkwell/init                    # { dir, title?, targetWords? }
+GET  /api/inkwell/entry?kind=&key=        # the page behind a row: character / world / chapter
 GET  /api/inkwell/roles                   # four agents, their routes, and what the host offers
 POST /api/inkwell/roles                   # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-The three reads answer 405 to anything but GET. The two writes require
+The reads answer 405 to anything but GET. The two writes require
 `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
 Advancing a phase, editing a contract and writing prose still go through the
-tools, so the gate stays the only writer.
+tools, so the gate stays the only writer. `/entry` answers 404 for a row the book
+no longer has — a browser holding a stale tree should be told to refresh rather
+than shown a blank card.
 
 ### Settings → the agent team (v0.6)
 

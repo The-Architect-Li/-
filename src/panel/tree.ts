@@ -27,8 +27,21 @@ export interface PanelRow {
   /** Right-aligned detail that is not a number, e.g. `3.2 万字`. */
   aside?: string
   tone?: PanelTone
+  /**
+   * What clicking this leaf opens, when it stands for a thing with its own page.
+   *
+   * The browser half does not look anything up: it sends `kind` and `key` back
+   * to `/entry` and draws whatever comes back. Rows without a kind only
+   * highlight when clicked.
+   */
+  kind?: PanelEntryKind
+  /** Identity inside `kind`: a character name, a world name, a chapter number. */
+  key?: string
   children?: PanelRow[]
 }
+
+/** The kinds of thing a row can open. */
+export type PanelEntryKind = 'character' | 'world' | 'chapter'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -101,6 +114,8 @@ function worldSection(snapshot: Snapshot): PanelSection {
   const rows: PanelRow[] = snapshot.world.slice(0, CAP.world).map((entry, index) => ({
     id: `world.${index}`,
     label: entry.name,
+    kind: 'world',
+    key: entry.name,
     ...(entry.kind ? { aside: entry.kind } : {}),
   }))
   return {
@@ -129,6 +144,8 @@ function castSection(snapshot: Snapshot): PanelSection {
     const children: PanelRow[] = cards.slice(0, CAP.cast).map((card, index) => ({
       id: `cast.${group.role}.${index}`,
       label: card.name,
+      kind: 'character',
+      key: card.name,
       ...(card.goal ? { aside: card.goal } : {}),
     }))
     return {
@@ -184,6 +201,8 @@ function plotSection(snapshot: Snapshot): PanelSection {
         return {
           id: `plot.volume.${volume.number}.${number}`,
           label: `第${number}章 ${plan?.title ?? ''}`.trim(),
+          kind: 'chapter',
+          key: String(number),
           chip: plan?.approved ? undefined : '待批准',
           tone: 'muted',
         }
@@ -194,6 +213,8 @@ function plotSection(snapshot: Snapshot): PanelSection {
   const cards: PanelRow[] = snapshot.plans.slice(0, CAP.cards).map((plan) => ({
     id: `plot.card.${plan.number}`,
     label: `第${plan.number}章 ${plan.title}`.trim(),
+    kind: 'chapter',
+    key: String(plan.number),
     chip: plan.approved ? '已批准' : '待批准',
     aside: `${plan.beats.length} 节拍`,
     tone: plan.approved ? 'done' : 'todo',
@@ -244,7 +265,12 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
     const chapter = written.get(number)
     const draftCount = rounds.get(number)?.length ?? 0
     const title = plan?.title || chapter?.title || ''
-    const base = { id: `text.chapter.${number}`, label: `第${number}章 ${title}`.trim() }
+    const base = {
+      id: `text.chapter.${number}`,
+      label: `第${number}章 ${title}`.trim(),
+      kind: 'chapter' as const,
+      key: String(number),
+    }
     if (chapter) {
       return { ...base, chip: '已完成', aside: formatWords(chapter.words), tone: 'done' }
     }

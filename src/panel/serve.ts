@@ -33,8 +33,10 @@ import { ProjectStore } from '../domain/store.ts'
 import type { InkwellConfig } from '../domain/types.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
+import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 import type { LlmCatalogSource } from './ports.ts'
+import type { PanelEntryKind } from './tree.ts'
 import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
 
 /** Route prefix the browser half fetches under. */
@@ -387,6 +389,59 @@ export async function writeTeam(
 }
 
 /**
+ * Read the page behind one row.
+ *
+ * A page that no longer exists is a 404 rather than an empty page: a browser
+ * holding a tree from ten minutes ago should be told to refresh, not shown a
+ * card with every field blank.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, when known.
+ * @param kind - `character`, `world`, or `chapter`.
+ * @param key - the name, or the chapter number as a string.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns status and body.
+ */
+export async function readEntry(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  kind: string | undefined,
+  key: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter') {
+      throw new PanelInputError(`未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter。`)
+    }
+    if (key === undefined || key === '') throw new PanelInputError('缺少 key：角色名、世界观名或章号。')
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) {
+      return { status: 404, body: { ok: false, error: { message: '这本书还没有项目文件。' } } }
+    }
+    const snapshot = await store.snapshot()
+    const number = Number(key)
+    const drafts: ChapterDrafts[] =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? [{ number, rounds: await store.draftsOf(number) }]
+        : []
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root)
+    if (entry === undefined) {
+      return {
+        status: 404,
+        body: { ok: false, error: { message: `找不到 ${kind}「${key}」。它可能刚被改名或删掉，刷新一下。` } },
+      }
+    }
+    return { status: 200, body: { ok: true, data: entry } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
  * Write a JSON answer with no-store caching.
  *
  * @param res - the response to own.
@@ -459,6 +514,24 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await createBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/entry') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/entry 只读' } } })
+          return
+        }
+        send(
+          res,
+          await readEntry(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            url.searchParams.get('kind') ?? undefined,
+            url.searchParams.get('key') ?? undefined,
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
         return
       }
 
