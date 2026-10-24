@@ -174,7 +174,8 @@ tools, so the gate stays the only writer.
 
 ### Settings → the agent team (v0.6)
 
-The `⚙` in the book header opens settings; the first door is the agent team: one
+A full-width `⚙ Settings` row sits at the bottom of the drawer tree (v0.6.1 moved it out of the
+book header, where a lone gear was too easy to miss). The first door is the agent team: one
 card per role, saying what that agent only does, which route it currently runs
 on, and which layer that route came from.
 

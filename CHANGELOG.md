@@ -3,6 +3,24 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.1] - 2026-10-24
+
+设置入口从一个藏在书头的齿轮，搬到了抽屉树底部一整行：齿轮图标 + 「设置」两个字 + 右侧的
+`智能体团队` 提示，与 dsh 自己的侧边栏入口同一个位置、同一种写法。
+
+### 变更
+
+- **设置入口下移**：原来书头右上角只有一个 `⚙` 图标按钮，不点开不知道是什么。现在抽屉树
+  底部有一行通栏的「⚙ 设置」，带顶部细分割线和更大的字号，空书状态也显示，不必先有一本书
+  才找得到设置。
+- `package.json` 版本 0.6.1。
+
+### 验证
+
+隔离 profile 起实例后取客户端包（`plugins/??…dsh-inkwell/client.js…`）返回 200、
+435357 字节，含 `settingsRow`、`settingsLabel`、`智能体团队`、`跟随会话`、`还原`；
+`npm run check` 通过，197 个用例全绿，`client bundle : ./client.js 45709 bytes`。
+
 ## [0.6.0] - 2026-10-24
 
 侧边栏有了「设置」：点进去能看到这支团队的四个人，并给每一个挑模型——挑的是你在 dsh 里
@@ -250,6 +268,7 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.6.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.6.1
 [0.6.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.6.0
 [0.5.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.1
 [0.5.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.0

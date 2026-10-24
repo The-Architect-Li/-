@@ -297,6 +297,34 @@ window.__ModuleLoader__.load({
         padding: '3px 10px',
         cursor: 'pointer',
       },
+      // The bottom entry point. Full width, labelled, and larger than a header
+      // icon on purpose: 设置 has to be findable without hunting for a gear.
+      settingsRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        width: '100%',
+        margin: '4px 0 0',
+        padding: '11px 10px',
+        border: 'none',
+        borderTop: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
+        background: 'transparent',
+        color: 'inherit',
+        font: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+      },
+      settingsIcon: {
+        fontSize: '17px',
+        lineHeight: '1',
+        opacity: '0.85',
+        flex: '0 0 auto',
+      },
+      settingsLabel: {
+        fontSize: '13.5px',
+        fontWeight: '500',
+        letterSpacing: '0.01em',
+      },
       row: {
         display: 'flex',
         alignItems: 'center',
@@ -1010,11 +1038,19 @@ window.__ModuleLoader__.load({
           ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('new'), title: '在某个目录里新建一本书' }, '＋ 新建')
           : null,
         view === 'tree'
-          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('settings'), title: '设置：智能体团队与模型' }, '⚙')
-          : null,
-        view === 'tree'
           ? h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
           : null,
+      )
+
+      // Settings lives at the bottom of the tree, spelled out: a bare gear in the
+      // header was too easy to miss. Same row the app itself uses for 设置.
+      const settingsRow = h(
+        'button',
+        { type: 'button', style: S.settingsRow, onClick: () => setView('settings'), title: '设置：智能体团队与模型' },
+        h('span', { style: S.settingsIcon }, '⚙'),
+        h('span', { style: S.settingsLabel }, '设置'),
+        h('span', { style: S.spacer }),
+        h('span', { style: S.aside }, '智能体团队'),
       )
 
       if (view === 'new') {
@@ -1070,6 +1106,7 @@ window.__ModuleLoader__.load({
             ),
           ),
           h('div', { style: S.footer }, data.root || ''),
+          settingsRow,
         )
       }
 
@@ -1130,6 +1167,7 @@ window.__ModuleLoader__.load({
           ? h('div', { style: { ...S.footer, opacity: 0.6 } }, `已选中：${selected}`)
           : null,
         h('div', { style: S.footer }, data.root),
+        settingsRow,
       )
     }
 
