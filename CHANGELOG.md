@@ -3,6 +3,39 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.1] - 2026-10-24
+
+让「装」这件事真的成立：三条安装通道全部实测通过，并且修掉了从 git 装必然失败的那个断点。
+
+### 修复
+
+- **从 git 装必失败**：`prepare` 要跑构建，pnpm 在临时目录里执行 `npm install`，而 22 个
+  devDependencies 里有 18 个源码根本没 import 过（`dsh-agent`、`dsh-invariants`、`vite` 等），
+  它们的 peer 约束互相打架，`npm install` 直接 ERESOLVE 退出，`lib/` 永远生成不出来。现在只留
+  源码真正 import 的四个宿主包（cordis／dsh-tools／dsh-subagent／schemastery）+ 工具链，
+  `npm install` 不再需要 `--legacy-peer-deps`。
+- `@deepseek-ai/dsh-subagent` 补进 optional peerDependencies：`ctx.subagents` 的类型来自它，
+  而运行时由宿主提供。
+
+### 变更
+
+- `package.json` 版本 0.5.1。
+- README 的安装段改成三种 spec 的对照表（registry／本地绝对路径／git），并把 git 装那一步说明
+  白：第一次失败是 pnpm 的供应链策略，抄它打印的那个键进 `allowBuilds` 再跑一遍；Desktop 的
+  profile 归应用自己管，要装进桌面版得走应用的插件页。
+
+### 验证
+
+三条通道都实测过，每条都启动进程、取 `/api/inkwell`：
+
+| 通道 | 结果 |
+| --- | --- |
+| 本地绝对路径 `add E:\dshplugin` | 装上即用，9 工具 + 面板路由 + 客户端模块都在 |
+| 打包 `npm pack` → `add dsh-inkwell-0.5.1.tgz` | 干净 profile 里装出 `lib/`、`client.js`、`cordis.patch.yml`，`dsh.profile.bundles` 自动加条目 |
+| `add git+https://github.com/The-Architect-Li/-.git` | 放行构建后现场 `npm install && tsc` 成功，启动后面板路由 200、客户端模块被预加载 |
+
+`npm view dsh-inkwell` 返回 404，**包名还没被占**，`npm publish` 之后 `add dsh-inkwell` 就能用。
+
 ## [0.5.0] - 2026-10-23
 
 侧边栏成了一张工作台：书按抽屉摆开，也能在里面自己选目录建一本，不必先回对话框。
@@ -180,6 +213,8 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.5.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.1
+[0.5.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.0
 [0.4.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.4.0
 [0.3.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.3.0
 [0.2.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.2.0

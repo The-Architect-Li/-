@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-23，对应 release v0.5.0。
+> 最后更新：2026-10-24，对应 release v0.5.1。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -67,7 +67,7 @@ npm install --legacy-peer-deps      # 必须带这个，见下文"依赖说明"
 npm run check                        # typecheck + 125 个测试 + build + 打包冒烟
 ```
 
-装进真实 DSH（**v0.3 已在本机验证过，用独立 profile**）：
+装进真实 DSH（v0.3 起，用独立 profile 验证）：
 
 ```sh
 dsh plugin --profile inkwell-verify add E:\dshplugin
@@ -75,31 +75,42 @@ dsh plugin --profile inkwell-verify add E:\dshplugin
 # 装完必须重启 dsh 进程（插件在启动时装载）
 ```
 
-**不要拿 `--profile desktop` 做验证**——那是用户正在用的 profile，装上去会改动 `dsh.profile.bundles`（`reconcile` 会把新 bundle 自动写进去）。
+**不要拿 `--profile desktop` 做验证**——那是用户正在用的 profile，而且 CLI 直接拒绝它（`error: profile "desktop" is managed exclusively by the Electron application`，见 `dsh/lib/bin.js:36` 的 `rejectElectronProfile`）。要装进桌面版，只能走应用自己的插件页；它的 Remote 接口是 `pluginManager/installBundle(spec)`，认同样的 spec。
 
-从 git 安装必须先在 profile 的 `pnpm-workspace.yaml` 放行构建：
+三条通道 v0.5.1 都实测过：
+
+| spec | 结果 |
+| --- | --- |
+| `E:\dshplugin`（绝对路径） | 装上即用（pnpm link） |
+| `npm pack` 的 tgz | 干净 profile 里装出 `lib/`、`client.js`、`cordis.patch.yml` |
+| `git+https://github.com/The-Architect-Li/-.git` | 放行构建后现场 `npm install && tsc` 成功 |
+
+从 git 安装必须先在 profile 的 `pnpm-workspace.yaml` 放行构建，**键是 pnpm 打印的那一整串**（带 commit 的 codeload URL），不是包名：
 
 ```yaml
 allowBuilds:
-  dsh-inkwell: true
+  dsh-inkwell@https://codeload.github.com/The-Architect-Li/-/tar.gz/<commit>: true
 ```
 
 否则 pnpm 拦住 `prepare`，装上去的包没有 `lib/`，装载期报错且原因不直观。
 
 ## 依赖说明（容易踩的坑）
 
-`devDependencies` 里那一串 `@deepseek-ai/dsh-*` 是 `@deepseek-ai/dsh-tools` 的**对等依赖闭包**，只为让测试能 import 到真实的 `defineTool`。运行时宿主自带，不会重复装。装时必须 `--legacy-peer-deps`，否则 npm 会去装一个未发布的包（`dsh-type-meta`）而 404。CI 里也是这条命令。
+源码只 import 四个宿主包：`@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-subagent`、`@deepseek-ai/schemastery`。v0.5.1 之前 `devDependencies` 里还挂着一整串 `@deepseek-ai/dsh-*`（对等依赖闭包），其中 18 个根本没被 import，却互相 peer 打架——**从 git 装时 `prepare` 跑 `npm install` 会 ERESOLVE 退出**，`lib/` 永远生成不出来。现在只剩真正用到的包，`npm install` 不需要任何 flag，也不再需要 `--legacy-peer-deps`。改 devDependencies 前先 grep 一遍 `from '@deepseek-ai/`，别凭印象加。
 
-npm 走外网很慢（装 43 个包要 4 分钟左右），不是卡死，耐心等。
+npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死，耐心等。
 
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 150 个用例全过（vitest，14 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与路由（200/403/404/405、按会话分书）、模块装载形状
+- ✅ 164 个用例全过（vitest，14 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书）、模块装载形状
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
-- ✅ **真实 DSH 实装**：`dsh plugin --profile inkwell-verify add E:\dshplugin` 成功，profile 里 `dsh-inkwell: link:E:/dshplugin`
-- ✅ **真机 boot**（v0.4）：独立 profile 带 `@deepseek-ai/dsh-web-app` 启动后，shell 里出现 `plugins/??dsh-inkwell/client.js` 预加载；`GET /api/inkwell` 返回真实书的快照（HTTP 200，JSON）；`/api/inkwell/snapshot` 同样 200
-- ✅ `npm pack` 体积 83.6 kB / 101 个文件，文件树正确（v0.3 数据；v0.4 多了 `client.js`，未重新 pack）
+- ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
+  - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
+  - `npm pack` 的 tgz（114.8 kB / 118 文件）→ 干净 profile 里装出 `lib/`、`client.js`、`cordis.patch.yml`，`dsh.profile.bundles` 自动补条目
+  - `add git+https://github.com/The-Architect-Li/-.git` → 放行构建后现场构建成功
+- ✅ **真机 boot**（v0.4 起）：独立 profile 带 `@deepseek-ai/dsh-web-app` 启动后，shell 里出现 `plugins/??dsh-inkwell/client.js` 预加载；`GET /api/inkwell` 返回真实书的快照（HTTP 200，JSON）；`/api/inkwell/snapshot` 同样 200；`POST /init` 能建书
+- ✅ `npm view dsh-inkwell` → 404，包名空着，`npm publish` 之后 `add dsh-inkwell` 即可用（本机没登录 npm，此路未实测）
 - ❌ 面板的**视觉效果**没有截图验证过——只验证了「模块被加载、路由返回数据」，没验证渲染出来长什么样
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）

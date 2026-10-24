@@ -33,15 +33,26 @@ dsh plugin --profile <your-profile> add dsh-inkwell
 Restart the dsh process after installing (plugins are mounted at startup). Nine
 `novel_*` tools then appear in the session.
 
-Installing from git works too, but pnpm blocks build scripts until you allow
-them; whitelist the package in the profile's `pnpm-workspace.yaml`:
+Three specs work today:
+
+| spec | notes |
+| --- | --- |
+| `dsh-inkwell` | from the npm registry, once published |
+| `E:\path\to\checkout` | a local checkout; an absolute path is required |
+| `git+https://github.com/The-Architect-Li/-.git` | builds on install, see below |
+
+Git installs build through the package's `prepare` script, and pnpm blocks build
+scripts by default. The first `add` fails with the exact key it wants; paste that
+key into the profile's `pnpm-workspace.yaml` and run it again:
 
 ```yaml
 allowBuilds:
-  dsh-inkwell: true
+  dsh-inkwell@https://codeload.github.com/The-Architect-Li/-/tar.gz/<commit>: true
 ```
 
-Without that, the install lands a shell with no `lib/`.
+Without that, the install lands a shell with no `lib/`. The Desktop app owns its
+own profile - `dsh plugin --profile desktop` is refused by design - so install
+there from the app's plugin page instead; it accepts the same specs.
 
 The **commander pipeline** is the default shape: the main session talks to you,
 dispatches a writer subagent, runs logic and character reviewers plus a chief

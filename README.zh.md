@@ -35,18 +35,28 @@ dsh plugin --profile <你的 profile> add dsh-inkwell
 
 装完**必须重启 dsh 进程**（插件在启动时装载），之后会话里就能看到 9 个 `novel_*` 工具。
 
-从 git 装也行，但 pnpm 默认拦构建脚本，要先在 profile 的 `pnpm-workspace.yaml` 里放行：
+现在三种装法都通了：
+
+| 装法 | 说明 |
+| --- | --- |
+| `dsh-inkwell` | 走 npm registry（发布之后） |
+| `E:\path\to\checkout` | 本地检出，必须是绝对路径 |
+| `git+https://github.com/The-Architect-Li/-.git` | 安装时现场构建，见下 |
+
+从 git 装会走 `prepare` 构建，而 pnpm 默认拦构建脚本。第一次 `add` 会失败并**打印它要的那个键**，把那一行抄进 profile 的 `pnpm-workspace.yaml` 再跑一遍：
 
 ```yaml
 allowBuilds:
-  dsh-inkwell: true
+  dsh-inkwell@https://codeload.github.com/The-Architect-Li/-/tar.gz/<commit>: true
 ```
 
-否则装上去的是没有 `lib/` 的空壳。从源码开发：
+不放行的话装上去是没有 `lib/` 的空壳。**Desktop 的 profile 归应用自己管**——`dsh plugin --profile desktop` 会被 CLI 拒绝，这是设计如此——要装进桌面版请在应用的插件页里装，它认同样的 spec。
+
+从源码开发：
 
 ```sh
 git clone <repo> && cd dsh-inkwell
-npm install --legacy-peer-deps
+npm install
 npm run check          # typecheck + test + build + 打包冒烟
 ```
 
