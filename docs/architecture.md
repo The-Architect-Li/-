@@ -7,7 +7,7 @@
 ```text
 src/
   domain/    纯函数与磁盘读写，不认识 DSH，可以在 node 里直接测
-  panel/     面板投影、抽屉树与路由（model/tree/dirs/roles/catalog 纯函数，serve.ts 一个 prefix handler）
+  panel/     面板投影、抽屉树与路由（model/tree/dirs/entry/edit/roles/catalog 纯函数，serve.ts 一个 prefix handler）
   tools/     九个工具，只做参数翻译与结果格式化
   gate.ts    预执行门禁，唯一能拒绝调用的地方
   index.ts   挂载：注册工具 + 挂 tools/pre-execute + 挂面板路由
@@ -157,36 +157,44 @@ DSH 有两套往界面送数据的办法：Remote 命名空间（宿主面 + 客
 于是形状变成：
 
 ```text
+src/domain/save.ts   纯函数 + 一次写盘：正文落盘的唯一入口，工具与面板共用
 src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、进度、事实、线索）
 src/panel/tree.ts    纯函数：Snapshot → 四个抽屉（世界/人物/剧情/正文），带计数与状态
-src/panel/entry.ts   纯函数：一行 → 一页（fields + lists），角色/设定/章节三种
-src/panel/serve.ts   路由：读投影与详情、序列化 JSON、处理 /init 与 /dirs
+src/panel/entry.ts   纯函数：一行 → 一页（fields + lists + breadcrumb + edit），角色/设定/章节三种
+src/panel/edit.ts    纯函数：三个 readXxxPatch，写门的字段校验与上限
+src/panel/serve.ts   路由：读投影、详情与团队，序列化 JSON，处理 /init、/dirs 与 /entry
 src/panel/dirs.ts    纯函数 + 一层 readdir：列目录，回报该目录里有没有书
-client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树与详情页
+client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树、详情页与设置页
 ```
 
-`model.ts`／`tree.ts`／`entry.ts`／`dirs.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
+`model.ts`／`tree.ts`／`entry.ts`／`dirs.ts`／`edit.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
 
-详情页的载荷是**通用形状**（`fields` 加 `lists`），不是三套写死的模板：加第四种页面只改 `entry.ts`，`client.js` 那半边一行都不用动。这是把一个组件写两次和写一次的分界——浏览器不该知道「角色」有什么字段。
+详情页的载荷是**通用形状**（`fields` 加 `lists`，外加可编辑的 `edit.inputs` 与 `edit.body`），不是三套写死的模板：加第四种页面只改 `entry.ts`，`client.js` 那半边一行都不用动。这是把一个组件写两次和写一次的分界——浏览器不该知道「角色」有什么字段，也不该知道哪些字段能改。
+
+正文之所以能从两个地方写进来而不打架，是因为**只有一处落盘**：`saveChapterBody(store, config, input)` 在 `src/domain/save.ts` 里跑合同与体检，`novel_chapter action="write"` 和 `POST /entry` 都只调用它一次。规则复制一份到面板里，两边迟早会分叉成「工具不让写、面板却写得进」。
 
 服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个面板不该有这种权力。
 
-### 面板写操作只开两扇门
+### 面板写操作只开三扇门
 
-面板能写的东西只有两件，而且两件都不是新权力：
+面板能写的东西只有三件，而且三件都不是新权力：
 
 1. **建书。** `POST /api/inkwell/init` 直接调 `ProjectStore.init`，也就是 `novel_project action="init"` 调的那个函数，所以两条路落在磁盘上的字节相同。门禁本来就无条件放行 `init`（没有项目就没有可保护的东西），面板因此没有扩大任何权限。
 2. **给智能体挑模型。** `POST /api/inkwell/roles` 写的是 `project.json` 的 `roles`，与 `novel_roles action="set"` 同一个字段、同一个三态语义（省略＝不管、有值＝钉住、空串＝清掉这一层）。模型清单来自宿主的 `llm` 服务而不是插件自带表，因此「面板里能选的」恰好等于「dsh 里配过的」。
+3. **改一条已经存在的东西。** `POST /api/inkwell/entry` 只改**已有**的角色卡、设定条目、章节正文：角色与设定走 `upsertCharacter`／`upsertWorld`（`novel_canon` 的那两个函数），正文走 `saveChapterBody`（`novel_chapter action="write"` 的那一个）。它不能新建角色、不能改章纲、不能推阶段、不能记账本事实——那些需要「理由」，而面板没有地方放理由。
 
-三个约束写在这两个动作上，缺一条都会变成一次「安静的破坏」：
+四条约束写在这三个动作上，缺一条都会变成一次「安静的破坏」：
 
 1. **必须带 `x-dsh-plugin: inkwell` 头**——跨站的简单表单提交设不了自定义头，这是同源之外唯一能拦住的东西。
 2. **目录必须是绝对路径**——相对路径一律 400，绝不让宿主进程的 cwd 替用户猜一个位置。
 3. **插件的 `root` 是绝对路径时拒绝建书**（409）——那时全书只有一个固定位置，面板上的「选目录」是谎话，不如直接说清并让用户改用工具。
+4. **正文写入前先问一遍闸门**：`writeEntry` 对章节先跑 `gateToolCall('novel_chapter', {action:'write', number})`，非空就把那句话原样作为 409 返回。这样「章纲没批准就写不进去」这条规则只写在 `gate.ts` 里一次，面板只是它的第二个调用者。
 
 选目录优先走宿主自己的选择框（`ctx.uiWorkspace.pickDirectory()`，由 `dsh-client-ui-workspace` 提供），读的是**惰性** `ctx.get('uiWorkspace')` 而不是声明进 `inject`：老宿主没有这个服务时，整个客户端包不该因此不激活，面板退回自己的目录浏览器。
 
 `roles` 的路由来源一度全标错：配置 schema 会把四个角色物化成 `{}`，而旧判据只看「这一层存不存在」，于是四个角色都显示 `全局默认`，实际跑的是会话模型。判据改成「这一层有没有真字段」——**空对象不是一层**，这条同样适用于将来的任何覆写表。
+
+已写章节的标题一度被章纲盖住：面板上改完标题、页面仍显示旧名。判据改成「有正文就看正文的标题，没正文才看章纲」——**章纲是提前给的名字，改过的名字是这一章现在的名字**。这类「两个来源谁说话」的错，测试里必须有一条，否则下次还会踩。
 
 ### 右侧栏只有一条
 
@@ -210,6 +218,6 @@ cannot get property "tools" without inject
 
 ## 后续方向
 
-- **面板里能不能批准章纲**：v0.5 让面板建书（与 `init` 同一个函数），v0.6 又开了「挑模型」（与 `novel_roles` 同一个字段）。若要再往前一步到「批准章纲」，得先决定门禁的唯一性：可行做法是面板的写请求走同一套 `gateToolCall` 校验，而不是另开一条绕过闸门的路。
+- **面板里能不能批准章纲**：v0.5 让面板建书（与 `init` 同一个函数），v0.6 开了「挑模型」（与 `novel_roles` 同一个字段），v0.8 开了「改已有条目」。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要写进 `plans`。可行做法是让面板的批准表单要求填一句理由，再走与 `novel_outline` 相同的 `approved` 写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
 - **章节级并发写**：同一章被两个会话同时写时目前后者覆盖；需要带版本号的乐观锁。
 - **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录，支持跨会话追溯「这条意见谁提的、改了没有」。

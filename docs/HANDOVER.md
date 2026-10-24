@@ -1,11 +1,11 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-24，对应 release v0.7.0。
+> 最后更新：2026-10-24，对应 release v0.8.0。
 
 ## 一句话
 
-dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）和抽屉里点开即看的人物／设定／章节详情页（v0.7）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
+dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）抽屉里点开即看的人物／设定／章节详情页（v0.7）和可随手编辑的二级页面（v0.8）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
 
 ## 仓库现状
 
@@ -79,12 +79,21 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **点行两种行为**：有 `kind` 的行 → 进详情；有 `children` 的分组行（主角、第N卷）→ 就地展开收起，不必瞄准 6 像素的三角。
 - **验证**：211 个用例（v0.6.1 是 197；新增 `test/entry.test.ts` 9 例 + `/entry` 路由 5 例）。`client bundle : ./client.js 51937 bytes`。
 
+### v0.8 二级页面就地编辑 + 章节预览／编辑
+
+- **一条落盘路径**：新增 `src/domain/save.ts` 的 `saveChapterBody(store, config, input)`。`src/tools/chapter.ts` 的 write 分支改为调用它，`POST /api/inkwell/entry` 也调用它——空正文、没章纲、合同 error 三种拒绝在两处逐字一致。`ChapterBlockedError` 带 `blockers: Finding[]`，工具侧包成长句，面板侧转 409。
+- **`src/panel/edit.ts`**：`readCharacterPatch`／`readWorldPatch`／`readChapterPatch`，上限 `MAX_FIELD_CHARS=4000`、`MAX_CHAPTER_CHARS=200_000`、`MAX_TITLE_CHARS=120`，全部抛 `PanelInputError`（400）。角色名不可改（名字是 key，改名是 `novel_canon` 的活）。
+- **`src/panel/entry.ts` 增量**：`EntryPayload` 多了 `breadcrumb: string[]`、`edit: { inputs: EntryInput[]; body?: {key,label,value} }`、可选 `blocked?: string`；`buildEntry(snapshot, kind, key, drafts, root, body?)` 多收一个正文参数（预览用）。已写章节的标题以 `chapter.title` 为准，没写才用章纲标题。
+- **`src/panel/serve.ts`**：新增 `POST /entry`（`writeEntry`）。章节写之前先跑 `gateToolCall('novel_chapter', {action:'write', number}, …)`，非空原样 409。`MAX_WRITE_BYTES=1MB`，`readJson(req, limit)` 支持大正文。
+- **`client.js`**：`Detail` 变成整页编辑器——`编辑`／`取消`／`保存中…`、面包屑、章节的「预览正文／改正文」两态（预览按 `/\n\s*\n/` 分段、首行缩进 2em；编辑器下方实时字数）、`data.blocked` 提示框、保存后 `POST /entry` 并用回传数据重画 + `refresh()` 让抽屉树重读。
+- **验证**：237 个用例（17 个文件；新增 `test/edit.test.ts` 14 例、`/entry` 写路由 9 例、页面投影 5 例）。真机（隔离 profile `inkwell-verify`，端口 19411）：`GET /entry` 带 `breadcrumb`／`edit`；`POST /entry` 改角色目标后读回一致；无头写 403；未批准的章 409（「第4章的章纲还没批准…」）；组合 bundle 451,534 字节含「预览正文／改正文／保存中／breadcrumb／api/inkwell/entry」。
+
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 211 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 237 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -123,7 +132,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 211 个用例全过（vitest，16 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书）、详情页（角色/设定/章节、草稿轮次、404、400）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、模块装载形状
+- ✅ 237 个用例全过（vitest，17 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书）、详情页（角色/设定/章节、草稿轮次、404、400）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、模块装载形状
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，9 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
   - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
@@ -133,6 +142,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 - ✅ `npm view dsh-inkwell` → 404，包名空着，`npm publish` 之后 `add dsh-inkwell` 即可用（本机没登录 npm，此路未实测）
 - ✅ 面板的**视觉效果**在 v0.7 由用户截图确认：抽屉树、计数徽章、底部「⚙ 设置」行、详情页都能正常渲染（渲染结果仍以用户的实际主题为准）
 - ✅ `/entry` 真机验证：`kind=character&key=沈砚` 返回 200 与完整字段；不存在的名字 404；缺 key 400；非 GET 405
+- ✅ **面板写入门真机验证**（v0.8，隔离 profile + 演示书）：`POST /entry` 把沈砚的目标改成「把妹妹带回岸上」后读回一致（改的是磁盘上的 `canon/characters.json`）；无 `x-dsh-plugin` 头 403；写未批准的第四章 409 并回传门禁原话；组合客户端 bundle 451,534 字节里含「预览正文／改正文／保存中／breadcrumb／api/inkwell/entry」
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）
 
@@ -206,21 +216,21 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.8 候选，按性价比排序）
+## 下一步（v0.9 候选，按性价比排序）
 
-1. **面板里的更多写操作**：v0.5 开了「建书」，v0.6 开了「挑模型」，两者都等价于一个本来就存在、且门禁不拦的工具调用。要做「在面板里批准章纲」，必须先决定门禁唯一性——写请求也得走同一套 `gateToolCall`，不能另开一条绕过闸门的路。
-2. **详情页能改吗**：v0.7 的页面是只读投影。若要能改，最好写回同一个 `ProjectStore.upsertCharacter`／`upsertWorld`，并且只在字段为空时提示「还没写」，不要在面板里造第二套编辑语义。
-3. **章节级并发写保护**：同一章被两个会话同时 `write` 时后者覆盖。做带版本号的乐观锁（`chapters/index.json` 里存 `revision`），冲突时拒绝并提示先 `read`。
-4. **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录（谁提的、哪条、改了没有），支持跨会话追溯；详情页的「最新一稿的自动发现」正是这个数据的第一个消费者。
-5. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
+1. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，三者都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
+2. **章节级并发写保护**：同一章被两个会话（或面板 + 工具）同时写时后者覆盖。做带版本号的乐观锁（`chapters/index.json` 里存 `revision`），冲突时 409 并提示先刷新。
+3. **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录（谁提的、哪条、改了没有），支持跨会话追溯；详情页的「最新一稿的自动发现」正是这个数据的第一个消费者。
+4. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
+5. **面板里的搜索**：抽屉树截断在 25 行，94 章的书要靠折叠去找。给树加一个「搜角色／搜章节」输入框，仍然是纯函数投影。
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 211 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 237 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「面板写操作只开两扇门」「入口形状是个陷阱」五节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/panel/`（面板：model/tree/entry/dirs/roles/catalog + serve）+ `client.js`（浏览器半边：树、详情页、建书、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.8 列表的哪一项。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」六节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.9 列表的哪一项。
 
 ## 项目记忆
 

@@ -115,7 +115,8 @@ only one and taking it over would push the Sidebar out.
 
 v0.5 turns it into a drawer tree, and gives it the one write it needs: creating a
 book without going back to the conversation. v0.7 folds every drawer on open and
-makes each row open its own page.
+makes each row open its own page. v0.8 makes those pages editable — and gives the
+chapter page a preview/edit split.
 
 ```text
 ▤ 雾港  novel
@@ -147,6 +148,15 @@ makes each row open its own page.
 - **A row opens its page** (v0.7): click 沈砚 and the whole sidebar becomes his
   card — voice, appearance, goal, secret, the chapters he appears in, the facts
   the ledger holds about him. Group rows (Protagonist, Volume I) expand instead.
+- **And that page is editable** (v0.8): edit on a character or world page types
+  into the same files; a chapter page previews the prose paragraph by paragraph
+  and switches to a text box with a live word count (the same whitespace-stripped
+  count the store records). Saves go through `POST /entry`, so saying "change
+  Shen Yan's goal" in the conversation and typing it in the panel write to one
+  place, not two.
+- **When it cannot save, it says why** (v0.8): an unapproved chapter shows the
+  gate's sentence on the page before you reach for the button; a body that drops
+  a required character comes back 409 with the missing names.
 - **It can create a book.** "New" opens the host's own directory chooser
   (`ctx.uiWorkspace.pickDirectory()`), or you can walk the in-panel browser level
   by level — including other drives on Windows. Creation goes through the same
@@ -171,16 +181,19 @@ GET  /api/inkwell/snapshot?root=<abs>     # a named book
 GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
 POST /api/inkwell/init                    # { dir, title?, targetWords? }
 GET  /api/inkwell/entry?kind=&key=        # the page behind a row: character / world / chapter
+POST /api/inkwell/entry                   # { kind, key, fields } edit that character, place or body
 GET  /api/inkwell/roles                   # four agents, their routes, and what the host offers
 POST /api/inkwell/roles                   # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-The reads answer 405 to anything but GET. The two writes require
+The reads answer 405 to anything but GET. There are three writes — create a book,
+pick an agent's model, edit one existing row — and each requires
 `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
-Advancing a phase, editing a contract and writing prose still go through the
-tools, so the gate stays the only writer. `/entry` answers 404 for a row the book
-no longer has — a browser holding a stale tree should be told to refresh rather
-than shown a blank card.
+Advancing a phase, approving an outline, committing a chapter and recording a
+ledger fact still go through the tools, so the gate stays the only writer of the
+things that need an argument. `/entry` answers 404 for a row the book no longer
+has — a browser holding a stale tree should be told to refresh rather than shown
+a blank card.
 
 ### Settings → the agent team (v0.6)
 
@@ -214,15 +227,16 @@ on, and which layer that route came from.
 ## Non-goals
 
 It does not generate prose itself, does not judge literary quality, and does not
-encode any platform's content policy. The panel opens exactly two write doors —
-creating a book and picking an agent's model, both equivalent to a tool call —
-while phase transitions, contracts and prose still go through the tools and their
-gate.
+encode any platform's content policy. The panel opens exactly three write doors —
+creating a book, picking an agent's model, and editing a row that already exists
+(all equivalent to a tool call, and the third one through the very same
+`saveChapterBody` the writer tool uses) — while phase transitions, outline
+approval, committing and ledger facts still go through the tools and their gate.
 
 ## Development
 
 ```sh
-npm install --legacy-peer-deps
+npm install        # the declared devDependencies resolve without flags
 npm run check      # typecheck + test + build + packaging smoke test
 npm run verify     # mount the built lib/ with a fake context, check all 9 tools register
 ```
