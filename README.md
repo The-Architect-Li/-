@@ -155,7 +155,7 @@ book without going back to the conversation.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
   profile has no web server and still gets all nine tools.
 
-Four host routes, polled every 5 seconds by the browser half:
+Five host routes, polled every 5 seconds by the browser half:
 
 ```text
 GET  /api/inkwell                        # the process-wide book
@@ -163,18 +163,50 @@ GET  /api/inkwell?session=<id>            # the book in that session's workspace
 GET  /api/inkwell/snapshot?root=<abs>     # a named book
 GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
 POST /api/inkwell/init                    # { dir, title?, targetWords? }
+GET  /api/inkwell/roles                   # four agents, their routes, and what the host offers
+POST /api/inkwell/roles                   # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-The two reads answer 405 to anything but GET. The one write requires
+The three reads answer 405 to anything but GET. The two writes require
 `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
 Advancing a phase, editing a contract and writing prose still go through the
 tools, so the gate stays the only writer.
 
+### Settings → the agent team (v0.6)
+
+The `⚙` in the book header opens settings; the first door is the agent team: one
+card per role, saying what that agent only does, which route it currently runs
+on, and which layer that route came from.
+
+```text
+◍ Agent team
+  commander    [session]    the model you are talking to; not configurable here
+  writer       [this book]  deepseek-official/deepseek-flash          restore
+      provider [deepseek-official ▾]  model [deepseek-flash ▾]  effort [default (medium) ▾]
+  logic        [global]     zai/glm-4
+  character    [inherit]    inherits the session model
+  chief        [inherit]    inherits the session model
+```
+
+- **Your catalog, not ours.** Provider and model lists come from the host's `llm`
+  service (`listProviders` / `listModels` / `resolveModelInfo`), cached 60
+  seconds. A provider whose metadata will not answer just loses its effort
+  picker; it never holds the page.
+- **Effort follows the model.** Only the efforts that model's adapter advertises
+  are offered, with its `defaultEffort` shown as the default choice.
+- **Same storage as the tool.** The panel writes `roles` in `project.json`, so
+  `novel_roles action="list"` sees it and the next `novel_dispatch` runs on it;
+  *restore* drops the book's override and falls back to the global layer.
+- **Three layers, named.** *this book* > *global* (the plugin's `roles` config) >
+  *inherit* (the parent session's model). The panel only edits the first.
+
 ## Non-goals
 
 It does not generate prose itself, does not judge literary quality, and does not
-encode any platform's content policy. The panel creates books and nothing else:
-phase transitions, contracts and prose still go through the tools and their gate.
+encode any platform's content policy. The panel opens exactly two write doors —
+creating a book and picking an agent's model, both equivalent to a tool call —
+while phase transitions, contracts and prose still go through the tools and their
+gate.
 
 ## Development
 

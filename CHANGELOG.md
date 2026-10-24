@@ -3,6 +3,43 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-10-24
+
+侧边栏有了「设置」：点进去能看到这支团队的四个人，并给每一个挑模型——挑的是你在 dsh 里
+已经配好的那些，不是插件自己编的清单。
+
+### 新增
+
+- **设置页与智能体团队页**（`◍ 智能体团队`）：四个角色（写手／逻辑审／角色审／指挥官裁决）
+  各一张卡，写明它只做什么、当前实际跑在哪条路由上、以及这条路由来自哪一层
+  （`本书指定`／`全局默认`／`跟随会话`）。指挥官不是一个可派的角色——它就是你在对话的那个
+  模型——所以只陈述，不提供选择器。
+- **按角色挑模型**（`GET/POST /api/inkwell/roles`）：接口下拉、模型下拉、思考强度下拉。接口
+  和模型清单来自宿主的 `llm` 服务（`listProviders`／`listModels`／`resolveModelInfo`），
+  60 秒缓存；某个 provider 的元数据查不到时只是不列思考档位，不会卡住整页。
+- **思考强度**（`reasoningEffort`）：模型的适配器报了什么档位就只列什么档位，默认项显示适配器
+  的 `defaultEffort`。这一层在 v0.3 只是配置字段，现在面板里能点。
+- 面板写的是与 `novel_roles` 工具同一份存储（`project.json` 的 `roles`），所以面板里挑完，
+  `novel_roles action="list"` 立刻能看到，下一次 `novel_dispatch` 立刻按新路由派活。
+- **还原**：某角色被本书指定过时，卡片右上角出现「还原」，一键清掉本书覆写、回落到全局默认。
+
+### 修复
+
+- 路由来源标签说谎：配置 schema 会把四个角色物化成 `{}`，旧判据只看「这一层存不存在」，于是
+  四个角色全被标成 `全局默认` 而实际是 `跟随会话`。现在只有真带字段的层才算数。
+- 面板里选「跟随全局」时提交空串，宿主把它解读成「清掉这一层」而不是「存一个空 provider」。
+
+### 变更
+
+- `package.json` 版本 0.6.0。
+
+### 验证
+
+隔离 profile 起实例后实测：`GET /api/inkwell/roles` 返回 2 个 provider／4 个角色；`POST` 指定
+写手为 `deepseek-official/deepseek-flash` 后 `source` 从 `inherit` 变 `book`、`effective` 变
+`deepseek-official/deepseek-flash`；`reset` 后回到 `inherit`；不带 `x-dsh-plugin` 头与带错值
+都返回 403，带对头返回 200。197 个用例全绿。
+
 ## [0.5.1] - 2026-10-24
 
 让「装」这件事真的成立：三条安装通道全部实测通过，并且修掉了从 git 装必然失败的那个断点。
@@ -213,6 +250,7 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.6.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.6.0
 [0.5.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.1
 [0.5.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.0
 [0.4.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.4.0

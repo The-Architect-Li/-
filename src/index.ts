@@ -11,6 +11,7 @@ import { ProjectStore } from './domain/store.ts'
 import { sessionCwdById } from './domain/scope.ts'
 import { gateToolCall, isInkwellTool } from './gate.ts'
 import { createPanelHandler, PANEL_PREFIX } from './panel/serve.ts'
+import type { LlmCatalogSource } from './panel/ports.ts'
 import { createDeps } from './tools/deps.ts'
 import { registerBriefingTool } from './tools/briefing.ts'
 import { registerCanonTool } from './tools/canon.ts'
@@ -87,6 +88,10 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
           config: resolved,
           baseStore,
           cwdOf: (sessionId) => sessionCwdById(ctx, sessionId),
+          // Looked up per request: a profile may mount or swap its model
+          // providers after this plugin was applied, and a picker showing the
+          // registry from mount time would offer providers that are gone.
+          llmOf: () => ctx.get('llm') as unknown as LlmCatalogSource | undefined,
         }),
       }),
       'inkwell: panel route',

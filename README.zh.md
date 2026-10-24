@@ -143,7 +143,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 只读仪表盘 → v0.5 抽屉树 + 建书）
+## 右侧栏的小说工坊（v0.4 只读仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -178,7 +178,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
 - **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 9 个工具，只是没有面板。
 
-宿主侧四个接口：
+宿主侧五个接口：
 
 ```text
 GET  /api/inkwell                      # 进程那一本
@@ -186,9 +186,30 @@ GET  /api/inkwell?session=<id>          # 该会话工作区里的那一本
 GET  /api/inkwell/snapshot?root=<绝对路径>  # 指定的那一本
 GET  /api/inkwell/dirs?path=<绝对路径>      # 列一层子目录、盘符，并回报该目录里有没有书
 POST /api/inkwell/init                  # { dir, title?, targetWords? } 建书
+GET  /api/inkwell/roles                 # 四个智能体的当前路由 + 可选接口/模型/思考档位
+POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-`/snapshot` 与 `/dirs` 只读，非 GET 一律 405；写只有 `/init` 一个，且必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。阶段推进、改章纲、写正文仍然只有工具能做：「谁能改」还是那一个门禁。
+`/snapshot`、`/dirs`、`/roles` 的读法只认 GET，非 GET 一律 405；写只有 `/init` 与 `/roles`，且必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。阶段推进、改章纲、写正文仍然只有工具能做：「谁能改」还是那一个门禁。
+
+### 设置 → 智能体团队（v0.6）
+
+书头右侧的 `⚙` 进设置，第一个入口是智能体团队：四个角色各一张卡，写清它只做什么、现在跑在哪条路由上、这条路由来自哪一层。
+
+```text
+◍ 智能体团队
+  指挥官       [会话模型]   和你对话的那个模型，不在这里配
+  写手         [本书指定]   deepseek-official/deepseek-flash          还原
+      接口  [deepseek-official ▾]   模型  [deepseek-flash ▾]   思考 [默认（medium）▾]
+  逻辑审       [全局默认]   zai/glm-4
+  角色审       [跟随会话]   继承当前会话模型
+  裁决         [跟随会话]   继承当前会话模型
+```
+
+- **挑的是你真配过的。** 接口与模型清单来自宿主的 `llm` 服务（`listProviders` / `listModels` / `resolveModelInfo`），不是插件自带的静态表；60 秒缓存，某个 provider 元数据拿不到时只是不列思考档位，不会卡住整页。
+- **思考强度跟着模型走。** 模型的适配器报了什么档位就只列什么档位，默认项显示它的 `defaultEffort`。
+- **面板与工具是同一份存储。** 面板写的是 `project.json` 的 `roles`，`novel_roles action="list"` 立刻看得到，下一次 `novel_dispatch` 立刻按新路由派活；「还原」清掉本书覆写，回落到全局默认。
+- **三层来源说清楚。** `本书指定` > `全局默认`（插件配置里的 `roles`）> `跟随会话`（继承父会话模型）。面板只改第一层。
 
 ## 确定性检查都查什么
 
@@ -230,7 +251,8 @@ POST /api/inkwell/init                  # { dir, title?, targetWords? } 建书
 - **不续写、不代笔。** 插件自己没有生成文字的模型调用，一个字都不替你写（`novel_dispatch` 派出去的是子智能体，不是本插件）。
 - **不判断文学质量。** 「这段好不好」不是确定性函数能回答的，所以它不装作能。
 - **不做平台敏感词审核。** 各平台规则不同且常变，硬编码在插件里很快会过期。
-- **面板只建书，不推进。** 右侧栏的工坊能选目录建一本新书（与 `novel_project action="init"` 等价），但推进阶段、改章纲、写正文仍然只有工具能做。
+- **面板只开两扇写门。** 右侧栏能选目录建一本新书（与 `novel_project action="init"` 等价），能给四个智能体挑模型（与 `novel_roles action="set"` 等价）。推进阶段、改章纲、写正文仍然只有工具能做。
+- **不替你选默认模型。** 团队页只列你已经在 dsh 里配好的接口与模型；没配就先配，插件不塞一份自己的清单。
 
 ## 已知边界
 
@@ -243,7 +265,7 @@ POST /api/inkwell/init                  # { dir, title?, targetWords? } 建书
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，164 个用例，含端到端流程、双工作区隔离、面板投影与建书路由
+npm test            # vitest，197 个用例，含端到端流程、双工作区隔离、面板投影／建书／团队路由
 npm run build       # 产出 lib/
 npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部

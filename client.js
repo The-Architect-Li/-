@@ -51,6 +51,7 @@ window.__ModuleLoader__.load({
     const API_SNAPSHOT = '/api/inkwell/snapshot'
     const API_DIRS = '/api/inkwell/dirs'
     const API_INIT = '/api/inkwell/init'
+    const API_ROLES = '/api/inkwell/roles'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -169,6 +170,62 @@ window.__ModuleLoader__.load({
         throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
       }
       return payload.data
+    }
+
+    /**
+     * Read the agent team and the models the host can route to.
+     * @param sessionId - the calling session.
+     * @param root - an explicit book directory, when the panel pinned one.
+     * @param signal - aborts the request when the view unmounts.
+     * @returns `{ roles, providers, noBook, catalogUnavailable, root }`.
+     */
+    async function loadTeam(sessionId, root, signal) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const url = params.length > 0 ? `${API_ROLES}?${params.join('&')}` : API_ROLES
+      const response = await fetch(url, { headers: { accept: 'application/json' }, signal })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Set one role's model route in this book.
+     *
+     * An empty string clears the field on the host side, which is exactly what
+     * the "跟随全局" option means — so the picker sends `''` rather than
+     * omitting the key, and the host stores the suppression.
+     *
+     * @param sessionId - the calling session.
+     * @param root - an explicit book directory, when the panel pinned one.
+     * @param body - `{ role, provider?, model?, reasoningEffort?, maxTokens?, reset? }`.
+     * @returns the refreshed team payload.
+     */
+    async function saveRole(sessionId, root, body) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const url = params.length > 0 ? `${API_ROLES}?${params.join('&')}` : API_ROLES
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify(body),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Where a role's effective route comes from, as the team page labels it. */
+    const ROLE_SOURCE = {
+      book: '本书指定',
+      global: '全局默认',
+      inherit: '跟随会话',
     }
 
     /**
@@ -324,6 +381,46 @@ window.__ModuleLoader__.load({
       fieldLabel: { fontSize: '10.5px', opacity: 0.55 },
       actions: { display: 'flex', gap: '6px', padding: '8px 8px 4px', alignItems: 'center' },
       spacerBlock: { height: '6px' },
+      select: {
+        border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
+        background: 'transparent',
+        color: 'inherit',
+        borderRadius: '6px',
+        font: 'inherit',
+        fontSize: '11px',
+        padding: '1px 4px',
+        maxWidth: '100%',
+        minWidth: 0,
+      },
+      roleCard: {
+        border: '1px solid color-mix(in srgb, currentColor 12%, transparent)',
+        borderRadius: '8px',
+        padding: '6px 8px',
+        margin: '6px 8px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+      },
+      roleHead: { display: 'flex', alignItems: 'center', gap: '6px' },
+      roleName: { fontWeight: 600, fontSize: '12px' },
+      roleDuty: { fontSize: '10.5px', opacity: 0.55, lineHeight: 1.45 },
+      roleEffective: {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '10.5px',
+        opacity: 0.65,
+        wordBreak: 'break-all',
+      },
+      fieldRow: { display: 'flex', alignItems: 'center', gap: '6px' },
+      fieldName: { width: '46px', flex: '0 0 auto', fontSize: '10.5px', opacity: 0.55 },
+      settingRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '8px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        margin: '2px 8px',
+      },
     }
 
     /**
@@ -586,6 +683,243 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The team page: who is on the team, and which model each one runs on.
+     *
+     * Only the four dispatched roles are editable. The commander is not a
+     * dispatch — it is the session the writer is already talking to — so it is
+     * shown as a stated fact rather than a picker that would lie.
+     *
+     * @param props - session, pinned root, and navigation callbacks.
+     * @returns the page.
+     */
+    function Team(props) {
+      const { sessionId, root, onBack } = props
+      const [state, setState] = useState({ status: 'loading' })
+      const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
+
+      useEffect(() => {
+        const controller = new AbortController()
+        loadTeam(sessionId, root, controller.signal)
+          .then((data) => {
+            if (!controller.signal.aborted) setState({ status: 'ready', data })
+          })
+          .catch((failure) => {
+            if (failure && failure.name === 'AbortError') return
+            if (!controller.signal.aborted) setState({ status: 'error', message: String((failure && failure.message) || failure) })
+          })
+        return () => controller.abort()
+      }, [sessionId, root])
+
+      const save = useCallback(
+        (role, body) => {
+          setBusy(role)
+          setError('')
+          saveRole(sessionId, root, { role, ...body })
+            .then((data) => setState({ status: 'ready', data }))
+            .catch((failure) => setError(String((failure && failure.message) || failure)))
+            .finally(() => setBusy(''))
+        },
+        [sessionId, root],
+      )
+
+      const head = h(
+        'div',
+        { style: S.head },
+        h('button', { type: 'button', style: S.iconButton, onClick: onBack }, '返回'),
+        h('span', { style: S.bookTitle }, '智能体团队'),
+        h('span', { style: S.spacer }),
+        busy ? h('span', { style: S.aside }, '保存中…') : null,
+      )
+
+      if (state.status === 'loading') return h('div', { style: S.root }, head, h('div', { style: S.note }, '正在读取…'))
+      if (state.status === 'error') {
+        return h('div', { style: S.root }, head, h('div', { style: S.error }, state.message || '读取失败'))
+      }
+
+      const data = state.data
+      const providers = Array.isArray(data.providers) ? data.providers : []
+      const roles = Array.isArray(data.roles) ? data.roles : []
+
+      /** Options for the provider picker: the inherit choice, then each route. */
+      const providerOptions = (role) => {
+        const chosen = role.override && role.override.provider ? role.override.provider : ''
+        const options = [h('option', { key: '__inherit', value: '' }, '跟随全局')]
+        for (const provider of providers) {
+          options.push(h('option', { key: provider.id, value: provider.id }, provider.name || provider.id))
+        }
+        return h(
+          'select',
+          {
+            style: S.select,
+            value: chosen,
+            disabled: busy === role.id,
+            onChange: (event) => {
+              const value = event.target.value
+              // A provider change invalidates the model: ids are provider-local.
+              save(role.id, { provider: value, model: '' })
+            },
+          },
+          ...options,
+        )
+      }
+
+      /** Options for the model picker, limited to the chosen provider. */
+      const modelOptions = (role) => {
+        const providerId = role.override && role.override.provider ? role.override.provider : ''
+        const chosen = role.override && role.override.model ? role.override.model : ''
+        const scoped = providerId ? providers.filter((entry) => entry.id === providerId) : providers
+        const options = [h('option', { key: '__inherit', value: '' }, providerId ? '选择模型' : '跟随全局')]
+        for (const provider of scoped) {
+          for (const model of provider.models) {
+            const label = providerId ? model.name || model.id : `${provider.name || provider.id} / ${model.name || model.id}`
+            options.push(h('option', { key: `${provider.id}/${model.id}`, value: model.id }, label))
+          }
+        }
+        return h(
+          'select',
+          {
+            style: S.select,
+            value: chosen,
+            disabled: busy === role.id || scoped.length === 0,
+            onChange: (event) => save(role.id, { model: event.target.value }),
+          },
+          ...options,
+        )
+      }
+
+      /** Options for the reasoning effort, when the chosen model advertises any. */
+      const effortOptions = (role) => {
+        const providerId = role.override && role.override.provider ? role.override.provider : ''
+        const modelId = role.override && role.override.model ? role.override.model : ''
+        if (!providerId || !modelId) return null
+        const provider = providers.find((entry) => entry.id === providerId)
+        const model = provider && provider.models.find((entry) => entry.id === modelId)
+        const efforts = model && Array.isArray(model.efforts) ? model.efforts : []
+        if (efforts.length === 0) return null
+        const chosen = role.override && role.override.reasoningEffort ? role.override.reasoningEffort : ''
+        return h(
+          'div',
+          { style: S.fieldRow },
+          h('span', { style: S.fieldName }, '思考'),
+          h(
+            'select',
+            {
+              style: S.select,
+              value: chosen,
+              disabled: busy === role.id,
+              onChange: (event) => save(role.id, { reasoningEffort: event.target.value }),
+            },
+            h('option', { key: '__default', value: '' }, model.defaultEffort ? `默认（${model.defaultEffort}）` : '默认'),
+            ...efforts.map((effort) => h('option', { key: effort.id, value: effort.id }, effort.name || effort.id)),
+          ),
+        )
+      }
+
+      return h(
+        'div',
+        { style: S.root },
+        head,
+        data.noBook
+          ? h('div', { style: S.note }, '这本书还没有项目文件。先在面板里新建一本，再回来配模型。')
+          : null,
+        error ? h('div', { style: S.error }, error) : null,
+        h(
+          'div',
+          { style: S.roleCard },
+          h(
+            'div',
+            { style: S.roleHead },
+            h('span', { style: S.roleName }, '指挥官'),
+            h('span', { style: S.pill }, '会话模型'),
+          ),
+          h('div', { style: S.roleDuty }, '和你对话的那个模型：取上下文包、派活、把审核意见转述给你。它不在这里配，因为它在你的会话设置里。'),
+        ),
+        ...roles.map((role) =>
+          h(
+            'div',
+            { key: role.id, style: S.roleCard },
+            h(
+              'div',
+              { style: S.roleHead },
+              h('span', { style: S.roleName }, role.label),
+              h('span', { style: S.pill }, ROLE_SOURCE[role.source] || role.source),
+              h('span', { style: S.spacer }),
+              role.source === 'book'
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      style: S.iconButton,
+                      disabled: busy === role.id,
+                      title: '清掉本书的指定，回到全局默认',
+                      onClick: () => save(role.id, { reset: true }),
+                    },
+                    '还原',
+                  )
+                : null,
+            ),
+            h('div', { style: S.roleDuty }, role.duty),
+            h('div', { style: S.fieldRow }, h('span', { style: S.fieldName }, '接口'), providerOptions(role)),
+            h('div', { style: S.fieldRow }, h('span', { style: S.fieldName }, '模型'), modelOptions(role)),
+            effortOptions(role),
+            h('div', { style: S.roleEffective }, role.effective),
+          ),
+        ),
+        h(
+          'div',
+          { style: S.footer },
+          data.catalogUnavailable
+            ? '宿主没有暴露 llm 服务，模型清单读不到；仍可用 novel_roles 工具指定。'
+            : `可选 ${providers.length} 个接口、${providers.reduce((total, entry) => total + entry.models.length, 0)} 个模型，来自你在 dsh 里已配置好的那些。`,
+        ),
+      )
+    }
+
+    /**
+     * The settings page: a list of doors, one of which is the team.
+     *
+     * @param props - session, book root, and navigation callbacks.
+     * @returns the page.
+     */
+    function Settings(props) {
+      const { root, onBack, onOpenTeam, roleCount } = props
+      const row = (glyph, label, detail, onClick) =>
+        h(
+          'div',
+          { style: S.settingRow, onClick, role: 'button' },
+          h('span', { style: S.glyph }, glyph),
+          h('div', { style: { display: 'flex', flexDirection: 'column', minWidth: 0 } },
+            h('span', { style: { fontSize: '12px' } }, label),
+            detail ? h('span', { style: { fontSize: '10.5px', opacity: 0.55 } }, detail) : null,
+          ),
+          h('span', { style: S.spacer }),
+          h('span', { style: { opacity: 0.4 } }, '›'),
+        )
+
+      return h(
+        'div',
+        { style: S.root },
+        h(
+          'div',
+          { style: S.head },
+          h('button', { type: 'button', style: S.iconButton, onClick: onBack }, '返回'),
+          h('span', { style: S.bookTitle }, '设置'),
+        ),
+        row('◍', '智能体团队', `${roleCount} 个智能体，各自可以指定模型`, onOpenTeam),
+        h('div', { style: { height: '10px' } }),
+        h('div', { style: { ...S.sectionHead, cursor: 'default' } }, '关于'),
+        h(
+          'div',
+          { style: { padding: '0 8px', fontSize: '10.5px', opacity: 0.6, lineHeight: 1.6 } },
+          h('div', null, '墨井 · 长篇小说约束内核'),
+          h('div', null, '面板只做两件写操作：建书、给智能体选模型。正文与设定仍然只走 novel_* 工具和它们的闸门。'),
+        ),
+        h('div', { style: S.footer }, root || ''),
+      )
+    }
+
+    /**
      * The panel body.
      *
      * `sessionId` is the session standard kit; `hooks.tabInfo` is this tab
@@ -676,6 +1010,9 @@ window.__ModuleLoader__.load({
           ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('new'), title: '在某个目录里新建一本书' }, '＋ 新建')
           : null,
         view === 'tree'
+          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('settings'), title: '设置：智能体团队与模型' }, '⚙')
+          : null,
+        view === 'tree'
           ? h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
           : null,
       )
@@ -683,6 +1020,19 @@ window.__ModuleLoader__.load({
       if (view === 'new') {
         const suggested = state.status === 'ready' && state.data.root ? state.data.root.replace(/[\\/]\.novel[\\/]?$/, '') : ''
         return h(NewBook, { sessionId, suggestedDir: suggested, onCancel: () => setView('tree'), onCreated })
+      }
+
+      if (view === 'settings') {
+        return h(Settings, {
+          root: state.status === 'ready' && state.data.root ? state.data.root : '',
+          roleCount: 4,
+          onBack: () => setView('tree'),
+          onOpenTeam: () => setView('team'),
+        })
+      }
+
+      if (view === 'team') {
+        return h(Team, { sessionId, root: root || '', onBack: () => setView('settings') })
       }
 
       if (state.status === 'loading') {

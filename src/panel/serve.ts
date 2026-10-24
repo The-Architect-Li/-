@@ -32,7 +32,10 @@ import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
 import type { InkwellConfig } from '../domain/types.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
+import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
+import type { LlmCatalogSource } from './ports.ts'
+import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
 
 /** Route prefix the browser half fetches under. */
 export const PANEL_PREFIX = '/api/inkwell'
@@ -53,6 +56,14 @@ export interface PanelDeps {
   baseStore: ProjectStore
   /** Session lookup, when the host exposes one. */
   cwdOf?: (sessionId: string) => string | undefined
+  /**
+   * The host's model registry, when this dsh has one.
+   *
+   * Read lazily on each request so a profile that swaps providers at runtime is
+   * not stuck with the registry it had at mount time. Absent means the panel
+   * shows the team without a picker rather than failing to load.
+   */
+  llmOf?: () => LlmCatalogSource | undefined
 }
 
 /** One answered request, before it becomes bytes. */
@@ -264,6 +275,118 @@ export async function listPanelDirs(deps: PanelDeps, requested: string | undefin
 }
 
 /**
+ * The agent-team payload: who is on the team, and what they may run on.
+ *
+ * `noBook` is not an error: a panel with no book still shows the team, so the
+ * routes can be picked before the first chapter exists. `catalogUnavailable`
+ * separates "the host has no model registry" from "the registry answered with
+ * nothing", which are different repairs for the reader.
+ */
+export interface TeamPayload {
+  roles: RoleView[]
+  providers: CatalogProvider[]
+  catalogUnavailable: boolean
+  /** The book these routes belong to. */
+  root: string
+  /** True when no project exists at {@link TeamPayload.root} yet. */
+  noBook: boolean
+}
+
+/**
+ * Read the agent team for one book.
+ *
+ * @param deps - route dependencies.
+ * @param cache - the provider/model catalog cache.
+ * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns status and body.
+ */
+export async function readTeam(
+  deps: PanelDeps,
+  cache: CatalogCache,
+  sessionId: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    const source = deps.llmOf?.()
+    const providers = await cache.get(source)
+    const payload: TeamPayload = {
+      roles: roleViews(deps.config, undefined),
+      providers,
+      catalogUnavailable: source === undefined,
+      root: store.root,
+      noBook: true,
+    }
+    if (await store.exists()) {
+      const project = await store.readProject()
+      payload.roles = roleViews(deps.config, project.roles)
+      payload.noBook = false
+    }
+    return { status: 200, body: { ok: true, data: payload } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * Set one role's model route in this book.
+ *
+ * Same stored shape the `novel_roles` tool writes, so a route picked in the
+ * panel is visible to `novel_roles action="list"` and honoured by the next
+ * dispatch — one lever, two handles.
+ *
+ * @param deps - route dependencies.
+ * @param cache - the provider/model catalog cache, used to reject a typo.
+ * @param body - `{ role, provider?, model?, maxTokens?, reasoningEffort?, reset? }`.
+ * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns status and the refreshed team payload.
+ */
+export async function writeTeam(
+  deps: PanelDeps,
+  cache: CatalogCache,
+  body: Record<string, unknown>,
+  sessionId: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) {
+      throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本，再配智能体。', 409)
+    }
+    const choice = readRoleChoice(body)
+    const providers = await cache.get(deps.llmOf?.())
+    checkRouteAgainstCatalog(
+      choice,
+      providers.map((entry) => entry.id),
+      (provider) => modelsOf(providers, provider).map((model) => model.id),
+    )
+    const project = await store.readProject()
+    const next = withRoleOverride(project, choice)
+    await store.writeProject(next)
+    const payload: TeamPayload = {
+      roles: roleViews(deps.config, next.roles),
+      providers,
+      catalogUnavailable: deps.llmOf?.() === undefined,
+      root: store.root,
+      noBook: false,
+    }
+    return { status: 200, body: { ok: true, data: payload } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
  * Write a JSON answer with no-store caching.
  *
  * @param res - the response to own.
@@ -286,6 +409,9 @@ function send(res: ServerResponse, answer: PanelAnswer): void {
  * @returns a handler owning the full response for every request under the prefix.
  */
 export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  // One cache per mounted route: a panel that polls must not re-ask every
+  // provider for its catalog on each poll, but a plugin reload gets a fresh one.
+  const catalog = createCatalogCache()
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost')
@@ -333,6 +459,17 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await createBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/roles') {
+        const sessionId = url.searchParams.get('session') ?? undefined
+        const root = url.searchParams.get('root') ?? undefined
+        if (isRead) {
+          send(res, await readTeam(deps, catalog, sessionId, root))
+          return
+        }
+        send(res, await writeTeam(deps, catalog, await readJson(req), sessionId, root))
         return
       }
 
