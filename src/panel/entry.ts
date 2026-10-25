@@ -153,6 +153,10 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
       { label: '外貌', value: card.appearance || '（还没写）' },
       { label: '目标', value: card.goal || '（还没写）' },
       { label: '秘密', value: card.secret || '（还没写）' },
+      // Material the importer could not map onto a field of its own — the
+      // relationship web and growth lines a character sheet usually carries.
+      // Hidden when empty so a hand-written card looks unchanged.
+      ...(card.notes ? [{ label: '其他材料', value: card.notes }] : []),
       { label: '最近改动', value: card.updatedAt },
     ],
     lists: [
@@ -168,6 +172,7 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
         { key: 'appearance', label: '外貌', value: card.appearance, multiline: true },
         { key: 'goal', label: '目标', value: card.goal },
         { key: 'secret', label: '秘密', value: card.secret, multiline: true },
+        { key: 'notes', label: '其他材料', value: card.notes ?? '', multiline: true },
       ],
     },
     root,

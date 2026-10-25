@@ -178,7 +178,7 @@ describe('editable projection', () => {
     const snapshot = book({ characters: [card('沈砚', 'protagonist', { voice: '短句', goal: '找到妹妹' })] })
     const page = buildEntry(snapshot, 'character', '沈砚', [], ROOT)
     expect(page?.breadcrumb).toEqual(['人物设计', '主角'])
-    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['role', 'voice', 'appearance', 'goal', 'secret'])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['role', 'voice', 'appearance', 'goal', 'secret', 'notes'])
     expect(page?.edit.inputs.find((input) => input.key === 'voice')?.value).toBe('短句')
     // Role is a choice, not free text: the host supplies the options.
     expect(page?.edit.inputs.find((input) => input.key === 'role')?.options?.length).toBeGreaterThan(0)

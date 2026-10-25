@@ -38,6 +38,10 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       appearance: { type: 'string', description: '外形特征，越具体越能防止前后矛盾' },
       goal: { type: 'string', description: '这个角色想要什么' },
       secret: { type: 'string', description: '不愿被人知道的事' },
+      notes: {
+        type: 'string',
+        description: '关系网、成长线这类归不到上面几个字段的材料；不填则保留原样',
+      },
       kind: { type: 'string', description: '世界观条目类型：地点/势力/规则/物品/历史' },
       detail: { type: 'string', description: '世界观条目的内容' },
     },
@@ -62,6 +66,12 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       if (args.action === 'upsert_character') {
         const name = args.name?.trim()
         if (!name) throw new Error('upsert_character 需要 name。')
+        // A card written here replaces the old one wholesale, so anything this
+        // call does not mention has to be carried over by hand — the imported
+        // `notes` (relationship web, growth lines) would otherwise vanish the
+        // first time the model touched the card.
+        const previous = (await store.characters()).find((item) => item.name === name)
+        const notes = args.notes === undefined ? previous?.notes : args.notes.trim()
         const card: CharacterCard = {
           name,
           role: asRole(args.role),
@@ -69,6 +79,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           appearance: args.appearance?.trim() ?? '',
           goal: args.goal?.trim() ?? '',
           secret: args.secret?.trim() ?? '',
+          ...(notes === undefined || notes === '' ? {} : { notes }),
           updatedAt: new Date().toISOString(),
         }
         const list = await store.upsertCharacter(card)

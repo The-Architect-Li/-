@@ -12,6 +12,14 @@ import { PanelInputError } from './dirs.ts'
 /** Longest a free-text canon field may be. */
 export const MAX_FIELD_CHARS = 4000
 
+/**
+ * Longest a character's `notes` may be.
+ *
+ * Larger than a card field on purpose: this is where an imported sheet's
+ * relationship web lands, and that is a list of people, not a sentence.
+ */
+export const MAX_NOTES_CHARS = 20_000
+
 /** Longest a chapter body may be, in characters. */
 export const MAX_CHAPTER_CHARS = 200_000
 
@@ -35,6 +43,7 @@ export interface CharacterPatch {
   appearance?: string | undefined
   goal?: string | undefined
   secret?: string | undefined
+  notes?: string | undefined
 }
 
 /**
@@ -62,6 +71,7 @@ export function readCharacterPatch(key: string, body: Record<string, unknown>): 
   patch.appearance = readText(body, 'appearance', MAX_FIELD_CHARS, '外形')
   patch.goal = readText(body, 'goal', MAX_FIELD_CHARS, '目标')
   patch.secret = readText(body, 'secret', MAX_FIELD_CHARS, '秘密')
+  patch.notes = readText(body, 'notes', MAX_NOTES_CHARS, '其他材料')
   return patch
 }
 

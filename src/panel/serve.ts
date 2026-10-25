@@ -791,6 +791,10 @@ export async function writeEntry(
         appearance: edit.appearance ?? existing.appearance,
         goal: edit.goal ?? existing.goal,
         secret: edit.secret ?? existing.secret,
+        // The stored card is replaced wholesale, so a field this edit does not
+        // mention has to be carried over here or it is deleted. `notes` is also
+        // the one field an empty string legitimately clears.
+        notes: edit.notes ?? existing.notes,
         updatedAt: new Date().toISOString(),
       }
       await store.upsertCharacter(card)
