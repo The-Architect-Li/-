@@ -273,6 +273,20 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** A failure reduced to something a panel line can show. */
+    function reasonOf(failure) {
+      if (failure === null || failure === undefined) return '没有返回原因'
+      const message = failure.message || failure.code || String(failure)
+      return String(message)
+    }
+
+    /** Note a swallowed step in the devtools console, keeping the step name. */
+    function warnStep(step, failure) {
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn(`[inkwell] ${step} failed`, failure)
+      }
+    }
+
     /**
      * Register a directory as a workspace and open a chat session in it.
      *
@@ -282,31 +296,71 @@ window.__ModuleLoader__.load({
      * and `connectWorkspace` reuses a blank session there rather than piling up
      * empties.
      *
+     * Every step is guarded on its own. The book already exists on disk by the
+     * time we get here, so a host that refuses the workspace or the navigation
+     * must not make the click look like a failure — each step that fails says
+     * what still works ("open it from the shelf") instead of throwing.
+     *
      * @param dir - the absolute directory the book lives in.
      * @param root - the book's absolute directory.
-     * @returns the opened session and workspace, or a note when the host has no
-     *   workspace service at all (a panel-only host still gets a book).
+     * @returns the opened session and workspace, plus a note naming the first
+     *   step the host refused, if any.
      */
     async function openBookWorkspace(dir, root) {
       const workspaces = hostService('workspaces')
       const ui = hostService('uiWorkspace')
-      const usable =
-        workspaces !== null &&
-        typeof workspaces.create === 'function' &&
-        ui !== null &&
-        typeof ui.connectWorkspace === 'function'
-      if (!usable) {
+      if (workspaces === null || typeof workspaces.create !== 'function') {
         return { sessionId: null, workspaceId: null, note: '宿主没有工作区服务：书已经建好，在书库里点它就能进来。' }
       }
-      const workspace = await workspaces.create({ path: dir })
-      const sessionId = await ui.connectWorkspace(workspace.workspaceId)
-      // Pin before showing it: the session's panel mounts the moment the host
-      // switches views, so the binding has to be on disk first.
-      await pinSessionTo(sessionId, root).catch(() => undefined)
+
+      let workspace = null
+      try {
+        workspace = await workspaces.create({ path: dir })
+      } catch (failure) {
+        warnStep('workspaces.create', failure)
+        return {
+          sessionId: null,
+          workspaceId: null,
+          note: `书已经建好，但这个文件夹没能注册成工作区：${reasonOf(failure)}。在书库里点这本书就能开始写。`,
+        }
+      }
+
+      const workspaceId = workspace === null ? null : workspace.workspaceId ?? workspace.id ?? null
+      if (ui === null || typeof ui.connectWorkspace !== 'function' || workspaceId === null) {
+        return {
+          sessionId: null,
+          workspaceId,
+          note: '书已经建好，文件夹也注册成了工作区，但这个宿主没有切会话的接口：到侧边栏那个工作区里开个会话即可。',
+        }
+      }
+
+      let sessionId = null
+      try {
+        sessionId = await ui.connectWorkspace(workspaceId)
+      } catch (failure) {
+        warnStep('connectWorkspace', failure)
+        return {
+          sessionId: null,
+          workspaceId,
+          note: `书和工作区都好了，但这个会话没能打开：${reasonOf(failure)}。侧边栏那个工作区里可以手动开会话。`,
+        }
+      }
+
+      // Seed first: the panel in the new session mounts as soon as the host
+      // switches views, and it should already know which book it is showing.
       seedPanelRoot(sessionId, root)
+      // Pinning is a belt to that braces: the panel prefers the pin, and the
+      // tools in that session will too.
+      let note = ''
+      try {
+        await pinSessionTo(sessionId, root)
+      } catch (failure) {
+        warnStep('pinSessionTo', failure)
+        note = `会话已经打开，但没能把它记到这本书上（${reasonOf(failure)}）：面板会按工作目录找书，通常照样能打开。`
+      }
       // `openSession` takes a SessionId (or a subagent address), not a wrapper.
       if (typeof ui.openSession === 'function') ui.openSession(sessionId)
-      return { sessionId, workspaceId: workspace.workspaceId, note: '' }
+      return { sessionId, workspaceId, note }
     }
 
     /**
