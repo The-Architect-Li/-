@@ -63,8 +63,21 @@ function chineseNumber(text: string): number | undefined {
   return value
 }
 
-/** Zero-pad to two digits, because `parseWhen` wants `2019-03`. */
-function pad(value: number): string {
+/** Read a count the way Chinese prose writes one: `十四`, `二十`, `三十一`. */
+function chineseCount(text: string): number | undefined {
+  if (text === '') return undefined
+  const tens = text.indexOf('十')
+  if (tens === -1) return chineseNumber(text)
+  const high = text.slice(0, tens)
+  const low = text.slice(tens + 1)
+  const tensDigit = high === '' ? 1 : chineseNumber(high)
+  const onesDigit = low === '' ? 0 : chineseNumber(low)
+  if (tensDigit === undefined || onesDigit === undefined) return undefined
+  if (tensDigit > 9 || onesDigit > 9) return undefined
+  return tensDigit * 10 + onesDigit
+}
+
+/** Zero-pad to two digits, because `parseWhen` wants `2019-03`. */function pad(value: number): string {
   return String(value).padStart(2, '0')
 }
 
@@ -203,13 +216,13 @@ function singleCount(text: string): number | undefined {
   if (text === '半') return 0.5
   if (text === '几') return 3
   if (text === '数') return 4
-  return chineseNumber(text)
+  return chineseCount(text)
 }
 
 /** A month or day number, however the sentence spelled it. */
 function countOf(text: string): number | undefined {
   if (/^[0-9０-９]+$/.test(text)) return Number(text.normalize('NFKC'))
-  return chineseNumber(text)
+  return chineseCount(text)
 }
 
 /**

@@ -17,6 +17,11 @@ describe('scanProseTimes', () => {
     expect(scanProseTimes('二〇二〇年的雪').map((item) => item.when)).toEqual(['2020'])
   })
 
+  it('reads a month and day spelled in Chinese digits', () => {
+    expect(scanProseTimes('二〇〇九年十月，她进了厂').map((item) => item.when)).toEqual(['2009-10'])
+    expect(scanProseTimes('二〇二〇年十月二十一日，天晴').map((item) => item.when)).toEqual(['2020-10-21'])
+  })
+
   it('refuses a day the calendar does not have, without falling back to the month', () => {
     expect(scanProseTimes('2020年2月31日，什么都没发生。')).toEqual([])
   })
