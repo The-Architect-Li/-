@@ -36,7 +36,15 @@ function sliceObject(text, marker) {
       continue
     }
     if (char === "'" || char === '"' || char === '`') quote = char
-    else if (char === '{') depth += 1
+    else if (char === '/' && text[index + 1] === '/') {
+      // A comment inside the block can contain an apostrophe ("a book's
+      // clock"), which would otherwise open a string that never closes.
+      const newline = text.indexOf('\n', index)
+      index = newline < 0 ? text.length : newline
+    } else if (char === '/' && text[index + 1] === '*') {
+      const close = text.indexOf('*/', index + 2)
+      index = close < 0 ? text.length : close + 1
+    } else if (char === '{') depth += 1
     else if (char === '}') {
       depth -= 1
       if (depth === 0) return text.slice(open, index + 1)
@@ -360,6 +368,32 @@ const volumesDialog = `<div ${attr(S.root)}>
   </div></div>
 </div>`
 
+const chip = (label, on, dot) => `<button type="button" class="iw-chip${on ? ' iw-chip-on' : ''}" ${attr(on ? S.chipOn : S.chip)}>${escape(label)}${dot ? '<span style="color:var(--iw-accent);font-size:14px;line-height:10px">·</span>' : ''}</button>`
+
+const clockPage = `<div ${attr(S.root)}>
+  ${headBar('时间线', button('取消') + button('保存', true))}
+  ${crumbLine(['剧情设计', '时间线'])}
+  ${heading('时间线', '2020-10 → 2026-03', '85 个事件 · 7 个年点 · 0 次回忆')}
+  <div ${attr(S.editField)}>
+    <div ${attr(S.editLabel)}>起点（例如 2020-10；留空就回到第一个锚点）</div>
+    <input class="iw-input" ${attr(S.input)} value="2020-10">
+  </div>
+  <div ${attr(S.editField)}>
+    <div ${attr(S.editLabel)}>给选中的章节打这个日期（例如 2021-03-07）</div>
+    <input class="iw-input" ${attr(S.input)} value="2019-03">
+  </div>
+  <div ${attr(S.editField)}>
+    <div ${attr(S.clockHead)}>
+      <span ${attr(S.editLabel)}>选章节（已选 3 / 12）</span>
+      <button type="button" class="iw-btn iw-link" ${attr(S.linkButton)}>全选</button>
+    </div>
+    <div class="iw-clock-grid" ${attr(S.clockGrid)}>
+      ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => chip(String(n), n <= 3, n === 2 || n === 3)).join('')}
+    </div>
+    <div ${attr(S.editHint)}>点了章号再填上面的日期；已带日期的章右边有一个点，重填就覆盖它。</div>
+  </div>
+</div>`
+
 const views = [
   ['shelf', '书库', shelf],
   ['tree', '目录', tree],
@@ -371,6 +405,7 @@ const views = [
   ['export', '导出弹窗', exportDialog],
   ['delete', '删除弹窗', deleteDialog],
   ['volumes', '分卷弹窗', volumesDialog],
+  ['clock', '时间线打日期', clockPage],
 ]
 
 const page = (body, dark, extra = '') => `<!doctype html>

@@ -49,7 +49,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
 import { setBookStart } from '../domain/book-start.ts'
-import { addAnchor } from '../domain/timeline-edit.ts'
+import { addAnchor, addAnchors } from '../domain/timeline-edit.ts'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
@@ -1122,9 +1122,21 @@ export async function writeEntry(
       const anchorChapter = Number((fields as Record<string, unknown>).anchorChapter ?? 0)
       const anchorWhen = (fields as Record<string, unknown>).anchorWhen
       const anchorLabel = (fields as Record<string, unknown>).anchorLabel
-      if (typeof start !== 'string' && !(anchorChapter > 0 && typeof anchorWhen === 'string')) {
+      const clockWhen = (fields as Record<string, unknown>).clockWhen
+      const clockChapters = (fields as Record<string, unknown>).clockChapters
+      const picked = typeof clockChapters === 'string'
+        ? clockChapters.split(/[,\s，、]+/).map((part) => Number(part)).filter((n) => Number.isInteger(n) && n > 0)
+        : Array.isArray(clockChapters)
+          ? clockChapters.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)
+          : []
+      const dating = typeof clockWhen === 'string' && clockWhen.trim() !== ''
+      if (
+        typeof start !== 'string'
+        && !(anchorChapter > 0 && typeof anchorWhen === 'string')
+        && !dating
+      ) {
         throw new PanelInputError(
-          '时间线这里能写两样东西：全书起点（start），或者某一章的日期（anchorChapter + anchorWhen）。',
+          '时间线这里能写三样东西：全书起点（start）、某一章的日期（anchorChapter + anchorWhen），或者给选中的章节打一个日期（clockWhen + clockChapters）。',
           409,
         )
       }
@@ -1133,6 +1145,15 @@ export async function writeEntry(
         throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
       }
       try {
+        // One date over a picked set: chapters 1–10 are a month, chapter 7 is the
+        // same month a year on. Dating eighty boxes one by one is why the clock
+        // stayed empty in the author's own book.
+        if (dating) {
+          if (picked.length === 0) {
+            throw new PanelInputError('要先选章节，再给它一个日期。', 409)
+          }
+          await addAnchors(store, { chapters: picked, when: String(clockWhen) })
+        }
         // An anchor typed here is a person's statement, not the scanner's: the
         // label is what they meant by that date, and source stays 'manual' so a
         // later adopt pass does not think it came from prose.

@@ -52,6 +52,14 @@ export interface EntryInput {
 /** The editable face of a page. */
 export interface EntryEdit {
   inputs: EntryInput[]
+  /**
+   * Chapters that can be given a date at once, and the dates they already have.
+   *
+   * The timeline page is the one page whose edit is not a field: dating eighty
+   * chapters one box at a time is why the clock stayed empty. The client draws a
+   * checklist from this and posts the picked numbers with one date.
+   */
+  clock?: { chapters: number[]; dated: Record<string, string> }
   /** The long body, when the thing has one (a chapter's prose). */
   body?: { key: string; label: string; value: string }
   /**
@@ -609,10 +617,24 @@ function timelinePage(snapshot: Snapshot, root: string): EntryPayload {
           label: '起点（例如 2020-10；留空就回到第一个锚点）',
           value: pinned ?? '',
         },
-        { key: 'anchorChapter', label: '钉一章的日期：章号（例如 12；不填就不加）', value: '' },
-        { key: 'anchorWhen', label: '那一章是什么时候（例如 2021-03-07）', value: '' },
-        { key: 'anchorLabel', label: '那一章这一刻发生了什么（一句话，可不填）', value: '' },
+        { key: 'clockWhen', label: '给选中的章节打这个日期（例如 2021-03-07）', value: '' },
+        { key: 'clockChapters', label: '选了哪些章', value: '' },
       ],
+      // Which chapters can be picked, and which ones already have a date — the
+      // client draws the checklist from here rather than guessing from the tree.
+      // Planned chapters are in the list too: a clock that can only be filled in
+      // after the prose exists is a clock that arrives too late.
+      clock: {
+        chapters: [...new Set([
+          ...snapshot.chapters.map((chapter) => chapter.number),
+          ...snapshot.plans.map((plan) => plan.number),
+        ])].sort((a, b) => a - b),
+        dated: Object.fromEntries(
+          snapshot.timeline.anchors
+            .filter((anchor) => anchor.chapter > 0)
+            .map((anchor) => [String(anchor.chapter), anchor.when]),
+        ),
+      },
     },
     root,
   }

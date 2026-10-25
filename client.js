@@ -722,6 +722,59 @@ window.__ModuleLoader__.load({
         color: 'var(--iw-fg-2)',
         whiteSpace: 'nowrap',
       },
+      clockHead: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        paddingBottom: '4px',
+      },
+      clockGrid: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px',
+        maxHeight: '132px',
+        overflowY: 'auto',
+        padding: '2px 0 4px',
+        borderTop: '1px solid var(--iw-line)',
+        marginTop: '4px',
+        paddingTop: '6px',
+      },
+      chip: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '2px',
+        minWidth: '30px',
+        justifyContent: 'center',
+        border: '1px solid var(--iw-line)',
+        backgroundColor: 'transparent',
+        borderRadius: '6px',
+        padding: '0 5px',
+        height: '22px',
+        fontSize: '11.5px',
+        fontVariantNumeric: 'tabular-nums',
+        color: 'var(--iw-fg-2)',
+        cursor: 'pointer',
+        lineHeight: '20px',
+      },
+      chipOn: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '2px',
+        minWidth: '30px',
+        justifyContent: 'center',
+        border: '1px solid var(--iw-accent)',
+        backgroundColor: 'var(--iw-accent-soft)',
+        borderRadius: '6px',
+        padding: '0 5px',
+        height: '22px',
+        fontSize: '11.5px',
+        fontVariantNumeric: 'tabular-nums',
+        color: 'var(--iw-fg)',
+        cursor: 'pointer',
+        lineHeight: '20px',
+      },
+      chipDot: { color: 'var(--iw-accent)', fontSize: '14px', lineHeight: '10px' },
       spacer: { flex: '1 1 auto' },
       iconButton: {
         border: '1px solid var(--iw-line-strong)',
@@ -1474,6 +1527,75 @@ window.__ModuleLoader__.load({
           onScroll: (event) => setTop(event.currentTarget.scrollTop),
         },
         h('div', { style: { height: `${total * ROW_H}px`, position: 'relative' } }, mounted),
+      )
+    }
+
+    /**
+     * The chapter picker on the timeline page.
+     *
+     * Dating eighty chapters through one box at a time is why the clock stayed
+     * empty in the first place. The value is a comma string so it travels with
+     * the rest of the draft and needs no second save path: pick chapters, type a
+     * date, save once.
+     *
+     * @param props - the chapters that exist, which are already dated, and the
+     *   comma string the page is editing.
+     * @returns the picker.
+     */
+    function ClockChips(props) {
+      const { clock, value, onChange } = props
+      const dated = (clock && clock.dated) || {}
+      const chapters = (clock && Array.isArray(clock.chapters)) ? clock.chapters : []
+      const picked = String(value || '')
+        .split(',')
+        .map((part) => Number(part.trim()))
+        .filter((number) => Number.isInteger(number) && number > 0)
+      const all = chapters.length > 0 && picked.length === chapters.length
+      /** Whether every picked chapter already has this same date is unknowable here; just show what is set. */
+      const toggle = (number) => {
+        const next = picked.includes(number)
+          ? picked.filter((item) => item !== number)
+          : [...picked, number].sort((a, b) => a - b)
+        onChange(next.join(','))
+      }
+      return h(
+        'div',
+        { style: S.editField },
+        h(
+          'div',
+          { style: S.clockHead },
+          h('span', { style: S.editLabel }, `选章节（已选 ${picked.length} / ${chapters.length}）`),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'iw-btn iw-link',
+              style: S.linkButton,
+              onClick: () => onChange(all ? '' : chapters.join(',')),
+            },
+            all ? '清空' : '全选',
+          ),
+        ),
+        h(
+          'div',
+          { className: 'iw-clock-grid', style: S.clockGrid },
+          ...chapters.map((number) =>
+            h(
+              'button',
+              {
+                key: `c${number}`,
+                type: 'button',
+                className: picked.includes(number) ? 'iw-chip iw-chip-on' : 'iw-chip',
+                style: picked.includes(number) ? S.chipOn : S.chip,
+                onClick: () => toggle(number),
+                title: dated[String(number)] === undefined ? `第${number}章（还没有日期）` : `第${number}章 · ${dated[String(number)]}`,
+              },
+              String(number),
+              dated[String(number)] === undefined ? null : h('span', { style: S.chipDot }, '·'),
+            ),
+          ),
+        ),
+        h('div', { style: S.editHint }, '点了章号再填上面的日期；已带日期的章右边有一个点，重填就覆盖它。'),
       )
     }
 
@@ -3184,7 +3306,17 @@ window.__ModuleLoader__.load({
 
       const editForm = editing
         ? inputs.map((input, index) =>
-            h(
+            input.key === 'clockChapters' && data.edit && data.edit.clock
+              ? h(
+                  'div',
+                  { key: `e${index}` },
+                  h(ClockChips, {
+                    clock: data.edit.clock,
+                    value: draft[input.key] === undefined ? '' : draft[input.key],
+                    onChange: (next) => setDraft({ ...draft, clockChapters: next }),
+                  }),
+                )
+              : h(
               'div',
               { key: `e${index}`, style: S.editField },
               h('div', { style: S.editLabel }, input.label),
@@ -4049,6 +4181,11 @@ window.__ModuleLoader__.load({
     // export must not run before a folder has been chosen. Both are state the
     // stub React can render once and inspect.
     exports.dialogs = { DeleteDialog, ExportDialog, VolumesDialog }
+
+    // The chapter picker is the only edit control in the panel that is not a
+    // text box, so its "which chapters are picked" arithmetic lives here rather
+    // than being re-derived by the reader of a screenshot.
+    exports.clock = { ClockChips }
 
     return module.exports
   },

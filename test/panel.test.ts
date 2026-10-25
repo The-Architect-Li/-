@@ -911,6 +911,40 @@ describe('panel entry route', () => {
       fields: { anchorChapter: 3 },
     })
     expect(half.status).toBe(409)
+
+    // v0.25: one date over a picked set. Chapters 1 and 2 are the same month;
+    // chapter 1 is then moved on its own, which is the "1–10 are 2019, chapter 7
+    // is 2019-10" case the author asked for.
+    const bulk = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { clockWhen: '2019-03', clockChapters: '1,2' },
+    })
+    expect(bulk.status).toBe(200)
+    const dated = await new ProjectStore(root).timeline()
+    expect(dated.anchors.map((item) => [item.chapter, item.when, item.source])).toEqual([
+      [1, '2019-03', 'manual'],
+      [2, '2019-03', 'manual'],
+    ])
+    const moved = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { clockWhen: '2019-10', clockChapters: '2' },
+    })
+    expect(moved.status).toBe(200)
+    const afterMove = await new ProjectStore(root).timeline()
+    expect(afterMove.anchors.map((item) => [item.chapter, item.when])).toEqual([
+      [1, '2019-03'],
+      [2, '2019-10'],
+    ])
+
+    // A date with nothing picked has nothing to write.
+    const empty = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { clockWhen: '2020-01', clockChapters: '' },
+    })
+    expect(empty.status).toBe(409)
   })
 
   it('accepts a start it can read and refuses one it cannot', async () => {

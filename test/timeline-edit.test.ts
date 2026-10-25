@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/domain/store.ts'
-import { addAnchor, adoptClock, seedClockFromProse } from '../src/domain/timeline-edit.ts'
+import { addAnchor, addAnchors, adoptClock, seedClockFromProse } from '../src/domain/timeline-edit.ts'
 
 let space = ''
 let store: ProjectStore
@@ -28,6 +28,38 @@ afterEach(async () => {
 })
 
 describe('addAnchor', () => {
+  it('dates a whole stretch of chapters in one write, then lets one of them move', async () => {
+    // The author's case: chapters 1–10 are one year, chapter 7 is a month of
+    // that year. Two writes, not ten boxes.
+    const written = await addAnchors(store, { chapters: [1, 2, 3], when: '2019' })
+    expect(written.map((anchor) => anchor.chapter)).toEqual([1, 2, 3])
+    expect(written.every((anchor) => anchor.source === 'manual')).toBe(true)
+
+    const moved = await addAnchors(store, { chapters: [2], when: '2019-10' })
+    expect(moved).toHaveLength(1)
+    const file = await store.timeline()
+    expect(file.anchors.map((item) => [item.chapter, item.when])).toEqual([
+      [1, '2019'],
+      [2, '2019-10'],
+      [3, '2019'],
+    ])
+    // Ids stay put when a chapter is re-dated: the anchor is the same fact, said
+    // again.
+    expect(new Set(file.anchors.map((item) => item.id)).size).toBe(3)
+  })
+
+  it('keeps its label, drops duplicates, and writes nothing for a bad date', async () => {
+    const written = await addAnchors(store, { chapters: [5, 5, 6], when: '2020-01', label: '搬进新楼' })
+    expect(written.map((anchor) => [anchor.chapter, anchor.label])).toEqual([
+      [5, '搬进新楼'],
+      [6, '搬进新楼'],
+    ])
+    await expect(addAnchors(store, { chapters: [7], when: '那年冬天' })).rejects.toThrow()
+    const file = await store.timeline()
+    expect(file.anchors.map((item) => item.chapter)).toEqual([5, 6])
+    await expect(addAnchors(store, { chapters: [], when: '2020-01' })).rejects.toThrow('没有选中任何章节')
+  })
+
   it('writes one anchor per chapter, replacing the old date instead of adding a second', async () => {
     const first = await addAnchor(store, { chapter: 3, when: '2020-10', label: '开局' })
     expect(first.id).toBe('ta-001')

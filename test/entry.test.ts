@@ -333,11 +333,20 @@ describe('timeline page', () => {
   })
 
   it('offers the start date and one chapter date, so a clock can start without a chat', () => {
-    const page = buildEntry(book(), 'timeline', 'clock', [], ROOT)
-    // v0.23: the panel can pin a chapter's date itself. The label travels with
-    // the date, which is why this is not just a bare `when`.
-    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['start', 'anchorChapter', 'anchorWhen', 'anchorLabel'])
+    const page = buildEntry(
+      book({ chapters: [written(1, '裂缝', 2000), written(2, '金童玉女', 1800)] }),
+      'timeline',
+      'clock',
+      [],
+      ROOT,
+    )
+    // v0.23 could date one chapter at a time, which is why the clock stayed
+    // empty; v0.25 hands the page the picker instead, so the inputs are the one
+    // field plus the date the picked set gets.
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['start', 'clockWhen', 'clockChapters'])
     expect(page?.edit.inputs[0]?.value).toBe('')
+    expect(page?.edit.clock?.chapters).toEqual([1, 2])
+    expect(page?.edit.clock?.dated).toEqual({})
   })
 })
 

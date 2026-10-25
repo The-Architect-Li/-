@@ -79,6 +79,54 @@ export async function addAnchor(
 }
 
 /**
+ * Put the same date on several chapters in one write.
+ *
+ * The timeline was unreadable in practice for one reason: dating eighty
+ * chapters meant eighty round trips through one box. Chapters 1–10 are a
+ * month, chapter 7 is the same month a year later — so the panel picks a set
+ * and hands it one date. The date is validated once, before anything is
+ * written; a bad date writes nothing rather than half a timeline.
+ *
+ * A chapter that already has an anchor is overwritten: the caller is a person
+ * saying what happened, and that outranks both a scan and an earlier guess.
+ *
+ * @param store - the project.
+ * @param input - the chapters, the date, and an optional label for all of them.
+ * @returns the anchors now on those chapters, in chapter order.
+ */
+export async function addAnchors(
+  store: ProjectStore,
+  input: { chapters: readonly number[]; when: string; label?: string },
+): Promise<TimelineAnchor[]> {
+  const when = input.when.trim()
+  parseWhen(when)
+  const numbers = [...new Set(input.chapters.filter((number) => Number.isInteger(number) && number > 0))]
+    .sort((a, b) => a - b)
+  if (numbers.length === 0) throw new Error('没有选中任何章节，日期没有写。')
+  const file = await store.timeline()
+  const taken = new Set(file.anchors.map((item) => item.id))
+  const byChapter = new Map(file.anchors.map((item) => [item.chapter, item]))
+  const written: TimelineAnchor[] = []
+  for (const chapter of numbers) {
+    const previous = byChapter.get(chapter)
+    const id = previous?.id ?? nextId('ta', [...taken])
+    taken.add(id)
+    const anchor: TimelineAnchor = {
+      id,
+      chapter,
+      when,
+      label: input.label?.trim() === '' || input.label === undefined ? `第${chapter}章` : input.label.trim(),
+      source: 'manual',
+    }
+    byChapter.set(chapter, anchor)
+    written.push(anchor)
+  }
+  const anchors = [...byChapter.values()].sort((a, b) => a.chapter - b.chapter)
+  await store.writeTimeline({ ...file, anchors })
+  return written
+}
+
+/**
  * Read one chapter's prose and put any date it states on the clock.
  *
  * The rules, in order:

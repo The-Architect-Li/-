@@ -522,6 +522,10 @@ The start can be pinned in the panel or with `novel_timeline action="start" when
 Undated chapters are not pretended onto the line — they get their own short list and a count of
 what is missing.
 
+### One date for a batch of chapters (v0.25)
+
+The timeline's edit state is not a form but a grid of chapter numbers: pick the chapters, type one date, save. Chapter 7 of a year that is otherwise whole gets its own date by picking chapter 7 alone and saving again — the anchor is replaced, not duplicated. A chapter that already has a date carries a dot on its chip.
+
 ### The dates were already in the prose (v0.23)
 
 A line needs something to draw, and nobody types eighty-five dates by hand. But the dates were
