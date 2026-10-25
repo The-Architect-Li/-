@@ -143,4 +143,83 @@ describe('panel rows', () => {
     expect(stopped).toBe(true)
     expect(clicked).toEqual([])
   })
+
+  it('tells the pointer, the keyboard and the screen reader that a row is pressable', async () => {
+    const exports = await loadClient()
+    const tree = exports.tree as { Row: (props: Record<string, unknown>) => Element[] }
+    const props = (selected: string | null): Element['props'] => {
+      const rendered = tree.Row({
+        row: chapterRow,
+        depth: 1,
+        collapsed: new Set<string>(),
+        onToggle: () => undefined,
+        selected,
+        onRowClick: () => undefined,
+      })
+      const head = rendered[0]
+      if (head === undefined) throw new Error('the row rendered nothing')
+      return head.props
+    }
+    // Hover and focus states are keyed off these classes; without them a row is
+    // silently inert even though it has a click handler.
+    expect(props(null).className).toBe('iw-row')
+    expect(props(chapterRow.id).className).toBe('iw-row iw-row-sel')
+    expect(props(null).role).toBe('button')
+    expect(props(null).tabIndex).toBe(0)
+  })
+
+  it('opens the page from the keyboard, not only from the mouse', async () => {
+    const exports = await loadClient()
+    const tree = exports.tree as { Row: (props: Record<string, unknown>) => Element[] }
+    const clicked: unknown[] = []
+    let prevented = 0
+    const rendered = tree.Row({
+      row: chapterRow,
+      depth: 1,
+      collapsed: new Set<string>(),
+      onToggle: () => undefined,
+      selected: null,
+      onRowClick: (row: unknown) => clicked.push(row),
+    })
+    const head = rendered[0]
+    if (head === undefined) throw new Error('the row rendered nothing')
+    const press = (key: string): void => {
+      ;(head.props.onKeyDown as (event: { key: string; preventDefault: () => void }) => void)({
+        key,
+        preventDefault: () => {
+          prevented += 1
+        },
+      })
+    }
+    press('Enter')
+    press(' ')
+    press('a')
+    expect(clicked).toEqual([chapterRow, chapterRow])
+    // Space must not also scroll the sidebar.
+    expect(prevented).toBe(2)
+  })
+
+  it('gives a drawer heading the same hover and keyboard treatment', async () => {
+    const exports = await loadClient()
+    const tree = exports.tree as { Section: (props: Record<string, unknown>) => Element }
+    const toggled: string[] = []
+    const section = { id: 'cast', label: '人物设计', count: 3, rows: [chapterRow] }
+    const rendered = tree.Section({
+      section,
+      collapsed: new Set<string>(),
+      onToggle: (id: string) => toggled.push(id),
+      selected: null,
+      onRowClick: () => undefined,
+    })
+    const heading = (rendered.props.children as Element[])[0]
+    if (heading === undefined) throw new Error('the drawer rendered no heading')
+    expect(heading.props.className).toBe('iw-open')
+    expect(heading.props.tabIndex).toBe(0)
+    expect(heading.props['aria-expanded']).toBe('true')
+    ;(heading.props.onKeyDown as (event: { key: string; preventDefault: () => void }) => void)({
+      key: 'Enter',
+      preventDefault: () => undefined,
+    })
+    expect(toggled).toEqual(['cast'])
+  })
 })

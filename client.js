@@ -322,25 +322,21 @@ window.__ModuleLoader__.load({
       spacer: { flex: '1 1 auto' },
       iconButton: {
         border: '1px solid color-mix(in srgb, currentColor 20%, transparent)',
-        background: 'transparent',
         color: 'inherit',
         borderRadius: '6px',
         font: 'inherit',
         fontSize: '11px',
         padding: '1px 7px',
-        cursor: 'pointer',
         lineHeight: '18px',
         whiteSpace: 'nowrap',
       },
       primaryButton: {
         border: '1px solid color-mix(in srgb, currentColor 34%, transparent)',
-        background: 'color-mix(in srgb, currentColor 12%, transparent)',
         color: 'inherit',
         borderRadius: '6px',
         font: 'inherit',
         fontSize: '11.5px',
         padding: '3px 10px',
-        cursor: 'pointer',
       },
       // The bottom entry point. Full width, labelled, and larger than a header
       // icon on purpose: 设置 has to be findable without hunting for a gear.
@@ -353,11 +349,9 @@ window.__ModuleLoader__.load({
         padding: '11px 10px',
         border: 'none',
         borderTop: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
-        background: 'transparent',
         color: 'inherit',
         font: 'inherit',
         textAlign: 'left',
-        cursor: 'pointer',
       },
       settingsIcon: {
         fontSize: '17px',
@@ -426,7 +420,6 @@ window.__ModuleLoader__.load({
         borderRadius: '6px',
         color: 'inherit',
         background: 'transparent',
-        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
       },
       textarea: {
         width: '100%',
@@ -438,7 +431,6 @@ window.__ModuleLoader__.load({
         borderRadius: '6px',
         color: 'inherit',
         background: 'transparent',
-        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
         minHeight: '84px',
         resize: 'vertical',
       },
@@ -480,11 +472,8 @@ window.__ModuleLoader__.load({
         gap: '6px',
         padding: '3px 8px',
         borderRadius: '6px',
-        cursor: 'default',
         minHeight: '22px',
       },
-      rowHover: { background: 'color-mix(in srgb, currentColor 7%, transparent)' },
-      rowSelected: { background: 'color-mix(in srgb, currentColor 14%, transparent)' },
       glyph: { width: '13px', textAlign: 'center', opacity: 0.75, flex: '0 0 auto', fontSize: '11px' },
       label: { flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
       aside: { opacity: 0.5, fontSize: '10.5px', whiteSpace: 'nowrap', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -504,7 +493,6 @@ window.__ModuleLoader__.load({
         padding: '7px 8px 4px',
         fontWeight: 600,
         fontSize: '12.5px',
-        cursor: 'pointer',
       },
       sectionCount: {
         fontSize: '10.5px',
@@ -544,7 +532,6 @@ window.__ModuleLoader__.load({
         padding: '2px 8px',
       },
       input: {
-        border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
         background: 'transparent',
         color: 'inherit',
         borderRadius: '6px',
@@ -566,11 +553,9 @@ window.__ModuleLoader__.load({
         padding: '8px 10px',
         borderRadius: '8px',
         border: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
-        background: 'transparent',
         color: 'inherit',
         font: 'inherit',
         textAlign: 'left',
-        cursor: 'pointer',
       },
       bookIcon: { fontSize: '15px', opacity: 0.55, width: '16px', textAlign: 'center', flex: '0 0 auto' },
       bookBody: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: '1 1 auto' },
@@ -591,7 +576,6 @@ window.__ModuleLoader__.load({
       actions: { display: 'flex', gap: '6px', padding: '8px 8px 4px', alignItems: 'center' },
       spacerBlock: { height: '6px' },
       select: {
-        border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
         background: 'transparent',
         color: 'inherit',
         borderRadius: '6px',
@@ -633,6 +617,77 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Interaction states, as a real stylesheet.
+     *
+     * Inline styles cannot express `:hover`, `:focus-visible`, `:active` or
+     * `:disabled`, so the panel shipped with none of them: every row and button
+     * was silent until you clicked it, and nothing told you what was clickable.
+     * The sheet below is the missing half — layout stays inline, states live
+     * here. Everything is mixed from `currentColor`, so it follows the host's
+     * light/dark theme and accent without a second palette to maintain.
+     */
+    const CSS = `
+.iw-click { cursor: pointer; transition: background-color .12s ease, border-color .12s ease, color .12s ease, opacity .12s ease; }
+.iw-click:hover:not(:disabled):not([aria-disabled='true']) { background-color: color-mix(in srgb, currentColor 8%, transparent); }
+.iw-click:active:not(:disabled):not([aria-disabled='true']) { background-color: color-mix(in srgb, currentColor 15%, transparent); }
+.iw-click:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
+.iw-row { cursor: pointer; border-radius: 6px; user-select: none; transition: background-color .12s ease, box-shadow .12s ease; }
+.iw-row:hover { background-color: color-mix(in srgb, currentColor 10%, transparent); }
+.iw-row:active { background-color: color-mix(in srgb, currentColor 15%, transparent); }
+.iw-row:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
+.iw-row-sel, .iw-row-sel:hover { background-color: color-mix(in srgb, currentColor 15%, transparent); }
+.iw-open:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); }
+.iw-open:active { background-color: color-mix(in srgb, currentColor 12%, transparent); }
+.iw-open:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
+.iw-btn { cursor: pointer; transition: background-color .12s ease, border-color .12s ease, opacity .12s ease; }
+.iw-btn:hover:not(:disabled) { background-color: color-mix(in srgb, currentColor 10%, transparent); border-color: color-mix(in srgb, currentColor 38%, transparent); }
+.iw-btn:active:not(:disabled) { background-color: color-mix(in srgb, currentColor 18%, transparent); }
+.iw-btn:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: 1px; }
+.iw-btn:disabled { opacity: .45; cursor: default; }
+.iw-primary { border-color: color-mix(in srgb, currentColor 34%, transparent); background-color: color-mix(in srgb, currentColor 12%, transparent); }
+.iw-primary:hover:not(:disabled) { background-color: color-mix(in srgb, currentColor 22%, transparent); border-color: color-mix(in srgb, currentColor 52%, transparent); }
+.iw-primary:active:not(:disabled) { background-color: color-mix(in srgb, currentColor 30%, transparent); }
+.iw-settings { cursor: pointer; transition: background-color .12s ease, padding-left .12s ease; }
+.iw-settings:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); padding-left: 14px; }
+.iw-settings:active { background-color: color-mix(in srgb, currentColor 12%, transparent); }
+.iw-settings:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
+.iw-book { cursor: pointer; transition: background-color .12s ease, border-color .12s ease; }
+.iw-book:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); border-color: color-mix(in srgb, currentColor 32%, transparent); }
+.iw-book:active { background-color: color-mix(in srgb, currentColor 13%, transparent); }
+.iw-book:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -1px; }
+.iw-input { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); transition: border-color .12s ease, box-shadow .12s ease; }
+.iw-input:hover { border-color: color-mix(in srgb, currentColor 34%, transparent); }
+.iw-input:focus, .iw-input:focus-visible { outline: none; border-color: color-mix(in srgb, currentColor 52%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent); }
+.iw-select { border: 1px solid color-mix(in srgb, currentColor 24%, transparent); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
+.iw-select:hover { border-color: color-mix(in srgb, currentColor 34%, transparent); }
+.iw-select:focus-visible { outline: none; border-color: color-mix(in srgb, currentColor 52%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent); }
+.iw-glyph { border-radius: 4px; transition: background-color .12s ease; }
+.iw-glyph:hover { background-color: color-mix(in srgb, currentColor 14%, transparent); }
+.iw-card { transition: border-color .12s ease, background-color .12s ease; }
+.iw-card:hover { border-color: color-mix(in srgb, currentColor 26%, transparent); }
+.iw-card:focus-within { border-color: color-mix(in srgb, currentColor 38%, transparent); }
+@media (prefers-reduced-motion: reduce) { .iw-click, .iw-row, .iw-btn, .iw-settings, .iw-book, .iw-input, .iw-select, .iw-glyph, .iw-card, .iw-open { transition: none; } .iw-settings:hover { padding-left: 10px; } }
+`
+
+    /**
+     * Put the sheet in the document once.
+     *
+     * Called on mount rather than at module load: a slot may render the body
+     * long after `apply`, and the panel must not touch `document` while the
+     * host is still building its page. Absent `document` (tests) is a no-op.
+     */
+    function ensureStyles() {
+      if (typeof document === 'undefined') return
+      const head = document.head || document.body
+      if (!head) return
+      if (document.getElementById('dsh-inkwell-styles')) return
+      const style = document.createElement('style')
+      style.id = 'dsh-inkwell-styles'
+      style.textContent = CSS
+      head.appendChild(style)
+    }
+
+    /**
      * One tree row, recursive through its children.
      *
      * @param props - the row, its depth, collapse state and selection.
@@ -647,7 +702,6 @@ window.__ModuleLoader__.load({
       const style = {
         ...S.row,
         paddingLeft: `${8 + depth * 14}px`,
-        ...(isSelected ? S.rowSelected : {}),
       }
       const glyph = hasChildren ? (open ? '▾' : '▸') : row.kind ? '◦' : '▫'
       const head = h(
@@ -655,10 +709,19 @@ window.__ModuleLoader__.load({
         {
           key: 'row',
           style,
+          className: isSelected ? 'iw-row iw-row-sel' : 'iw-row',
+          role: 'button',
+          tabIndex: 0,
+          'aria-pressed': isSelected ? 'true' : 'false',
           title: row.aside ? `${row.label} · ${row.aside}` : row.label,
           onClick: () => onRowClick(row),
+          onKeyDown: (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            onRowClick(row)
+          },
         },
-        h('span', { style: S.glyph, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
+        h('span', { style: S.glyph, className: hasChildren ? 'iw-glyph' : undefined, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
         row.aside ? h('span', { style: S.aside }, row.aside) : null,
         row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
@@ -693,7 +756,19 @@ window.__ModuleLoader__.load({
         { key: section.id },
         h(
           'div',
-          { style: S.sectionHead, onClick: () => onToggle(section.id) },
+          {
+            style: S.sectionHead,
+            className: 'iw-open',
+            role: 'button',
+            tabIndex: 0,
+            'aria-expanded': open ? 'true' : 'false',
+            onClick: () => onToggle(section.id),
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              onToggle(section.id)
+            },
+          },
           h('span', { style: S.glyph }, SECTION_ICON[section.id] || '▫'),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
@@ -754,7 +829,7 @@ window.__ModuleLoader__.load({
           {
             key: book.root,
             type: 'button',
-            style: S.bookRow,
+            className: 'iw-book', style: S.bookRow,
             title: book.root,
             onClick: () => onOpen(book),
           },
@@ -783,8 +858,8 @@ window.__ModuleLoader__.load({
           h('span', { style: S.bookIcon }, '▤'),
           h('span', { style: S.bookTitle }, LABEL),
           h('span', { style: S.spacer }),
-          h('button', { type: 'button', style: S.iconButton, onClick: onNew, title: '在某个目录里新建一本书' }, '＋ 新建'),
-          h('button', { type: 'button', style: S.iconButton, onClick: () => setTick((n) => n + 1), title: '重新扫描书库' }, '刷新'),
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onNew, title: '在某个目录里新建一本书' }, '＋ 新建'),
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setTick((n) => n + 1), title: '重新扫描书库' }, '刷新'),
         ),
         state.status === 'loading' ? h('div', { style: S.note }, '正在找这台机器上的书…') : null,
         state.status === 'error'
@@ -803,7 +878,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { style: { marginTop: '8px' } },
-                h('button', { type: 'button', style: S.primaryButton, onClick: onNew }, '选择目录新建'),
+                h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: onNew }, '选择目录新建'),
               ),
               h(
                 'div',
@@ -823,7 +898,7 @@ window.__ModuleLoader__.load({
         h('div', { style: S.spacerBlock }),
         h(
           'button',
-          { type: 'button', style: S.settingsRow, onClick: onSettings, title: '设置：智能体团队与模型' },
+          { type: 'button', className: 'iw-settings', style: S.settingsRow, onClick: onSettings, title: '设置：智能体团队与模型' },
           h('span', { style: S.settingsIcon }, '⚙'),
           h('span', { style: S.settingsLabel }, '设置'),
           h('span', { style: S.spacer }),
@@ -902,7 +977,7 @@ window.__ModuleLoader__.load({
         h('span', { style: S.bookIcon }, '✎'),
         h('span', { style: S.bookTitle }, '新建小说'),
         h('span', { style: S.spacer }),
-        h('button', { type: 'button', style: S.iconButton, onClick: onCancel }, '返回'),
+        h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onCancel }, '返回'),
       )
 
       if (status.kind === 'loading' && !listing) {
@@ -935,15 +1010,15 @@ window.__ModuleLoader__.load({
             'div',
             { style: S.actions },
             listing.parent
-              ? h('button', { type: 'button', style: S.iconButton, onClick: () => go(listing.parent) }, '↑ 上一级')
+              ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => go(listing.parent) }, '↑ 上一级')
               : null,
             h(
               'button',
-              { type: 'button', style: S.iconButton, disabled: busy, onClick: choose, title: '用系统的目录选择框选一个文件夹' },
+              { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: choose, title: '用系统的目录选择框选一个文件夹' },
               '选择目录…',
             ),
             listing.roots.map((root) =>
-              h('button', { key: root, type: 'button', style: S.iconButton, onClick: () => go(root) }, root),
+              h('button', { key: root, type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => go(root) }, root),
             ),
             h('span', { style: S.spacer }),
             h('span', { style: { ...S.aside, padding: 0 } }, `${listing.entries.length} 个子目录`),
@@ -959,7 +1034,7 @@ window.__ModuleLoader__.load({
                 { style: { marginTop: '6px' } },
                 h(
                   'button',
-                  { type: 'button', style: S.primaryButton, onClick: () => onCreated({ root: listing.book.root, title: listing.book.title, existing: true }) },
+                  { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: () => onCreated({ root: listing.book.root, title: listing.book.title, existing: true }) },
                   '打开这本书',
                 ),
               ),
@@ -973,7 +1048,7 @@ window.__ModuleLoader__.load({
           { style: S.field },
           h('span', { style: S.fieldLabel }, '书名'),
           h('input', {
-            style: S.input,
+            className: 'iw-input', style: S.input,
             value: title,
             placeholder: '例如：雾港',
             onChange: (event) => setTitle(event.target.value),
@@ -984,7 +1059,7 @@ window.__ModuleLoader__.load({
           { style: S.field },
           h('span', { style: S.fieldLabel }, '目标字数（可留空）'),
           h('input', {
-            style: S.input,
+            className: 'iw-input', style: S.input,
             value: target,
             inputMode: 'numeric',
             placeholder: '例如：800000',
@@ -997,7 +1072,7 @@ window.__ModuleLoader__.load({
           { style: S.actions },
           h(
             'button',
-            { type: 'button', style: S.primaryButton, disabled: busy, onClick: submit },
+            { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, disabled: busy, onClick: submit },
             busy ? '正在创建…' : `在 ${listing.name} 里建书`,
           ),
           h('span', { style: S.spacer }),
@@ -1051,7 +1126,7 @@ window.__ModuleLoader__.load({
       const head = h(
         'div',
         { style: S.head },
-        h('button', { type: 'button', style: S.iconButton, onClick: onBack }, '返回'),
+        h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack }, '返回'),
         h('span', { style: S.bookTitle }, '智能体团队'),
         h('span', { style: S.spacer }),
         busy ? h('span', { style: S.aside }, '保存中…') : null,
@@ -1076,7 +1151,7 @@ window.__ModuleLoader__.load({
         return h(
           'select',
           {
-            style: S.select,
+            className: 'iw-select', style: S.select,
             value: chosen,
             disabled: busy === role.id,
             onChange: (event) => {
@@ -1104,7 +1179,7 @@ window.__ModuleLoader__.load({
         return h(
           'select',
           {
-            style: S.select,
+            className: 'iw-select', style: S.select,
             value: chosen,
             disabled: busy === role.id || scoped.length === 0,
             onChange: (event) => save(role.id, { model: event.target.value }),
@@ -1130,7 +1205,7 @@ window.__ModuleLoader__.load({
           h(
             'select',
             {
-              style: S.select,
+              className: 'iw-select', style: S.select,
               value: chosen,
               disabled: busy === role.id,
               onChange: (event) => save(role.id, { reasoningEffort: event.target.value }),
@@ -1163,7 +1238,7 @@ window.__ModuleLoader__.load({
         ...roles.map((role) =>
           h(
             'div',
-            { key: role.id, style: S.roleCard },
+            { key: role.id, style: S.roleCard, className: 'iw-card' },
             h(
               'div',
               { style: S.roleHead },
@@ -1175,7 +1250,7 @@ window.__ModuleLoader__.load({
                     'button',
                     {
                       type: 'button',
-                      style: S.iconButton,
+                      className: 'iw-btn', style: S.iconButton,
                       disabled: busy === role.id,
                       title: '清掉本书的指定，回到全局默认',
                       onClick: () => save(role.id, { reset: true }),
@@ -1294,7 +1369,7 @@ window.__ModuleLoader__.load({
       const head = h(
         'div',
         { style: S.head },
-        h('button', { type: 'button', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
+        h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
         h('span', { style: S.bookTitle }, (data && data.title) || target.label || ''),
         h('span', { style: S.spacer }),
         data && editable
@@ -1302,10 +1377,10 @@ window.__ModuleLoader__.load({
             ? h(
                 'span',
                 { style: { display: 'flex', gap: '4px' } },
-                h('button', { type: 'button', style: S.iconButton, onClick: cancelEdit, disabled: saving }, '取消'),
-                h('button', { type: 'button', style: S.primaryButton, onClick: saveEdit, disabled: saving }, saving ? '保存中…' : '保存'),
+                h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: cancelEdit, disabled: saving }, '取消'),
+                h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: saveEdit, disabled: saving }, saving ? '保存中…' : '保存'),
               )
-            : h('button', { type: 'button', style: S.iconButton, onClick: beginEdit }, '编辑')
+            : h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: beginEdit }, '编辑')
           : null,
       )
 
@@ -1389,7 +1464,7 @@ window.__ModuleLoader__.load({
               { key: 'pt', style: S.editBar },
               h(
                 'button',
-                { type: 'button', style: S.iconButton, onClick: () => setMode(mode === 'edit' ? 'preview' : 'edit') },
+                { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setMode(mode === 'edit' ? 'preview' : 'edit') },
                 mode === 'edit' ? '预览正文' : '改正文',
               ),
             )
@@ -1404,7 +1479,7 @@ window.__ModuleLoader__.load({
                 ? h(
                     'select',
                     {
-                      style: S.select,
+                      className: 'iw-select', style: S.select,
                       value: draft[input.key] === undefined ? input.value : draft[input.key],
                       onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
                     },
@@ -1414,13 +1489,13 @@ window.__ModuleLoader__.load({
                   )
                 : input.multiline
                   ? h('textarea', {
-                      style: S.textarea,
+                      className: 'iw-input', style: S.textarea,
                       value: draft[input.key] === undefined ? input.value : draft[input.key],
                       onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
                       spellCheck: false,
                     })
                   : h('input', {
-                      style: S.input,
+                      className: 'iw-input', style: S.input,
                       type: 'text',
                       value: draft[input.key] === undefined ? input.value : draft[input.key],
                       onChange: (event) => setDraft({ ...draft, [input.key]: event.target.value }),
@@ -1472,7 +1547,7 @@ window.__ModuleLoader__.load({
       const row = (glyph, label, detail, onClick) =>
         h(
           'div',
-          { style: S.settingRow, onClick, role: 'button' },
+          { className: 'iw-row', style: S.settingRow, onClick, role: 'button' },
           h('span', { style: S.glyph }, glyph),
           h('div', { style: { display: 'flex', flexDirection: 'column', minWidth: 0 } },
             h('span', { style: { fontSize: '12px' } }, label),
@@ -1488,7 +1563,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: S.head },
-          h('button', { type: 'button', style: S.iconButton, onClick: onBack }, '返回'),
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack }, '返回'),
           h('span', { style: S.bookTitle }, '设置'),
         ),
         row('◍', '智能体团队', `${roleCount} 个智能体，各自可以指定模型`, onOpenTeam),
@@ -1538,6 +1613,12 @@ window.__ModuleLoader__.load({
       const [collapsed, setCollapsed] = useState(() => new Set(['world', 'cast', 'plot', 'text']))
       const [selected, setSelected] = useState(null)
       const [detail, setDetail] = useState(null)
+
+      // The interaction sheet goes in once, on first mount of any view: hover,
+      // focus and pressed states cannot live in inline styles.
+      useEffect(() => {
+        ensureStyles()
+      }, [])
 
       const refresh = useCallback(() => setTick((n) => n + 1), [])
 
@@ -1609,7 +1690,7 @@ window.__ModuleLoader__.load({
         'div',
         { style: S.head },
         view === 'tree'
-          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('library'), title: '回到书库' }, '←')
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setView('library'), title: '回到书库' }, '←')
           : null,
         h('span', { style: S.bookIcon }, '▤'),
         h('span', { style: S.bookTitle }, state.status === 'ready' && state.data.title ? state.data.title : LABEL),
@@ -1618,10 +1699,10 @@ window.__ModuleLoader__.load({
           : null,
         h('span', { style: S.spacer }),
         view === 'tree'
-          ? h('button', { type: 'button', style: S.iconButton, onClick: () => openNewBook('tree'), title: '在某个目录里新建一本书' }, '＋ 新建')
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => openNewBook('tree'), title: '在某个目录里新建一本书' }, '＋ 新建')
           : null,
         view === 'tree'
-          ? h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
           : null,
       )
 
@@ -1629,7 +1710,7 @@ window.__ModuleLoader__.load({
       // header was too easy to miss. Same row the app itself uses for 设置.
       const settingsRow = h(
         'button',
-        { type: 'button', style: S.settingsRow, onClick: () => setView('settings'), title: '设置：智能体团队与模型' },
+        { type: 'button', className: 'iw-settings', style: S.settingsRow, onClick: () => setView('settings'), title: '设置：智能体团队与模型' },
         h('span', { style: S.settingsIcon }, '⚙'),
         h('span', { style: S.settingsLabel }, '设置'),
         h('span', { style: S.spacer }),
@@ -1727,7 +1808,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { style: { marginTop: '8px' } },
-              h('button', { type: 'button', style: S.primaryButton, onClick: () => openNewBook('library') }, '选择目录新建'),
+              h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: () => openNewBook('library') }, '选择目录新建'),
             ),
             h(
               'div',
@@ -1820,7 +1901,7 @@ window.__ModuleLoader__.load({
         'button',
         {
           type: 'button',
-          style: S.iconButton,
+          className: 'iw-btn', style: S.iconButton,
           onClick: open,
           title: '打开小说工坊面板',
           'aria-label': '打开小说工坊面板',
@@ -1853,6 +1934,7 @@ window.__ModuleLoader__.load({
      */
     function apply(ctx) {
       hostContext = ctx
+      ensureStyles()
 
       ctx.effect(() => ctx.sidebarRightTabs.register(definition()), 'inkwell: tab type')
 
