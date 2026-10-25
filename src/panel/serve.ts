@@ -49,6 +49,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
 import { setBookStart } from '../domain/book-start.ts'
+import { addAnchor } from '../domain/timeline-edit.ts'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
@@ -1118,9 +1119,12 @@ export async function writeEntry(
         throw new PanelInputError('fields 必须是一个对象。')
       }
       const start = (fields as Record<string, unknown>).start
-      if (typeof start !== 'string') {
+      const anchorChapter = Number((fields as Record<string, unknown>).anchorChapter ?? 0)
+      const anchorWhen = (fields as Record<string, unknown>).anchorWhen
+      const anchorLabel = (fields as Record<string, unknown>).anchorLabel
+      if (typeof start !== 'string' && !(anchorChapter > 0 && typeof anchorWhen === 'string')) {
         throw new PanelInputError(
-          '面板这里只能钉起点。日期锚点要用 novel_timeline 记，它会把原文那句话一起存下来——面板里没有那句话。',
+          '时间线这里能写两样东西：全书起点（start），或者某一章的日期（anchorChapter + anchorWhen）。',
           409,
         )
       }
@@ -1129,8 +1133,23 @@ export async function writeEntry(
         throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
       }
       try {
-        await setBookStart(store, start)
+        // An anchor typed here is a person's statement, not the scanner's: the
+        // label is what they meant by that date, and source stays 'manual' so a
+        // later adopt pass does not think it came from prose.
+        if (anchorChapter > 0 && typeof anchorWhen === 'string') {
+          if (!Number.isInteger(anchorChapter) || anchorChapter < 1) {
+            throw new PanelInputError(`章号要是正整数：${anchorChapter}`, 400)
+          }
+          await addAnchor(store, {
+            chapter: anchorChapter,
+            when: anchorWhen,
+            label: typeof anchorLabel === 'string' ? anchorLabel : '',
+            source: 'manual',
+          })
+        }
+        if (typeof start === 'string') await setBookStart(store, start)
       } catch (error) {
+        if (error instanceof PanelInputError) throw error
         throw new PanelInputError((error as Error).message, 400)
       }
       return await readEntry(deps, sessionId, 'timeline', 'clock', root)

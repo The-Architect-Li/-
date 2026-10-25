@@ -304,4 +304,21 @@ describe('novel_import', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('绝对路径')
   })
+
+  it('reads the imported manuscript for dates and starts the clock on its own', async () => {
+    // The third road to a timeline: a book that was written for months before
+    // the workshop existed. Its own first date becomes the start.
+    await writeFile(join(manuscript, '正文', '第1章-裂缝.md'), '2020年10月14日，凌晨一点零七分。\n', 'utf8')
+    await writeFile(join(manuscript, '正文', '第2章-金童玉女.md'), '过了三个月，她当年那句话还在耳边。\n', 'utf8')
+    const value = valueOf<{ report: string }>(await harness.call('novel_import', { action: 'apply', dir: manuscript }))
+    expect(value.report).toContain('时间线')
+
+    const project = JSON.parse(await readFile(join(harness.root, 'project.json'), 'utf8'))
+    expect(project.bookStart).toBe('2020-10-14')
+    const timeline = JSON.parse(await readFile(join(harness.root, 'timeline', 'clock.json'), 'utf8'))
+    expect(timeline.anchors.map((anchor: { chapter: number; when: string }) => [anchor.chapter, anchor.when])).toEqual([
+      [1, '2020-10-14'],
+    ])
+    expect(timeline.spans[0]).toMatchObject({ fromChapter: 1, toChapter: 2, days: { min: 90, max: 93 } })
+  })
 })

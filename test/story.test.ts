@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHarness, valueOf, type Harness } from './helpers.ts'
+import { ProjectStore } from '../src/domain/store.ts'
 
 let harness: Harness | undefined
 
@@ -166,5 +167,46 @@ describe('novel_timeline', () => {
     const at = valueOf<{ at: string; report: string }>(await host.call('novel_timeline', { action: 'at', chapter: 3 }))
     expect(at.at).toBe('')
     expect(at.report).toContain('还不知道')
+  })
+})
+
+describe('novel_timeline reads the prose', () => {
+  it('reports the dates a written chapter carries, without writing them', async () => {
+    const host = await start()
+    await new ProjectStore(host.root).writeChapter({
+      number: 1,
+      title: '雨夜',
+      words: 30,
+      summary: '',
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      text: '二〇二〇年十月，码头的雨下了一夜，沈砚把伞收在门外。',
+    })
+    const scan = valueOf<{ report: string }>(await host.call('novel_timeline', { action: 'scan', chapter: 1 }))
+    expect(scan.report).toContain('二〇二〇年十月')
+    expect((await new ProjectStore(host.root).timeline()).anchors).toHaveLength(0)
+  })
+
+  it('adopts those dates when asked, and pins the start at the first one', async () => {
+    const host = await start()
+    await new ProjectStore(host.root).writeChapter({
+      number: 1,
+      title: '雨夜',
+      words: 30,
+      summary: '',
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      text: '2020年10月14日，码头的雨下了一夜，沈砚把伞收在门外。',
+    })
+    const run = valueOf<{ report: string }>(await host.call('novel_timeline', { action: 'adopt', chapter: 1 }))
+    expect(run.report).toContain('起点定在 2020-10-14')
+    const at = valueOf<{ at: string }>(await host.call('novel_timeline', { action: 'at', chapter: 1 }))
+    expect(at.at).toBe('2020-10-14')
+  })
+
+  it('refuses to scan a book with nothing written in it', async () => {
+    const host = await start()
+    const empty = await host.call('novel_timeline', { action: 'scan' })
+    expect(empty.ok).toBe(false)
+    if (empty.ok) return
+    expect(empty.error).toContain('还没有正文可读')
   })
 })

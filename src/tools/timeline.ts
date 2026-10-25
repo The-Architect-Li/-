@@ -20,6 +20,8 @@ import {
 import type { TimelineAnchor, TimelineFile, TimelineRecall, TimelineSpan } from '../domain/types.ts'
 import { setBookStart } from '../domain/book-start.ts'
 import { buildSpine } from '../domain/spine.ts'
+import { scanProseTimes } from '../domain/prose-time.ts'
+import { addAnchor, adoptClock } from '../domain/timeline-edit.ts'
 import type { ToolDeps } from './deps.ts'
 
 /** Next free id for one list, keeping anchors/spans/recalls in separate namespaces. */
@@ -57,15 +59,15 @@ export function registerTimelineTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_timeline',
     description:
-      '故事时间线。anchor 记「第几章是什么时候」（2019、2019-03、2019-03-07 三种精度都行）；span 记「从第几章到第几章过了多久」（原文照抄，例如「过了两三个月」，会算成区间）；recall 记「第几章有人回忆第几章的事，说成什么日期」，用来核对回忆有没有记错月份或年份；at 查某一章的故事时间；check 体检；list 列出全部；start 给全书钉一个起点（时间轴从那一天开始，每十二个月一个点），不钉就退回到第一个锚点。正文里每出现一次时间推进就记一次，别事后补。',
+      '故事时间线。anchor 记「第几章是什么时候」（2019、2019-03、2019-03-07 三种精度都行）；span 记「从第几章到第几章过了多久」（原文照抄，例如「过了两三个月」，会算成区间）；recall 记「第几章有人回忆第几章的事，说成什么日期」，用来核对回忆有没有记错月份或年份；at 查某一章的故事时间；scan 只读正文、报出里面写了哪些日期（不写盘）；adopt 把 scan 报的那些日期真写进时间线；check 体检；list 列出全部；start 给全书钉一个起点（时间轴从那一天开始，每十二个月一个点），不钉就退回到第一个锚点。正文里每出现一次时间推进就记一次，别事后补。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['anchor', 'span', 'recall', 'at', 'check', 'list', 'start'],
-        description: 'anchor 时间锚点 / span 时间跨度 / recall 回忆 / at 查某章时间 / check 体检 / list 列表 / start 全书起点',
+        enum: ['anchor', 'span', 'recall', 'at', 'scan', 'adopt', 'check', 'list', 'start'],
+        description: 'anchor 时间锚点 / span 时间跨度 / recall 回忆 / at 查某章时间 / scan 读正文找日期（只报告）/ adopt 把读到的日期写进时间线 / check 体检 / list 列表 / start 全书起点',
       },
-      chapter: { type: 'number', description: 'anchor、recall 发生的章号；at 是查询章号' },
+      chapter: { type: 'number', description: 'anchor、recall 发生的章号；at 是查询章号；scan、adopt 指定某一章（不给就整本）' },
       when: { type: 'string', description: 'anchor 用：2019 / 2019-03 / 2019-03-07；start 用：全书起点，同样的格式，传空字符串清掉' },
       label: { type: 'string', description: 'anchor 用：这个时间点发生了什么，一句话' },
       from: { type: 'number', description: 'span 用：从第几章开始算' },
@@ -96,29 +98,78 @@ export function registerTimelineTool(ctx: Context, deps: ToolDeps): void {
       if (args.action === 'anchor') {
         const chapter = Math.max(0, Math.trunc(args.chapter ?? 0))
         const when = args.when?.trim() ?? ''
+        // One write path for every road to the clock (v0.23): a person typing
+        // an anchor, the scanner reading prose, the importer seeding a whole
+        // book. The tool only decorates the result.
+        let anchor: TimelineAnchor
         try {
-          parseWhen(when)
+          anchor = await addAnchor(store, { chapter, when, label: args.label?.trim() ?? '' })
         } catch (error) {
           throw new Error((error as ClockFormatError).message)
         }
-        const duplicate = file.anchors.find((anchor) => anchor.chapter === chapter)
-        const anchor: TimelineAnchor = {
-          id: duplicate?.id ?? nextId('ta', file.anchors.map((item) => item.id)),
-          chapter,
-          when,
-          label: args.label?.trim() ?? '',
-        }
-        const anchors = duplicate
-          ? file.anchors.map((item) => (item.id === duplicate.id ? anchor : item))
-          : [...file.anchors, anchor]
-        const next = await store.writeTimeline({ ...file, anchors })
+        const next = await store.timeline()
         const resolution = resolveTimeline(next, horizonOf(next, horizon))
         const window = windowAt(resolution, chapter)
         return {
           action: args.action,
           at: window ? describeWindow(window) : '',
           findings: resolution.findings.length,
-          report: `第 ${chapter} 章的时间是 ${when}${duplicate ? '（替换了原来的锚点）' : ''}。${resolution.findings.length > 0 ? `\n警告 ${resolution.findings.length} 条：\n${resolution.findings.map((finding) => `- ${finding.message}`).join('\n')}` : ''}`,
+          report: `第 ${chapter} 章的时间是 ${anchor.when}。${resolution.findings.length > 0 ? `\n警告 ${resolution.findings.length} 条：\n${resolution.findings.map((finding) => `- ${finding.message}`).join('\n')}` : ''}`,
+        }
+      }
+
+      if (args.action === 'scan' || args.action === 'adopt') {
+        const chapter = Math.max(0, Math.trunc(args.chapter ?? 0))
+        const targets = chapter > 0 ? [chapter] : (await store.allChapters()).map((draft) => draft.number)
+        if (targets.length === 0) throw new Error('这本书还没有正文可读。novel_chapter action="write" 写过再来。')
+        const lines: string[] = []
+        const written = { anchors: 0, spans: 0, start: '' }
+        for (const number of [...targets].sort((a, b) => a - b)) {
+          const draft = await store.chapter(number)
+          if (draft === undefined) continue
+          if (args.action === 'scan') {
+            const mentions = scanProseTimes(draft.text)
+            if (mentions.length === 0) continue
+            lines.push(
+              `第${number}章：${mentions
+                .map((item) =>
+                  item.kind === 'absolute' ? item.text : `${item.text}（${item.days?.min}–${item.days?.max} 天）`,
+                )
+                .join('、')}`,
+            )
+            continue
+          }
+          const run = await adoptClock(store, number, draft.text)
+          written.anchors += run.anchors.length
+          written.spans += run.spans.length
+          if (written.start === '' && run.start !== undefined) written.start = run.start
+          for (const anchor of run.anchors) lines.push(`第${number}章 → ${anchor.when}（正文里写的）`)
+          for (const conflict of run.conflicts) lines.push(conflict)
+          for (const skipped of run.skipped) lines.push(skipped)
+        }
+        if (args.action === 'scan') {
+          return {
+            action: args.action,
+            chapters: targets.length,
+            report: [
+              lines.length === 0
+                ? '这些正文里没有任何明确的日期。季节和「多日后」不算——猜一个日期，后面会撞车。'
+                : `扫到 ${lines.length} 章提到日期，还没写进时间线：`,
+              ...lines,
+              '',
+              '要写进去就 action="adopt"（同一份读数，只写你点头的这些）。',
+            ].join('\n'),
+          }
+        }
+        return {
+          action: args.action,
+          chapters: targets.length,
+          report: [
+            written.anchors + written.spans === 0
+              ? '没有可以写进时间线的日期。'
+              : `写进时间线：${written.anchors} 个锚点、${written.spans} 段跨度${written.start === '' ? '' : `，起点定在 ${written.start}`}。`,
+            ...lines,
+          ].join('\n'),
         }
       }
 

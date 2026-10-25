@@ -332,9 +332,11 @@ describe('timeline page', () => {
     expect(page?.chip).toBeUndefined()
   })
 
-  it('offers the start date, and nothing else: an anchor needs the sentence that asserted it', () => {
+  it('offers the start date and one chapter date, so a clock can start without a chat', () => {
     const page = buildEntry(book(), 'timeline', 'clock', [], ROOT)
-    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['start'])
+    // v0.23: the panel can pin a chapter's date itself. The label travels with
+    // the date, which is why this is not just a bare `when`.
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['start', 'anchorChapter', 'anchorWhen', 'anchorLabel'])
     expect(page?.edit.inputs[0]?.value).toBe('')
   })
 })

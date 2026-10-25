@@ -226,6 +226,14 @@ export interface TimelineAnchor {
   when: string
   /** What happened, in one line. */
   label: string
+  /**
+   * Who said it: a human (`manual`), or a date lifted out of the prose
+   * (`prose`, written by the scanner in v0.23).
+   *
+   * Optional so anchors written before v0.23 read as `manual`: they were, in
+   * the sense that a person or a tool acting for one typed them.
+   */
+  source?: 'manual' | 'prose'
 }
 
 /** A duration the prose stated between two chapters: "过了两三个月". */
@@ -488,12 +496,28 @@ export interface InkwellConfig {
   briefingBudgetChars: number
   briefingTailChars: number
   briefingLookback: number
-  /** Chapters a reviewer reads in full. */
+  /** Chapters the chief reads in full. */
   reviewFullChapters: number
-  /** Chapters behind those a reviewer sees only as recaps. */
+  /** Chapters behind those the chief sees only as recaps. */
   reviewRecapChapters: number
   /** Character ceiling for the review window. */
   reviewBudgetChars: number
+  /**
+   * Chapters the two reviewers read in full.
+   *
+   * They read the seam, not the book: continuity across many chapters is the
+   * chief's call, and paying for the same window three times per round was the
+   * reason this became a separate number.
+   */
+  reviewNeighbourChapters: number
+  /**
+   * Whether saving a chapter also reads its prose for a dated statement.
+   *
+   * On by default: the clock is worthless empty, and a chapter that says
+   * 「2019 年 3 月」 has already told the book when it happens. Off means the
+   * clock only grows when someone types into it.
+   */
+  autoClock: boolean
   chapterMinWords: number
   chapterMaxWords: number
   repeatShingleSize: number

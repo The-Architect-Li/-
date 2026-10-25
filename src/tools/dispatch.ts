@@ -139,12 +139,18 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       }
       const draftRecord = { number: draft.number, title: draft.summary ? draft.summary.slice(0, 40) : `第${draft.number}章`, words: draft.words, summary: draft.summary, writtenAt: draft.writtenAt, text: draft.text }
 
-      // What came before, in the shape the reviewer can afford to read: the last
-      // few chapters quoted, a longer run as recaps. Built once per dispatch so
-      // the report can say exactly what was in front of the reviewer.
+      // What came before, in the shape each role can afford to read. The chief
+      // adjudicates continuity, so it gets the long window; the two reviewers
+      // read the seam only — paying for the same window three times a round is
+      // a lot of tokens for a judgement they are not the ones making.
       const window = buildReviewWindow(snapshot, drafts, number, {
         full: deps.config.reviewFullChapters,
         recap: deps.config.reviewRecapChapters,
+        budget: deps.config.reviewBudgetChars,
+      })
+      const neighbour = buildReviewWindow(snapshot, drafts, number, {
+        full: deps.config.reviewNeighbourChapters,
+        recap: 0,
         budget: deps.config.reviewBudgetChars,
       })
 
@@ -178,7 +184,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
-      const prompt = buildReviewerPrompt(roleId as 'logic' | 'character', draftRecord, snapshot, deps.config, args.directive ?? '', window)
+      const prompt = buildReviewerPrompt(roleId as 'logic' | 'character', draftRecord, snapshot, deps.config, args.directive ?? '', neighbour)
       const output = await runRole(ctx, role.persona, prompt, exec, route)
       const { items, parsed } = parseReviewerOutput(output)
       const findings = parsed ? items : [unparsedFinding(roleId, output)]
@@ -199,7 +205,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         findings,
         report: [
           summarize(roleId, findings, routeText),
-          window.report,
+          neighbour.report,
           `${ROLES[roleId]?.label ?? roleId} 这一轮（第 ${stored.round} 轮）已记账，每条都有 id：`,
           ...stored.items.map((item) => `  ${item.id}　${item.severity}　${item.message}`),
           reviewHint(number, stored.items),

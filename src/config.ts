@@ -29,6 +29,8 @@ export const DEFAULTS: InkwellConfig = {
   reviewFullChapters: 3,
   reviewRecapChapters: 7,
   reviewBudgetChars: 12000,
+  reviewNeighbourChapters: 1,
+  autoClock: true,
   chapterMinWords: 1800,
   chapterMaxWords: 4200,
   repeatShingleSize: 8,
@@ -65,6 +67,7 @@ export function resolveConfig(input: Partial<InkwellConfig> = {}): InkwellConfig
   merged.reviewFullChapters = Math.max(0, merged.reviewFullChapters)
   merged.reviewRecapChapters = Math.max(0, merged.reviewRecapChapters)
   merged.reviewBudgetChars = Math.max(800, merged.reviewBudgetChars)
+  merged.reviewNeighbourChapters = Math.max(0, merged.reviewNeighbourChapters)
   merged.chapterMinWords = Math.max(100, merged.chapterMinWords)
   merged.chapterMaxWords = Math.max(merged.chapterMinWords + 100, merged.chapterMaxWords)
   merged.repeatShingleSize = Math.max(3, merged.repeatShingleSize)
@@ -99,6 +102,8 @@ export const Config = z.object({
   reviewFullChapters: z.natural().default(DEFAULTS.reviewFullChapters),
   reviewRecapChapters: z.natural().default(DEFAULTS.reviewRecapChapters),
   reviewBudgetChars: z.natural().default(DEFAULTS.reviewBudgetChars),
+  reviewNeighbourChapters: z.natural().default(DEFAULTS.reviewNeighbourChapters),
+  autoClock: z.boolean().default(DEFAULTS.autoClock),
   chapterMinWords: z.natural().default(DEFAULTS.chapterMinWords),
   chapterMaxWords: z.natural().default(DEFAULTS.chapterMaxWords),
   repeatShingleSize: z.natural().default(DEFAULTS.repeatShingleSize),

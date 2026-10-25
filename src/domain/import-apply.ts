@@ -10,6 +10,7 @@ import { PHASES, type CharacterCard, type Phase } from './types.ts'
 import type { ImportPlan } from './import-scan.ts'
 import type { ProjectStore } from './store.ts'
 import { upsertRelation } from './relations.ts'
+import { seedClockFromProse } from './timeline-edit.ts'
 
 /**
  * Fill a card in, without overwriting anything already written.
@@ -61,6 +62,14 @@ export interface AppliedImport {
   words: number
   /** Set when the import moved the book forward; absent when it did not. */
   phase?: Phase | undefined
+  /**
+   * What the imported prose told the clock.
+   *
+   * A manuscript that has been written for months already names its own dates;
+   * the third road to a timeline is reading them on the way in. Absent when the
+   * text named nothing.
+   */
+  clock?: { anchors: number; spans: number; start?: string }
 }
 
 /**
@@ -135,12 +144,44 @@ export async function applyImport(
   // which is exactly the trap this branch exists to close. The move is a floor,
   // never a ceiling: a book already past drafting keeps the phase it had.
   const phase = await landInDrafting(store)
+  const clock = await seedClock(store, plan)
 
   return {
     written,
     skipped,
     words: plan.chapters.reduce((sum, chapter) => sum + chapter.words, 0),
     ...(phase === undefined ? {} : { phase }),
+    ...(clock === undefined ? {} : { clock }),
+  }
+}
+
+/**
+ * Read the imported chapters for dates and put them on the clock.
+ *
+ * Only chapters that are now in the book take part, and only when the prose
+ * states a date plainly — the same scan `novel_timeline action="adopt"` runs,
+ * so importing and adopting cannot disagree about what counts as a date.
+ *
+ * @param store - the book just written into.
+ * @param plan - the chapters that were written.
+ * @returns the counts for the report, or undefined when nothing was written.
+ */
+async function seedClock(
+  store: ProjectStore,
+  plan: ImportPlan,
+): Promise<{ anchors: number; spans: number; start?: string } | undefined> {
+  const bodies = (await store.allChapters()).map((draft) => ({ number: draft.number, text: draft.text }))
+  if (bodies.length === 0) return undefined
+  const known = new Set(plan.chapters.map((chapter) => chapter.number))
+  const run = await seedClockFromProse(
+    store,
+    bodies.filter((draft) => known.has(draft.number)),
+  )
+  if (run.anchors.length === 0 && run.spans.length === 0) return undefined
+  return {
+    anchors: run.anchors.length,
+    spans: run.spans.length,
+    ...(run.start === undefined ? {} : { start: run.start }),
   }
 }
 

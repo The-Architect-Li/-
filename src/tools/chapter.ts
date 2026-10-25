@@ -7,6 +7,7 @@ import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/s
 import { scanChapter } from '../domain/scan.ts'
 import type { ProjectStore } from '../domain/store.ts'
 import { countChars, splitParagraphs } from '../domain/text.ts'
+import type { ClockAdoption } from '../domain/timeline-edit.ts'
 import type { ChapterDraft, Finding, ReviewItem, ReviewRound } from '../domain/types.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
 
@@ -247,7 +248,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
 
       // write: contract errors block the save so the manuscript stays clean.
       const base = args.force === true ? undefined : await baseRevisionFor(store, number, args.revision)
-      let saved: { draft: ChapterDraft; findings: Finding[] }
+      let saved: Awaited<ReturnType<typeof saveChapterBody>>
       try {
         saved = await saveChapterBody(store, deps.config, {
           number,
@@ -285,12 +286,40 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
             ? ['', formatFindings(findings.filter((item) => item.severity !== 'info'))].join('\n')
             : '',
           '',
+          clockLine(saved.clock),
           '下一步：把本章新确立的设定用 novel_ledger 记进账本（action="record"），避免后面自相矛盾。',
           next,
         ].filter(Boolean).join('\n'),
       }
     },
   }))
+}
+
+/**
+ * What the clock heard in the chapter that was just saved.
+ *
+ * Silence is the normal case: most chapters say nothing about when they
+ * happen, and a tool that commented on that every time would be noise. This
+ * only speaks when the prose actually named a date — or when it named one the
+ * clock disagrees with, which is the reason the scan exists at all.
+ *
+ * @param clock - the adoption result, or undefined when the sweep is off.
+ * @returns one line for the report, or an empty string when nothing happened.
+ */
+function clockLine(clock: ClockAdoption | undefined): string {
+  if (clock === undefined) return ''
+  const lines: string[] = []
+  if (clock.start !== undefined) lines.push(`时间线起点定在 ${clock.start}（正文里第一个明确的日期）。`)
+  for (const anchor of clock.anchors) {
+    lines.push(`第${anchor.chapter}章的时间记成 ${anchor.when}——正文自己说的，没有猜。`)
+  }
+  for (const span of clock.spans) {
+    lines.push(
+      `第${span.fromChapter}章到第${span.toChapter}章之间过了 ${span.text ?? `${span.days.min}–${span.days.max} 天`}。`,
+    )
+  }
+  lines.push(...clock.conflicts, ...clock.skipped)
+  return lines.join('\n')
 }
 
 /**

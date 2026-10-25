@@ -878,7 +878,7 @@ describe('panel entry route', () => {
     expect(stored[0]?.detail).toBe('整座港口只有一家还开着的秤房')
   })
 
-  it('pins the book start, and refuses to write an anchor from the panel', async () => {
+  it('pins the book start, and writes a chapter date from the panel too', async () => {
     const { base, root } = await serveBook()
     const pinned = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
       kind: 'timeline',
@@ -891,14 +891,26 @@ describe('panel entry route', () => {
     expect(body.data.edit.inputs[0]?.value).toBe('2020-10')
     expect((await new ProjectStore(root).readProject()).bookStart).toBe('2020-10')
 
-    // Anchors stay tool-only: the panel has no sentence to quote.
+    // v0.23: typing a date for one chapter is one of the three roads to a
+    // timeline, so the panel takes it — and marks it as a person's statement.
     const anchor = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
       kind: 'timeline',
       key: 'clock',
-      fields: { chapter: 1, when: '2020-10' },
+      fields: { anchorChapter: 2, anchorWhen: '2021-03-07', anchorLabel: '第一次进公司' },
     })
-    expect(anchor.status).toBe(409)
-    expect(((await anchor.json()) as { error: { message: string } }).error.message).toContain('novel_timeline')
+    expect(anchor.status).toBe(200)
+    const after = await new ProjectStore(root).timeline()
+    expect(after.anchors.map((item) => [item.chapter, item.when, item.label, item.source])).toEqual([
+      [2, '2021-03-07', '第一次进公司', 'manual'],
+    ])
+
+    // Half an anchor is not an anchor: a chapter with no date is still refused.
+    const half = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { anchorChapter: 3 },
+    })
+    expect(half.status).toBe(409)
   })
 
   it('accepts a start it can read and refuses one it cannot', async () => {

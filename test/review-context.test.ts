@@ -85,7 +85,7 @@ describe('reviewer window in the prompt', () => {
     await h.cleanup()
   })
 
-  it('quotes the chapters before the one under review', async () => {
+  it('gives a reviewer the chapter before, and no more than that', async () => {
     await ready(h, 3)
     await writeChapter(h, 1, '第一章的正文：沈砚在码头等了一夜。')
     await writeChapter(h, 2, '第二章的正文：沈砚把账本合上了。')
@@ -104,15 +104,18 @@ describe('reviewer window in the prompt', () => {
 
     const prompt = promptText(h.subagents.calls.at(-1))
     expect(prompt).toContain('## 前面几章的正文')
-    expect(prompt).toContain('第一章的正文：沈砚在码头等了一夜。')
     expect(prompt).toContain('第二章的正文：沈砚把账本合上了。')
+    // Continuity across many chapters is the chief's call, so a reviewer reads
+    // only the seam: the chapter before, and nothing behind it.
+    expect(prompt).not.toContain('第一章的正文：沈砚在码头等了一夜。')
+    expect(prompt).not.toContain('## 更早几章的梗概')
     // The chapter under review is the draft itself, not a history entry.
     expect(prompt).not.toContain('### 第3章')
     // The dispatch report says what the window cost.
-    expect(result.report).toContain('正文 第1–2章')
+    expect(result.report).toContain('正文 第2章')
   })
 
-  it('gives the chief the same window, because continuity is its job', async () => {
+  it('gives the chief the long window, because continuity is its job', async () => {
     await ready(h, 3)
     await writeChapter(h, 1, '第一章的正文：沈砚说那船货昨夜进的港。')
     await writeChapter(h, 2, '第二章的正文：沈砚翻到借方那栏，上面写着三个人的名字。')
@@ -137,12 +140,13 @@ describe('reviewer window in the prompt', () => {
     expect(prompt).toContain('和前面的章节对不上')
     expect(prompt).toContain('## 前面几章的正文')
     expect(prompt).toContain('第一章的正文：沈砚说那船货昨夜进的港。')
+    expect(prompt).toContain('第二章的正文：沈砚翻到借方那栏，上面写着三个人的名字。')
     expect(prompt).toContain('## 各审核员意见')
     expect(prompt).toContain('同一件事问了两遍')
     expect(result.report).toContain('正文 第1–2章')
   })
 
-  it('recaps the older chapters and states what it could not read', async () => {
+  it('recaps the older chapters for the chief and states what it could not read', async () => {
     await ready(h, 13)
     for (let number = 1; number <= 12; number += 1) {
       await writeChapter(h, number, `第${number}章的正文，沈砚讲的是第${number}件小事。`)
@@ -156,7 +160,7 @@ describe('reviewer window in the prompt', () => {
       text: '第十三章的草稿：沈砚在雨里站到最后。',
     })
     expect(proposed.ok).toBe(true)
-    await h.call('novel_dispatch', { action: 'character', number: 13 })
+    await h.call('novel_dispatch', { action: 'chief', number: 13, findings: [] })
     const prompt = promptText(h.subagents.calls.at(-1))
     expect(prompt).toContain('## 前面几章的正文')
     expect(prompt).toContain('### 第10章')

@@ -115,6 +115,13 @@ export function registerImportTool(ctx: Context, deps: ToolDeps): void {
           `阶段：这本书已经有正文，阶段直接落在「drafting」，不必从 premise 重走一遍——现在可以接着写第 ${plan.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0) + 1} 章。`,
         )
       }
+      if (applied.clock !== undefined) {
+        lines.push(
+          `时间线：从这些正文里认出了 ${applied.clock.anchors} 个日期、${applied.clock.spans} 段跨度${
+            applied.clock.start === undefined ? '' : `，起点定在 ${applied.clock.start}`
+          }。季节和「多日后」没有算——猜一个日期，后面会撞车。`,
+        )
+      }
       if (plan.chapters.length === 0) {
         lines.push(
           '',

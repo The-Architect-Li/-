@@ -9,6 +9,7 @@
 import { checkContract, rank } from './contract.ts'
 import { scanChapter } from './scan.ts'
 import { countChars, splitParagraphs } from './text.ts'
+import { adoptClock, type ClockAdoption } from './timeline-edit.ts'
 import type { ChapterDraft, Finding, InkwellConfig } from './types.ts'
 import type { ProjectStore } from './store.ts'
 
@@ -62,7 +63,7 @@ export async function saveChapterBody(
   store: ProjectStore,
   config: InkwellConfig,
   input: ChapterSaveInput,
-): Promise<{ draft: ChapterDraft; findings: Finding[] }> {
+): Promise<{ draft: ChapterDraft; findings: Finding[]; clock?: ClockAdoption }> {
   const text = input.text.trim()
   if (text === '') throw new Error('正文不能为空。')
   const number = input.number
@@ -86,5 +87,8 @@ export async function saveChapterBody(
   }
   const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, config)])
   const meta = await store.writeChapter(draft, { baseRevision: input.baseRevision })
-  return { draft: { ...draft, ...meta }, findings }
+  // The prose has just told the book when it happens; the clock should hear it
+  // in the same breath as the save, not on some later sweep that nobody runs.
+  const clock = config.autoClock ? await adoptClock(store, number, text) : undefined
+  return { draft: { ...draft, ...meta }, findings, ...(clock === undefined ? {} : { clock }) }
 }
