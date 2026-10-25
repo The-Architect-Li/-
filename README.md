@@ -98,7 +98,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | Tool | Purpose | Refuses when |
 |---|---|---|
 | `novel_project` | init, status, premise, advance; books, open, close to switch books | premise too short, cast incomplete, no such book to open |
-| `novel_canon` | character cards, world entries, places with per-chapter history | missing name, detail or kind |
+| `novel_canon` | character cards (aliases, personality, appearance, stages, relations, status), world entries, places with per-chapter history | missing name, detail or kind; a relation or stage not written as "left: right" |
 | `novel_outline` | volumes, chapter contracts, approval; `card` fills in the chapter card (recap, events, scene) | fewer than 2 beats, unknown character; a card naming someone with no character card, or naming no field at all |
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
@@ -392,6 +392,36 @@ The panel's chapter page edits the card next to the prose — recap, scene, even
 in one submit; the prose is saved first (contract still applies), then the card. The page also
 carries a "named in the text" line: the people the prose actually calls by name. It disagrees
 with the promised cast often enough to be worth its own row.
+
+### Character cards are a dossier (v0.19)
+
+A character card used to answer only "how do I write him": voice, appearance, goal, secret. Eighty
+chapters in, what you look up is "who is he" — so the card carries five more things:
+
+```text
+novel_canon action="upsert_character" name="Wang Shang" \
+  aliases=["Boss Wang","Xiao Wang"] \
+  personality="keeps score, never blows up on the spot" \
+  status="the precinct has suspended him; by day he keeps other people's books" \
+  stages=["on the site: carried cement, called by a nickname","running the firm: someone else takes the drinks"] \
+  relations=["Liu Ziling: mother and daughter, neither admits it","Yan Ge: the man who taught him to run cargo"]
+```
+
+**Each field does one job.** Aliases are the other names the book calls them by (handles, nicknames,
+what people say to their face). A relation is written on the card that claims it. Stages run in
+order, one per line. Status is where they stand *as of the last chapter written*.
+
+**A relation is stored on one side only.** "Wang Shang — mother and daughter — Liu Ziling" lives on
+Liu Ziling's card; Wang Shang's page shows it as "written by someone else". One copy cannot drift.
+
+**A name with no card is not an error.** The page still shows it, marked "not on a card yet" —
+characters being written into existence should be allowed to exist before their card does. Aliases
+count as names too: a card named "Liu Ziling (online: Liu Gege)" answers to "Gege".
+
+**Import reads all of it.** `## 关系网` lines of the form "name: note" become relations, and
+`## 经历` / `## 阶段` lines become stages; lines without a colon stay in the free-form notes field.
+Bracketed names in the heading become aliases, the card's name stays as written. Re-importing the
+same folder only fills fields that are still empty — it never overwrites what a human wrote.
 
 ## Non-goals
 
