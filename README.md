@@ -109,7 +109,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
 | `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
-| `novel_timeline` | a start date, anchors, spans, "what day is chapter N", recalls | an unreadable date or duration; it refuses instead of guessing |
+| `novel_timeline` | a start date, anchors, spans, "what day is chapter N", recalls, reading dates out of the prose | an unreadable date or duration; it refuses instead of guessing |
 
 ### Places, story points, and the clock (v0.14)
 
@@ -495,10 +495,34 @@ Now it is a line. A start date (`bookStart`, e.g. `2020-10`) gets a dot, every t
 that gets another, the dots are joined, and chapters and anchors sit in the segment their date
 falls in, one bubble per event. A dense year reads as a dense year.
 
-The start can be pinned in the panel or with `novel_timeline action="start" when="2020-10"`. The
-panel pins the start and nothing else: dated anchors still come only from `novel_timeline
-action="anchor"`, because two ways of writing the same fact eventually disagree. Undated chapters
-are not pretended onto the line — they get their own short list and a count of what is missing.
+The start can be pinned in the panel or with `novel_timeline action="start" when="2020-10"`.
+Undated chapters are not pretended onto the line — they get their own short list and a count of
+what is missing.
+
+### The dates were already in the prose (v0.23)
+
+A line needs something to draw, and nobody types eighty-five dates by hand. But the dates were
+already in the text: 「2020年10月14日，雨下了一夜」 is both a sentence and a fact about when the
+chapter happens. So the clock now has three roads:
+
+- **Pin it yourself** — the panel's timeline page takes a chapter, a date, and one line about what
+  that moment was (recorded as `source: "manual"`).
+- **Read it while writing** — saving a chapter scans it; a date the prose states plainly becomes an
+  anchor, and the book's first stated date becomes its start (`autoClock`, on by default).
+- **Parse it on import** — importing a finished manuscript reads every chapter afterwards and seeds
+  the clock in one pass.
+
+`novel_timeline action="scan"` reports what a chapter says without writing; `action="adopt"`
+writes the same reading. Only dates the prose states plainly are taken: 「那年秋天」, 「多日后」,
+「开春」 are refused, because a season is not a window and a guessed date is a fact that a later
+chapter will contradict. One date per chapter — 「傍晚」 in the same chapter is detail, not a second
+anchor. A stated date that lands more than ninety days outside the computed window is reported, not
+written: the contradiction is the finding.
+
+With the clock standing, checking time consistency does not need the previous chapters at all —
+`novel_check action="timeline"` compares every chapter's window, every recall's claimed month, and
+every date written into the prose. That is cheaper, and more to the point, it looks at the whole
+book instead of the last dozen chapters.
 
 ## Non-goals
 

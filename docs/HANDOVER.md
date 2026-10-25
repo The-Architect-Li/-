@@ -1,7 +1,7 @@
-# 交接文档 · dsh-inkwell
+﻿# 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.22.1。
+> 最后更新：2026-10-25，对应 release v0.23.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）、`v0.22.0`（时间线是一条线：起点钉住、年点算出来、事件成气泡）、`v0.22.1`（总审核也拿到前文窗口）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）、`v0.22.0`（时间线是一条线：起点钉住、年点算出来、事件成气泡）、`v0.22.1`（总审核也拿到前文窗口）、`v0.23.0`（时间线三条路：手钉、边写边认、导入时解析）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -429,6 +429,42 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
 
+### v0.23 日期本来就在正文里：时钟有三条路
+
+到 v0.22 为止，时间线只有一条路：人往 `novel_timeline` 里打日期。八十五章的书要打八十五次，
+一次没打就永远是空的（用户那本《待定》正是 0 事件、85 章没日期）。但日期一直写在正文里。
+
+- **扫描器**（`src/domain/prose-time.ts`，纯函数）：
+  `export interface ProseTime { text: string; index: number; kind: 'absolute' | 'relative'; when?: string; days?: { min: number; max: number } }`、
+  `scanProseTimes(text): ProseTime[]`、`firstAbsolute(times)`。
+  认四种写法：`2020年10月14日`/`2020年10月`/`2020年`、`二〇二〇年十月十四日`（汉字年月日，
+  与阿拉伯数字可混写）、`三天后`/`又过了两三个月`/`半年后`、`第二天`/`次日`/`一周后` 这类已算好的短语。
+  **刻意不认**「那年秋天」「多日后」「开春」：季节不是窗口，猜一个等于往文件里塞一条以后会撞车的错事实。
+- **唯一写入口**（`src/domain/timeline-edit.ts`）：
+  `ClockAdoption { anchors; spans; start?; skipped; conflicts }`、
+  `addAnchor(store, { chapter, when, label, source? })`（同章替换、`ta-NNN` 编号、空 label 退成 `第N章`）、
+  `adoptClock(store, chapter, text)`、`seedClockFromProse(store, chapters)`、`describeMentions(text)`。
+  规则：①已有锚点的章不动（人的话优先于扫描）；②与算出来的窗口差 **90 天**以上时只报不写
+  （`SLACK_DAYS = 90`）；③书没有 `bookStart` 时，第一个明确日期就是起点；④相对时长转成
+  `TimelineSpan` 需要前面有一章有日期，否则进 `skipped`。
+- **三条路都接到这一个入口**：`novel_timeline action="anchor"` 改为委托 `addAnchor`；
+  `saveChapterBody` 在写完正文后调 `adoptClock`（配置 `autoClock`，默认开）；
+  `applyImport` 末尾 `seedClock`（`AppliedImport.clock = { anchors, spans, start? }`）；
+  面板 `writeEntry` 的 timeline 分支接受 `fields.start` 或 `fields.anchorChapter/anchorWhen/anchorLabel`，
+  写锚点时 `source: 'manual'`。
+- **工具**：`novel_timeline` 的 `action` 加 `scan`（只报告）与 `adopt`（写盘）；`chapter` 的 report 多一段
+  `clockLine(...)`；`novel_import` 的 report 多一行「时间线：认出了 N 个日期…」。
+- **面板**：`timelinePage` 的 `edit.inputs` 从 1 个变 4 个（`start`、`anchorChapter`、`anchorWhen`、`anchorLabel`）。
+- **测试**：`test/prose-time.test.ts` 11 例、`test/timeline-edit.test.ts` 10 例、`test/story.test.ts` 加 3 例
+  （`scan` 只报不写、`adopt` 钉起点、没正文时报错）、`test/import.test.ts` 加 1 例（导入自动建线并写
+  `bookStart` 与 span）；`test/entry.test.ts`、`test/panel.test.ts` 各改 1 例（面板现在能加锚点）。
+  全量 **518 个用例（43 文件）**。
+- **踩的坑**：`PowerShell` 的 `Set-Content -Encoding utf8` 把 `src/tools/chapter.ts` 写成乱码
+  （`error TS1002: Unterminated string literal`），`git checkout --` 复原后用 `edit` 工具重做——
+  **含中文的源文件只能用 `write`/`edit` 改**（v0.14 已踩过一次）。
+- **汉字月份**：`chineseNumber` 只认单字，`二〇二〇年10月` 起初只读到年；加了 `countOf`（先试阿拉伯
+  数字再试汉字），`二〇二〇年十月十四日` 现在给 `2020-10-14`。
+
 ### v0.22 时间线是一条线：起点钉住，年点是算出来的
 
 时间线以前是四张表（锚点/跨度/回忆/按章对照）。表能查，看不出形状。这一版画成一条线：
@@ -539,7 +575,7 @@ v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了�
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 492 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 518 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -665,7 +701,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.23 候选，按性价比排序）
+## 下一步（v0.24 候选，按性价比排序）
 
 0. **让用户在他的 Desktop 应用里看一眼时间线**：v0.22 的线在预览里逐屏看过（`preview:timeline`），
    但「钉一个 2020-10 的起点，看每年怎么长出来」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19／v0.20／v0.21 那几条链路。
