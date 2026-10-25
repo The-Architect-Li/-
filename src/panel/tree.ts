@@ -60,16 +60,16 @@ const CAST_GROUPS = [
   { role: 'minor', label: '路人' },
 ] as const
 
-/** Rows per list before the rest is summarised, so a long book stays one payload. */
-const CAP = {
-  world: 12,
-  cast: 24,
-  cards: 24,
-  chapters: 40,
-  beats: 8,
-  places: 24,
-  points: 12,
-} as const
+/**
+ * The most rows one list will carry.
+ *
+ * A drawer is windowed on the client, so a long list is a scrolling problem
+ * rather than a rendering one: every chapter card can be listed. This ceiling
+ * is about the payload, not the screen — a book of several thousand chapters
+ * should not arrive as one JSON document the panel must parse before it can
+ * draw anything. It is a guardrail, and the "还有 N 条" row says when it bites.
+ */
+const MAX_ROWS = 2000
 
 /** Draft rounds keyed by chapter number, as the route already read them. */
 export type DraftRounds = ReadonlyMap<number, readonly DraftRound[]>
@@ -98,7 +98,7 @@ export function formatWords(words: number): string {
 function capped(rows: PanelRow[], total: number, cap: number, prefix: string): PanelRow[] {
   if (total <= cap) return rows
   return [
-    ...rows,
+    ...rows.slice(0, cap),
     {
       id: `${prefix}.more`,
       label: `还有 ${total - cap} 条`,
@@ -114,7 +114,7 @@ function capped(rows: PanelRow[], total: number, cap: number, prefix: string): P
  * @returns the drawer.
  */
 function worldSection(snapshot: Snapshot): PanelSection {
-  const rows: PanelRow[] = snapshot.world.slice(0, CAP.world).map((entry, index) => ({
+  const rows: PanelRow[] = snapshot.world.map((entry, index) => ({
     id: `world.${index}`,
     label: entry.name,
     kind: 'world',
@@ -125,7 +125,7 @@ function worldSection(snapshot: Snapshot): PanelSection {
     id: 'world',
     label: '世界观',
     count: snapshot.world.length,
-    rows: capped(rows, snapshot.world.length, CAP.world, 'world'),
+    rows: capped(rows, snapshot.world.length, MAX_ROWS, 'world'),
   }
 }
 
@@ -144,7 +144,7 @@ function castSection(snapshot: Snapshot): PanelSection {
   }
   const groups: PanelRow[] = CAST_GROUPS.map((group) => {
     const cards = byRole.get(group.role) ?? []
-    const children: PanelRow[] = cards.slice(0, CAP.cast).map((card, index) => ({
+    const children: PanelRow[] = cards.map((card, index) => ({
       id: `cast.${group.role}.${index}`,
       label: card.name,
       kind: 'character',
@@ -156,7 +156,7 @@ function castSection(snapshot: Snapshot): PanelSection {
       label: group.label,
       count: cards.length,
       tone: cards.length === 0 ? 'muted' : 'todo',
-      children: capped(children, cards.length, CAP.cast, `cast.${group.role}`),
+      children: capped(children, cards.length, MAX_ROWS, `cast.${group.role}`),
     }
   })
   return {
@@ -190,7 +190,7 @@ function chaptersOfVolume(plans: readonly ChapterPlan[], volume: number): number
  * @returns the drawer.
  */
 function plotSection(snapshot: Snapshot): PanelSection {
-  const placeRows: PanelRow[] = snapshot.places.slice(0, CAP.places).map((place, index) => ({
+  const placeRows: PanelRow[] = snapshot.places.map((place, index) => ({
     id: `plot.place.${index}`,
     label: place.name,
     kind: 'place',
@@ -199,7 +199,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
     chip: place.states.length > 1 ? `${place.states.length} 次变化` : undefined,
   }))
 
-  const pointRows: PanelRow[] = snapshot.storyPoints.slice(0, CAP.points).map((point) => ({
+  const pointRows: PanelRow[] = snapshot.storyPoints.map((point) => ({
     id: `plot.story.${point.id}`,
     label: point.name,
     kind: 'story',
@@ -213,7 +213,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
   const now = windowAt(resolution, Math.max(1, snapshot.chapters.length))
   const clockCount = snapshot.timeline.anchors.length + snapshot.timeline.spans.length + (snapshot.timeline.recalls ?? []).length
 
-  const cards: PanelRow[] = snapshot.plans.slice(0, CAP.cards).map((plan) => ({
+  const cards: PanelRow[] = snapshot.plans.map((plan) => ({
     id: `plot.card.${plan.number}`,
     label: `第${plan.number}章 ${plan.title}`.trim(),
     kind: 'chapter',
@@ -233,14 +233,14 @@ function plotSection(snapshot: Snapshot): PanelSection {
         label: '地点',
         count: snapshot.places.length,
         tone: snapshot.places.length === 0 ? 'muted' : 'todo',
-        children: capped(placeRows, snapshot.places.length, CAP.places, 'plot.place'),
+        children: capped(placeRows, snapshot.places.length, MAX_ROWS, 'plot.place'),
       },
       {
         id: 'plot.stories',
         label: '故事点',
         count: snapshot.storyPoints.length,
         tone: snapshot.storyPoints.length === 0 ? 'muted' : 'todo',
-        children: capped(pointRows, snapshot.storyPoints.length, CAP.points, 'plot.story'),
+        children: capped(pointRows, snapshot.storyPoints.length, MAX_ROWS, 'plot.story'),
       },
       {
         id: 'plot.clock',
@@ -255,7 +255,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
         id: 'plot.cards',
         label: '章卡',
         count: snapshot.plans.length,
-        children: capped(cards, snapshot.plans.length, CAP.cards, 'plot.card'),
+        children: capped(cards, snapshot.plans.length, MAX_ROWS, 'plot.card'),
       },
     ],
   }
@@ -308,7 +308,7 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       id: `text.volume.${volume.number}`,
       label: `第${volume.number}卷 ${volume.title}`.trim(),
       count: covered.length,
-      children: capped(covered.slice(0, CAP.chapters).map(chapterRow), covered.length, CAP.chapters, `text.volume.${volume.number}`),
+      children: capped(covered.map(chapterRow), covered.length, MAX_ROWS, `text.volume.${volume.number}`),
     }
   })
 
@@ -326,7 +326,7 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
               id: 'text.loose',
               label: '未分卷',
               count: looseRows.length,
-              children: capped(looseRows, looseRows.length, CAP.chapters, 'text.loose'),
+              children: capped(looseRows, looseRows.length, MAX_ROWS, 'text.loose'),
             } satisfies PanelRow,
           ]
         : []),

@@ -261,12 +261,20 @@ describe('panel tree', () => {
     expect(rows[1]?.tone).toBe('warn')
   })
 
-  it('caps a long list instead of shipping every row', () => {
+  it('ships every chapter card, because the panel windows them', () => {
     const plans: ChapterPlan[] = Array.from({ length: 30 }, (_unused, index) => plan(index + 1, true, `第${index + 1}章`))
     const sections = buildPanelSnapshot(book({ plans }), config, [], '/nowhere').sections
     const cards = sections.find((section) => section.id === 'plot')?.rows.find((row) => row.label === '章卡')
-    expect(cards?.children).toHaveLength(25)
-    expect(cards?.children?.at(-1)?.label).toBe('还有 6 条')
+    expect(cards?.children).toHaveLength(30)
+    expect(cards?.children?.at(-1)?.label).toContain('第30章')
+  })
+
+  it('still stops at a guarded ceiling instead of shipping a phone book', () => {
+    const plans: ChapterPlan[] = Array.from({ length: 2005 }, (_unused, index) => plan(index + 1, true, `第${index + 1}章`))
+    const sections = buildPanelSnapshot(book({ plans }), config, [], '/nowhere').sections
+    const cards = sections.find((section) => section.id === 'plot')?.rows.find((row) => row.label === '章卡')
+    expect(cards?.children).toHaveLength(2001)
+    expect(cards?.children?.at(-1)?.label).toBe('还有 5 条')
   })
 
   it('describes an empty book with four empty drawers', () => {
