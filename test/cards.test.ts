@@ -11,7 +11,7 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MissingPlanError, presentInText, updateCard } from '../src/domain/cards.ts'
+import { MissingPlanError, presentInText, staleCards, updateCard } from '../src/domain/cards.ts'
 import { ProjectStore } from '../src/domain/store.ts'
 import type { ChapterPlan } from '../src/domain/types.ts'
 import { PANEL_HEADER, PANEL_HEADER_VALUE, PANEL_PREFIX } from '../src/panel/serve.ts'
@@ -64,6 +64,39 @@ describe('chapter card domain', () => {
     const names = ['沈砚', '阿鸢', '郑雅洁']
     expect(presentInText('沈砚推开门，阿鸢不在。', names)).toEqual(['沈砚', '阿鸢'])
     expect(presentInText('', names)).toEqual([])
+  })
+
+  it('stamps the prose revision it was written from, and notices later edits', async () => {
+    const made = await store()
+    await made.init('雨书', 800_000)
+    await made.upsertPlan(plan(1))
+    await made.writeChapter({ number: 1, title: '雨夜', words: 2, summary: '', text: '雨落了一夜。' } as never)
+    const card = await updateCard(made, 1, { summary: '雨夜里的交易' })
+    expect(card.cardRevision).toBe(1)
+
+    // Rewriting the prose without touching the card leaves it describing text
+    // that no longer exists.
+    await made.writeChapter({ number: 1, title: '雨夜', words: 2, summary: '', text: '雨停了。' } as never)
+    const snapshot = await made.snapshot()
+    expect(staleCards(snapshot).map((item) => item.number)).toEqual([1])
+
+    // Re-saving the card picks up the new revision and clears the warning.
+    const again = await updateCard(made, 1, { summary: '雨停之后的交易' })
+    expect(again.cardRevision).toBe(2)
+    expect(staleCards(await made.snapshot())).toEqual([])
+  })
+
+  it('does not restamp the card when the patch only touches the outline', async () => {
+    const made = await store()
+    await made.init('雨书', 800_000)
+    await made.upsertPlan(plan(1))
+    await made.writeChapter({ number: 1, title: '雨夜', words: 2, summary: '', text: '雨落了一夜。' } as never)
+    const card = await updateCard(made, 1, { summary: '雨夜里的交易' })
+    await made.writeChapter({ number: 1, title: '雨夜', words: 2, summary: '', text: '雨停了。' } as never)
+    // Changing a beat is an outline edit, not a claim about the prose.
+    const edited = await updateCard(made, 1, { beats: ['雨停'] })
+    expect(edited.cardRevision).toBe(card.cardRevision)
+    expect(staleCards(await made.snapshot()).map((item) => item.number)).toEqual([1])
   })
 })
 

@@ -261,6 +261,28 @@ describe('panel tree', () => {
     expect(rows[1]?.tone).toBe('warn')
   })
 
+  it('says so when the prose moved past the card', () => {
+    const sections = buildPanelSnapshot(
+      book({
+        volumes: [volume(1, '雾起')],
+        // Chapter 1 was rewritten to revision 2 after its card was stamped 1;
+        // chapter 2's card matches its prose.
+        plans: [{ ...plan(1, true, '裂缝'), cardRevision: 1 }, { ...plan(2, true, '金童玉女'), cardRevision: 2 }],
+        chapters: [
+          { ...written(1, '裂缝', 3200), revision: 2 },
+          { ...written(2, '金童玉女', 3100), revision: 2 },
+        ],
+      }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const rows = sections.find((section) => section.id === 'text')?.rows.find((row) => row.id === 'text.volume.1')?.children ?? []
+    expect(rows.map((row) => row.chip)).toEqual(['卡过期', '已完成'])
+    expect(rows[0]?.tone).toBe('warn')
+    expect(rows[1]?.tone).toBe('done')
+  })
+
   it('ships every chapter card, because the panel windows them', () => {
     const plans: ChapterPlan[] = Array.from({ length: 30 }, (_unused, index) => plan(index + 1, true, `第${index + 1}章`))
     const sections = buildPanelSnapshot(book({ plans }), config, [], '/nowhere').sections

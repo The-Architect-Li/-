@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkProseAgainstClock, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { checkContract, rank } from '../domain/contract.ts'
+import { staleCards } from '../domain/cards.ts'
 import { chapterRanges, describeCoverage, recordCoverage } from '../domain/records.ts'
 import { scanChapter } from '../domain/scan.ts'
 import type { Finding } from '../domain/types.ts'
@@ -22,12 +23,12 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_check',
     description:
-      '确定性体检，零 token。contract 检查某章正文是否兑现章纲；scan 检查复读、句式、套路词、对话占比、章末钩子；ledger 检查设定冲突；timeline 检查时间线（锚点矛盾、回忆里的日期对不对、正文写死的日期在不在这一章的时间窗内、「这几个月」有没有变成「这几年」）；records 报出哪些章正文没有留下地点/故事点/时间线的记录（「实时更新」靠这条：记录是人写的，它只负责说出哪里漏了）；all 全量跑一遍（不给 number 则检查所有已写章节）。这些结论是启发式的，用来定位问题，不替代人判断。',
+      '确定性体检，零 token。contract 检查某章正文是否兑现章纲；scan 检查复读、句式、套路词、对话占比、章末钩子；ledger 检查设定冲突；timeline 检查时间线（锚点矛盾、回忆里的日期对不对、正文写死的日期在不在这一章的时间窗内、「这几个月」有没有变成「这几年」）；records 报出哪些章正文没有留下地点/故事点/时间线的记录（「实时更新」靠这条：记录是人写的，它只负责说出哪里漏了）；cards 报出哪些章卡盖的是旧正文的版本（正文改过、梗概没跟上）；all 全量跑一遍（不给 number 则检查所有已写章节）。这些结论是启发式的，用来定位问题，不替代人判断。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'all'],
+        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'all'],
         description: '检查类型',
       },
       number: { type: 'number', description: '章号；all 时可省略，省略则检查全书' },
@@ -134,6 +135,25 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
+      if (args.action === 'cards') {
+        const stale = staleCards(snapshot)
+        return {
+          errors: 0,
+          warnings: 0,
+          report: stale.length === 0
+            ? '章卡都对得上现在的正文。'
+            : [
+                `${stale.length} 张章卡盖的是旧正文的版本：`,
+                ...stale.map(
+                  (item) =>
+                    `  第${item.number}章　卡写在第 ${item.cardRevision} 版，正文现在是第 ${item.revision} 版——故事梗概/关键事件/场景说的可能已经不是正文里的样子。`,
+                ),
+                '',
+                '改法：读一遍正文，novel_outline action="card" 重写 story/events/scene（只改你给的字段）；或者如果你确认卡里写的仍然对，也照样重写一次把它盖成当前版本。',
+              ].join('\n'),
+        }
+      }
+
       if (args.action === 'all') {
         const coverage = recordCoverage(snapshot)
         if (coverage.silent.length > 0) {
@@ -142,6 +162,15 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
             severity: 'info',
             message: `${coverage.silent.length} 章正文没有留下地点/故事点/时间线记录（${chapterRanges(coverage.silent)}）`,
             evidence: 'novel_check action="records" 看具体该补哪些章。',
+          })
+        }
+        const stale = staleCards(snapshot)
+        if (stale.length > 0) {
+          findings.push({
+            code: 'cards/stale',
+            severity: 'info',
+            message: `${stale.length} 张章卡盖的是旧正文的版本（${chapterRanges(stale.map((item) => item.number))}）`,
+            evidence: 'novel_check action="cards" 看具体哪几张、差了几版。',
           })
         }
       }

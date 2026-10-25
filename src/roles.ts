@@ -10,6 +10,7 @@ import { buildBriefing } from './domain/briefing.ts'
 import { mergeField } from './domain/fields.ts'
 import { activeEntries, factsAbout, formatFact } from './domain/ledger.ts'
 import { countChars } from './domain/text.ts'
+import type { ReviewWindow } from './domain/review-window.ts'
 import type {
   ChapterDraft,
   ChapterPlan,
@@ -177,6 +178,7 @@ export function buildReviewerPrompt(
   snapshot: Snapshot,
   config: InkwellConfig,
   directive: string,
+  window?: ReviewWindow,
 ): string {
   const role = ROLES[roleId]
   const plan = snapshot.plans.find((item) => item.number === draft.number)
@@ -215,14 +217,66 @@ export function buildReviewerPrompt(
       '',
       '## 角色卡（你按 voice 核对语气）',
       ...characterCards.map((card) =>
-        `- ${card.name}（${card.role}）：${[card.voice ? `说话方式：${card.voice}` : '', card.goal ? `目标：${card.goal}` : '', card.secret ? `隐秘：${card.secret}` : ''].filter(Boolean).join('｜')}`,
+        `- ${card.name}（${card.role}）：${[
+          card.aliases && card.aliases.length > 0 ? `别称：${card.aliases.join('、')}` : '',
+          card.voice ? `说话方式：${card.voice}` : '',
+          card.personality ? `性格：${card.personality}` : '',
+          card.goal ? `目标：${card.goal}` : '',
+          card.secret ? `隐秘：${card.secret}` : '',
+          card.status ? `当前状态：${card.status}` : '',
+          card.relations && card.relations.length > 0
+            ? `关系：${card.relations.map((relation) => `${relation.name}（${relation.kind}）`).join('、')}`
+            : '',
+        ].filter(Boolean).join('｜')}`,
       ),
     )
   }
 
+  if (window) sections.push(...renderReviewWindow(window))
+
   sections.push('', '## 指挥官的特别要求', directive.trim() || '按章纲合同和事实核对本章。', '', role.outputContract)
 
   return sections.join('\n')
+}
+
+/**
+ * The recent chapters, as text a reviewer can compare against.
+ *
+ * Two sections on purpose: the last few chapters are quoted, because continuity
+ * breaks at the seam — a name spelled two ways three chapters apart, a man who
+ * died and then spoke. Older chapters arrive as one-line recaps, because "did
+ * this contradict something ten chapters ago" is a question a summary can answer
+ * and a full chapter costs a thousand times more to ask.
+ *
+ * A stale recap is labelled as such rather than hidden: the reviewer still needs
+ * to know what the book *thought* happened, but it must not treat it as fact.
+ *
+ * @param window - chapters chosen by `buildReviewWindow`.
+ * @returns prompt sections, or an empty array when there is no history.
+ */
+export function renderReviewWindow(window: ReviewWindow): string[] {
+  const sections: string[] = []
+  if (window.full.length > 0) {
+    sections.push('', '## 前面几章的正文（对照这里查连续性）')
+    for (const chapter of window.full) {
+      sections.push(`### 第${chapter.number}章　${chapter.title}（${chapter.words} 字）`, chapter.text)
+    }
+  }
+  if (window.recaps.length > 0) {
+    sections.push('', '## 更早几章的梗概（只有梗概，没有正文）')
+    for (const recap of window.recaps) {
+      const marks = [
+        recap.stale ? '⚠ 正文改过，这条梗概可能过期' : '',
+        recap.source === 'tail' ? '（取自正文末尾，不是人写的梗概）' : '',
+      ].filter(Boolean)
+      sections.push(`- 第${recap.number}章　${recap.title}：${recap.summary}${marks.length > 0 ? `　${marks.join('，')}` : ''}`)
+    }
+    sections.push('', '⚠ 标记过期的梗概不要当事实用：它描述的是改之前的正文。以正文与账本为准，并可以把「这条梗概要重写」记成一条意见。')
+  }
+  if (window.omitted > 0) {
+    sections.push('', `更早的 ${window.omitted} 章不在这次审稿范围内。不知道就说不确定，不要猜。`)
+  }
+  return sections
 }
 
 /**

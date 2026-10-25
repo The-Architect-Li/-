@@ -26,6 +26,9 @@ export const DEFAULTS: InkwellConfig = {
   briefingBudgetChars: 6000,
   briefingTailChars: 800,
   briefingLookback: 5,
+  reviewFullChapters: 3,
+  reviewRecapChapters: 7,
+  reviewBudgetChars: 12000,
   chapterMinWords: 1800,
   chapterMaxWords: 4200,
   repeatShingleSize: 8,
@@ -59,6 +62,9 @@ export function resolveConfig(input: Partial<InkwellConfig> = {}): InkwellConfig
 
   merged.briefingBudgetChars = Math.max(800, merged.briefingBudgetChars)
   merged.briefingTailChars = Math.min(merged.briefingTailChars, merged.briefingBudgetChars)
+  merged.reviewFullChapters = Math.max(0, merged.reviewFullChapters)
+  merged.reviewRecapChapters = Math.max(0, merged.reviewRecapChapters)
+  merged.reviewBudgetChars = Math.max(800, merged.reviewBudgetChars)
   merged.chapterMinWords = Math.max(100, merged.chapterMinWords)
   merged.chapterMaxWords = Math.max(merged.chapterMinWords + 100, merged.chapterMaxWords)
   merged.repeatShingleSize = Math.max(3, merged.repeatShingleSize)
@@ -90,6 +96,9 @@ export const Config = z.object({
   briefingBudgetChars: z.natural().default(DEFAULTS.briefingBudgetChars),
   briefingTailChars: z.natural().default(DEFAULTS.briefingTailChars),
   briefingLookback: z.natural().default(DEFAULTS.briefingLookback),
+  reviewFullChapters: z.natural().default(DEFAULTS.reviewFullChapters),
+  reviewRecapChapters: z.natural().default(DEFAULTS.reviewRecapChapters),
+  reviewBudgetChars: z.natural().default(DEFAULTS.reviewBudgetChars),
   chapterMinWords: z.natural().default(DEFAULTS.chapterMinWords),
   chapterMaxWords: z.natural().default(DEFAULTS.chapterMaxWords),
   repeatShingleSize: z.natural().default(DEFAULTS.repeatShingleSize),

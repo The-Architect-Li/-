@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { countChars } from '../domain/text.ts'
+import { buildReviewWindow } from '../domain/review-window.ts'
 import type { ToolDeps } from './deps.ts'
 import {
   ROLES,
@@ -138,6 +139,15 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       }
       const draftRecord = { number: draft.number, title: draft.summary ? draft.summary.slice(0, 40) : `第${draft.number}章`, words: draft.words, summary: draft.summary, writtenAt: draft.writtenAt, text: draft.text }
 
+      // What came before, in the shape the reviewer can afford to read: the last
+      // few chapters quoted, a longer run as recaps. Built once per dispatch so
+      // the report can say exactly what was in front of the reviewer.
+      const window = buildReviewWindow(snapshot, drafts, number, {
+        full: deps.config.reviewFullChapters,
+        recap: deps.config.reviewRecapChapters,
+        budget: deps.config.reviewBudgetChars,
+      })
+
       if (roleId === 'chief') {
         const inputs = (args.findings ?? []) as unknown as FindingInput[]
         const prompt = buildChiefPrompt(draftRecord, inputs, snapshot, deps.config, args.directive ?? '')
@@ -167,7 +177,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
-      const prompt = buildReviewerPrompt(roleId as 'logic' | 'character', draftRecord, snapshot, deps.config, args.directive ?? '')
+      const prompt = buildReviewerPrompt(roleId as 'logic' | 'character', draftRecord, snapshot, deps.config, args.directive ?? '', window)
       const output = await runRole(ctx, role.persona, prompt, exec, route)
       const { items, parsed } = parseReviewerOutput(output)
       const findings = parsed ? items : [unparsedFinding(roleId, output)]
@@ -188,6 +198,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         findings,
         report: [
           summarize(roleId, findings, routeText),
+          window.report,
           `${ROLES[roleId]?.label ?? roleId} 这一轮（第 ${stored.round} 轮）已记账，每条都有 id：`,
           ...stored.items.map((item) => `  ${item.id}　${item.severity}　${item.message}`),
           reviewHint(number, stored.items),

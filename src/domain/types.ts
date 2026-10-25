@@ -261,6 +261,14 @@ export interface ChapterPlan {
   events?: string[]
   /** Where it happens. A place name when it matches one in the book. */
   scene?: string
+  /**
+   * The prose revision this card was written from.
+   *
+   * A summary of a body is only true until the body changes. Stamping the
+   * revision lets {@link staleCards} point at the cards that describe text which
+   * no longer exists, instead of trusting every recap equally.
+   */
+  cardRevision?: number
 }
 
 /** One asserted fact about the story world, tied to the chapter that asserts it. */
@@ -421,6 +429,12 @@ export interface InkwellConfig {
   briefingBudgetChars: number
   briefingTailChars: number
   briefingLookback: number
+  /** Chapters a reviewer reads in full. */
+  reviewFullChapters: number
+  /** Chapters behind those a reviewer sees only as recaps. */
+  reviewRecapChapters: number
+  /** Character ceiling for the review window. */
+  reviewBudgetChars: number
   chapterMinWords: number
   chapterMaxWords: number
   repeatShingleSize: number

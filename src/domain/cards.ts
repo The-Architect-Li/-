@@ -7,8 +7,9 @@
  * already lost imported notes once to a "write the whole card" path, and a card
  * is exactly the kind of object that grows fields nobody thinks to pass back.
  */
-import type { ChapterPlan } from './types.ts'
+import type { ChapterPlan, Snapshot } from './types.ts'
 import type { ProjectStore } from './store.ts'
+import { cardIsStale } from './review-window.ts'
 
 /** The fields a card edit may touch. Omitted means "leave what is there". */
 export interface CardPatch {
@@ -65,8 +66,38 @@ export async function updateCard(store: ProjectStore, number: number, patch: Car
     else next.scene = patch.scene
   }
 
+  // Remember which prose the card described. Every write path (tool, panel)
+  // passes through here, so the stamp cannot be forgotten by a caller that does
+  // not know it exists.
+  const chapter = await store.chapter(number)
+  const touched = patch.summary !== undefined || patch.events !== undefined || patch.scene !== undefined
+  if (touched && chapter !== undefined) next.cardRevision = chapter.revision ?? 1
+
   await store.upsertPlan(next)
   return next
+}
+
+/**
+ * Cards that describe prose which has since been rewritten.
+ *
+ * This is the cost of storing a summary next to a body: the summary is right
+ * until somebody edits the chapter, and then it is confidently wrong. Nothing
+ * here can re-read the chapter and fix it — that takes a model — so the job is
+ * to say which cards are out of date and by how much.
+ *
+ * @param snapshot - the book.
+ * @returns one entry per stale card, oldest chapter first.
+ */
+export function staleCards(snapshot: Snapshot): { number: number; cardRevision: number; revision: number }[] {
+  const metaByNumber = new Map(snapshot.chapters.map((meta) => [meta.number, meta]))
+  const stale: { number: number; cardRevision: number; revision: number }[] = []
+  for (const plan of snapshot.plans) {
+    const meta = metaByNumber.get(plan.number)
+    if (cardIsStale(plan, meta)) {
+      stale.push({ number: plan.number, cardRevision: plan.cardRevision ?? 1, revision: meta?.revision ?? 1 })
+    }
+  }
+  return stale.sort((a, b) => a.number - b.number)
 }
 
 /**

@@ -12,6 +12,7 @@
  */
 import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
+import { cardIsStale } from '../domain/review-window.ts'
 
 /** How one row wants to be drawn: finished work, open work, or a warning. */
 export type PanelTone = 'done' | 'todo' | 'warn' | 'muted'
@@ -289,7 +290,15 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       key: String(number),
     }
     if (chapter) {
-      return { ...base, chip: '已完成', aside: formatWords(chapter.words), tone: 'done' }
+      // A card written from an older draft no longer describes the prose. The
+      // row says so rather than leaving the author to compare two pages.
+      const stale = cardIsStale(plan, chapter)
+      return {
+        ...base,
+        chip: stale ? '卡过期' : '已完成',
+        aside: formatWords(chapter.words),
+        tone: stale ? 'warn' : 'done',
+      }
     }
     if (draftCount > 0) return { ...base, chip: `${draftCount} 稿`, tone: 'warn' }
     if (plan?.approved) return { ...base, chip: '可写', tone: 'todo' }

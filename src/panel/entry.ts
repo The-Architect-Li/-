@@ -17,6 +17,7 @@
 import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { presentInText } from '../domain/cards.ts'
+import { cardIsStale } from '../domain/review-window.ts'
 import { answersTo, inboundRelations } from '../domain/characters.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
@@ -290,6 +291,10 @@ function chapterPage(
   // A promised character who never walks on, and a walk-on nobody planned, are
   // different facts; the card keeps the promise and this keeps the page.
   const named = presentInText(body ?? '', snapshot.characters.map((item) => item.name))
+  // A card describes a body. Editing the body does not edit the card, so the
+  // page has to say when the two have come apart — otherwise the recap reads
+  // authoritative while describing text that no longer exists.
+  const stale = cardIsStale(plan, chapter)
   return {
     kind: 'chapter',
     title: `第${number}章 ${title}`.trim(),
@@ -305,6 +310,9 @@ function chapterPage(
       { label: '场景', value: plan?.scene || '（未写）' },
       { label: '章纲', value: plan === undefined ? '（没有章纲）' : plan.approved ? '已批准' : '待批准' },
       { label: '字数', value: written ? `${chapter.words} 字` : rounds.length > 0 ? `${rounds.at(-1)?.words ?? 0} 字（草稿）` : '0 字' },
+      ...(stale
+        ? [{ label: '章卡', value: `过期：卡写在第 ${plan?.cardRevision ?? 1} 版，正文现在是第 ${chapter?.revision ?? 1} 版。下面这四栏（故事梗概/关键事件/场景）说的是改之前的正文，重新保存一次就盖成当前版本。` }]
+        : []),
       ...(plan?.summary ? [{ label: '故事梗概', value: plan.summary }] : []),
     ],
     lists: [
