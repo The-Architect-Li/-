@@ -286,7 +286,7 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，253 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由
+npm test            # vitest，256 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由
 npm run build       # 产出 lib/
 npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部

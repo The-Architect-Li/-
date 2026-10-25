@@ -639,7 +639,7 @@ window.__ModuleLoader__.load({
      * @returns the row element, plus its children when expanded.
      */
     function Row(props) {
-      const { row, depth, collapsed, onToggle, selected, onSelect } = props
+      const { row, depth, collapsed, onToggle, selected, onRowClick } = props
       const hasChildren = Array.isArray(row.children) && row.children.length > 0
       const open = hasChildren && !collapsed.has(row.id)
       const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
@@ -656,7 +656,7 @@ window.__ModuleLoader__.load({
           key: 'row',
           style,
           title: row.aside ? `${row.label} · ${row.aside}` : row.label,
-          onClick: () => onSelect(row),
+          onClick: () => onRowClick(row),
         },
         h('span', { style: S.glyph, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
@@ -673,7 +673,7 @@ window.__ModuleLoader__.load({
           collapsed,
           onToggle,
           selected,
-          onSelect,
+          onRowClick,
         }),
       )
       return [head, ...children]
@@ -686,7 +686,7 @@ window.__ModuleLoader__.load({
      * @returns the section element.
      */
     function Section(props) {
-      const { section, collapsed, onToggle, selected, onSelect } = props
+      const { section, collapsed, onToggle, selected, onRowClick } = props
       const open = !collapsed.has(section.id)
       return h(
         'div',
@@ -709,7 +709,7 @@ window.__ModuleLoader__.load({
                   collapsed,
                   onToggle,
                   selected,
-                  onSelect,
+                  onRowClick,
                 }),
               )
           : null,
@@ -1754,7 +1754,7 @@ window.__ModuleLoader__.load({
             collapsed,
             onToggle: toggle,
             selected,
-            onSelect: setSelected,
+            onRowClick,
           }),
         ),
         h('div', { style: S.spacerBlock }),
@@ -1883,6 +1883,11 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply
     exports.inject = ['slots', 'sidebarRightTabs', 'sidebarRight']
+    // The row renderer is exported for `test/client.test.ts` only. It renders
+    // without hooks, so a stub React can call it and click the result — which is
+    // how the panel's one real wiring bug (a row that only highlighted instead
+    // of opening its page) stays visible to CI instead of to a reader's eye.
+    exports.tree = { Row, Section }
 
     return module.exports
   },

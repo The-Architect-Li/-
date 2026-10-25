@@ -3,6 +3,28 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.9.1] - 2026-10-25
+
+点一行没有反应——修掉这个，并让它以后再也不能悄悄退化。
+
+### 修复
+
+- **点角色／设定／章节只高亮，不打开二级页面**。v0.7 加了「点开即看」的详情页，但抽屉树渲染时
+  传给仍然只有 `setSelected` 的旧回调：行能画出来、能选中，`/entry` 一次都没被请求过。现在树、
+  抽屉、行三层共用同一个 `onRowClick`，由它一处判断「这行代表一个东西就开页，否则展开或选中」。
+  这个 bug 从 v0.7 活到 v0.9.1，因为之前的验证都停在「服务端返回了什么」和「bundle 里有没有这段
+  字符串」，没人点过一下。
+- **`test/client.test.ts`**：用假的 `__ModuleLoader__` 与桩 `React.createElement` 把 `client.js`
+  真的加载一遍，然后调用 `Row` 渲染出的元素的 `onClick`，断言点击到达的是开页的那个回调。`Row` 不
+  用 hooks，所以不需要 DOM 也不需要真 React。三条用例分别覆盖：带 `kind`／`key` 的行、纯分组行、
+  以及展开箭头只切换不误触。
+
+### 验证
+
+`npm run check` 通过，**256 个用例**全绿（19 个文件），`client bundle : ./client.js 69929 bytes`。
+真机（隔离 profile `inkwell-verify`，端口 19411）：重新取回的组合 bundle 里
+`onClick: () => onRowClick(row)` 与 `setView('detail')` 都在，旧字符串 `onSelect: setSelected` 已消失。
+
 ## [0.9.0] - 2026-10-25
 
 小说工坊现在是一个书库，而不是一本书：打开侧边栏先看见「已有的书」和「新建」，点进一本书
@@ -375,6 +397,7 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.9.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.1
 [0.9.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.0
 [0.8.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.8.0
 [0.7.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.7.0
