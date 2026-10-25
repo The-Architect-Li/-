@@ -43,6 +43,7 @@ import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readChapterPatch, readCharacterPatch, readWorldPatch } from './edit.ts'
+import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from './library.ts'
 import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 import type { LlmCatalogSource } from './ports.ts'
@@ -148,6 +149,67 @@ function storeFor(deps: PanelDeps, sessionId: string | undefined, root: string |
 }
 
 /**
+ * Answer the library page: which books exist, and which one is "here".
+ *
+ * Candidates come from three places, and all three matter: the root the browser
+ * pinned, the book this session resolves to on its own, and the shelf of roots
+ * seen before. Every candidate is verified against the disk, so a book that was
+ * deleted or moved simply is not listed — the shelf is a hint, not a claim.
+ *
+ * The session's own book sorts first even when it was never on the shelf: it is
+ * the one "continue writing" should mean in this workspace.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory the browser asked about.
+ * @returns status and body with the book rows.
+ */
+export async function readLibrary(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  root?: string | undefined,
+): Promise<PanelAnswer> {
+  let currentRoot: string
+  let sessionRoot: string
+  try {
+    currentRoot = storeFor(deps, sessionId, root).root
+    sessionRoot = storeFor(deps, sessionId, undefined).root
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = error instanceof PanelInputError ? error.status : 400
+    return { status, body: { ok: false, error: { message } } }
+  }
+
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const add = (candidate: string): void => {
+    const key = bookKey(candidate)
+    if (seen.has(key)) return
+    seen.add(key)
+    candidates.push(candidate)
+  }
+  add(currentRoot)
+  add(sessionRoot)
+  add(deps.baseStore.root)
+  for (const entry of await readShelf(libraryFile())) add(entry.root)
+
+  const books: LibraryBook[] = []
+  for (const candidate of candidates) {
+    const store = new ProjectStore(resolve(candidate))
+    const book = await describeBook(store)
+    if (book === undefined) continue
+    books.push({ ...book, current: bookKey(book.root) === bookKey(currentRoot) })
+  }
+
+  books.sort((left, right) => {
+    if (left.current !== right.current) return left.current ? -1 : 1
+    return right.updatedAt.localeCompare(left.updatedAt)
+  })
+
+  return { status: 200, body: { ok: true, data: { books, current: currentRoot } } }
+}
+
+/**
  * Build the payload for one GET.
  *
  * Absence of a project is a normal answer, not an error: the panel shows its
@@ -177,6 +239,9 @@ export async function readPanel(
       const empty: PanelSnapshot = emptyPanelSnapshot(store.root)
       return { status: 200, body: { ok: true, data: empty } }
     }
+    // Opening a book by path is how it earns a place on the shelf: a writer who
+    // browsed to D:\ novels\雾港 once should not have to browse again tomorrow.
+    await rememberBook(libraryFile(), store.root)
     const snapshot = await store.snapshot()
     const numbers = new Set<number>()
     for (const chapter of snapshot.chapters) numbers.add(chapter.number)
@@ -247,6 +312,7 @@ export async function createBook(deps: PanelDeps, body: Record<string, unknown>)
     if (await store.exists()) {
       const project = await store.readProject()
       const created: CreatedBook = { root, title: project.title, existing: true }
+      await rememberBook(libraryFile(), root)
       return { status: 200, body: { ok: true, data: created } }
     }
     const rawTitle = typeof body.title === 'string' ? body.title.trim() : ''
@@ -256,6 +322,7 @@ export async function createBook(deps: PanelDeps, body: Record<string, unknown>)
       typeof rawTarget === 'number' && Number.isFinite(rawTarget) && rawTarget > 0 ? Math.floor(rawTarget) : undefined
     await store.init(title, targetWords ?? 0)
     const created: CreatedBook = { root, title, existing: false }
+    await rememberBook(libraryFile(), root)
     return { status: 200, body: { ok: true, data: created } }
   } catch (error) {
     if (error instanceof PanelInputError) {
@@ -652,6 +719,17 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         const sessionId = url.searchParams.get('session') ?? undefined
         const root = url.searchParams.get('root') ?? undefined
         send(res, await readPanel(deps, sessionId, root))
+        return
+      }
+
+      if (path === '/books') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/books 只读，新建用 /init' } } })
+          return
+        }
+        const sessionId = url.searchParams.get('session') ?? undefined
+        const root = url.searchParams.get('root') ?? undefined
+        send(res, await readLibrary(deps, sessionId, root))
         return
       }
 

@@ -53,6 +53,7 @@ window.__ModuleLoader__.load({
     const API_INIT = '/api/inkwell/init'
     const API_ROLES = '/api/inkwell/roles'
     const API_ENTRY = '/api/inkwell/entry'
+    const API_BOOKS = '/api/inkwell/books'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -116,6 +117,24 @@ window.__ModuleLoader__.load({
       todo: { opacity: 1 },
       warn: { color: 'color-mix(in srgb, #c9822f 82%, currentColor)' },
       muted: { opacity: 0.5 },
+    }
+
+    /**
+     * List the books this machine has opened.
+     * @param sessionId - the calling session, which decides which book is "here".
+     * @param signal - aborts the request when the tab hides or unmounts.
+     * @returns `{ books, current }`; each book carries title, phase, counts.
+     */
+    async function loadBooks(sessionId, signal) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      const url = params.length > 0 ? `${API_BOOKS}?${params.join('&')}` : API_BOOKS
+      const response = await fetch(url, { headers: { accept: 'application/json' }, signal })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /**
@@ -537,6 +556,38 @@ window.__ModuleLoader__.load({
       },
       field: { display: 'flex', flexDirection: 'column', gap: '3px', padding: '4px 8px' },
       fieldLabel: { fontSize: '10.5px', opacity: 0.55 },
+      listWrap: { display: 'flex', flexDirection: 'column', padding: '6px 8px', gap: '6px' },
+      bookRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '8px 10px',
+        borderRadius: '8px',
+        border: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
+        background: 'transparent',
+        color: 'inherit',
+        font: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+      },
+      bookIcon: { fontSize: '15px', opacity: 0.55, width: '16px', textAlign: 'center', flex: '0 0 auto' },
+      bookBody: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: '1 1 auto' },
+      bookName: {
+        fontSize: '13px',
+        fontWeight: 600,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
+      bookMeta: {
+        fontSize: '10.5px',
+        opacity: 0.6,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
       actions: { display: 'flex', gap: '6px', padding: '8px 8px 4px', alignItems: 'center' },
       spacerBlock: { height: '6px' },
       select: {
@@ -662,6 +713,122 @@ window.__ModuleLoader__.load({
                 }),
               )
           : null,
+      )
+    }
+
+    /**
+     * The shelf: every book this machine has opened, plus the way to make one.
+     *
+     * This is where the panel starts. A book is a directory, so the list is
+     * "which directories this dsh has written in" rather than a global catalog —
+     * the host answers `/books`, and this view never guesses at a path.
+     *
+     * @param props - session id, the root last opened here, and callbacks.
+     * @returns the library element.
+     */
+    function Library(props) {
+      const { sessionId, lastRoot, onOpen, onNew, onSettings } = props
+      const [state, setState] = useState({ status: 'loading' })
+      const [tick, setTick] = useState(0)
+
+      useEffect(() => {
+        const controller = new AbortController()
+        setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }))
+        loadBooks(sessionId, controller.signal)
+          .then((data) => {
+            if (!controller.signal.aborted) setState({ status: 'ready', data })
+          })
+          .catch((failure) => {
+            if (failure && failure.name === 'AbortError') return
+            if (!controller.signal.aborted) setState({ status: 'error', message: String(failure && failure.message) })
+          })
+        return () => controller.abort()
+      }, [sessionId, tick])
+
+      const books = state.status === 'ready' && Array.isArray(state.data.books) ? state.data.books : []
+
+      const row = (book) => {
+        const here = lastRoot !== '' && book.root === lastRoot
+        return h(
+          'button',
+          {
+            key: book.root,
+            type: 'button',
+            style: S.bookRow,
+            title: book.root,
+            onClick: () => onOpen(book),
+          },
+          h('span', { style: S.bookIcon }, '▤'),
+          h(
+            'div',
+            { style: S.bookBody },
+            h('span', { style: S.bookName }, book.title || '未命名'),
+            h(
+              'span',
+              { style: S.bookMeta },
+              `${PHASE_LABEL[book.phase] || book.phase} · ${num(book.chapters)} 章 · ${num(book.words)} 字`,
+            ),
+            h('span', { style: S.bookMeta }, book.root),
+          ),
+          here ? h('span', { style: S.pill }, '上次') : book.current ? h('span', { style: S.pill }, '当前') : null,
+        )
+      }
+
+      return h(
+        'div',
+        { style: S.root },
+        h(
+          'div',
+          { style: S.head },
+          h('span', { style: S.bookIcon }, '▤'),
+          h('span', { style: S.bookTitle }, LABEL),
+          h('span', { style: S.spacer }),
+          h('button', { type: 'button', style: S.iconButton, onClick: onNew, title: '在某个目录里新建一本书' }, '＋ 新建'),
+          h('button', { type: 'button', style: S.iconButton, onClick: () => setTick((n) => n + 1), title: '重新扫描书库' }, '刷新'),
+        ),
+        state.status === 'loading' ? h('div', { style: S.note }, '正在找这台机器上的书…') : null,
+        state.status === 'error'
+          ? h(
+              'div',
+              { style: { padding: '6px 8px' } },
+              h('div', { style: S.error }, state.message || '读取失败'),
+              h('div', { style: S.note }, '宿主端的面板接口没有响应。插件仍可用，novel_* 工具不受影响。'),
+            )
+          : null,
+        state.status === 'ready' && books.length === 0
+          ? h(
+              'div',
+              { style: S.note },
+              '这台机器上还没有书。',
+              h(
+                'div',
+                { style: { marginTop: '8px' } },
+                h('button', { type: 'button', style: S.primaryButton, onClick: onNew }, '选择目录新建'),
+              ),
+              h(
+                'div',
+                { style: { marginTop: '8px', opacity: 0.7 } },
+                '也可以在对话里调用 novel_project（action="init"），建好后会出现在这里。',
+              ),
+            )
+          : null,
+        books.length > 0
+          ? h(
+              'div',
+              { style: S.listWrap },
+              h('div', { style: { ...S.fieldLabel, padding: '2px 2px 0' } }, `已有的书 ${books.length} 本`),
+              ...books.map(row),
+            )
+          : null,
+        h('div', { style: S.spacerBlock }),
+        h(
+          'button',
+          { type: 'button', style: S.settingsRow, onClick: onSettings, title: '设置：智能体团队与模型' },
+          h('span', { style: S.settingsIcon }, '⚙'),
+          h('span', { style: S.settingsLabel }, '设置'),
+          h('span', { style: S.spacer }),
+          h('span', { style: S.aside }, '智能体团队'),
+        ),
       )
     }
 
@@ -1361,7 +1528,11 @@ window.__ModuleLoader__.load({
       })
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
-      const [view, setView] = useState('tree')
+      // The panel opens on the shelf, not on a book: "小说工坊" is the workbench,
+      // and a book is something you pick inside it.
+      const [view, setView] = useState('library')
+      // Where 新建 came from, so 取消 goes back there rather than to a guess.
+      const [returnTo, setReturnTo] = useState('library')
       // Every drawer starts folded: the panel opens as a table of contents, not
       // as a wall of ninety-four chapter rows.
       const [collapsed, setCollapsed] = useState(() => new Set(['world', 'cast', 'plot', 'text']))
@@ -1381,6 +1552,9 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
+        // The shelf reads `/books`; a book read is only worth making once one is
+        // open, and the library has no book to read.
+        if (view === 'library') return undefined
         const controller = new AbortController()
         setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }))
         loadPanel(sessionId, root, controller.signal)
@@ -1392,7 +1566,7 @@ window.__ModuleLoader__.load({
             if (!controller.signal.aborted) setState({ status: 'error', message: String(error && error.message) })
           })
         return () => controller.abort()
-      }, [sessionId, root, tick, visible])
+      }, [sessionId, root, tick, visible, view])
 
       useEffect(() => {
         if (!visible) return undefined
@@ -1418,9 +1592,25 @@ window.__ModuleLoader__.load({
         [],
       )
 
+      const openBook = useCallback((book) => {
+        setSelected(null)
+        setDetail(null)
+        setRoot(book.root)
+        setView('tree')
+        setTick((n) => n + 1)
+      }, [])
+
+      const openNewBook = useCallback((from) => {
+        setReturnTo(from)
+        setView('new')
+      }, [])
+
       const header = h(
         'div',
         { style: S.head },
+        view === 'tree'
+          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('library'), title: '回到书库' }, '←')
+          : null,
         h('span', { style: S.bookIcon }, '▤'),
         h('span', { style: S.bookTitle }, state.status === 'ready' && state.data.title ? state.data.title : LABEL),
         state.status === 'ready' && state.data.phase
@@ -1428,7 +1618,7 @@ window.__ModuleLoader__.load({
           : null,
         h('span', { style: S.spacer }),
         view === 'tree'
-          ? h('button', { type: 'button', style: S.iconButton, onClick: () => setView('new'), title: '在某个目录里新建一本书' }, '＋ 新建')
+          ? h('button', { type: 'button', style: S.iconButton, onClick: () => openNewBook('tree'), title: '在某个目录里新建一本书' }, '＋ 新建')
           : null,
         view === 'tree'
           ? h('button', { type: 'button', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
@@ -1466,9 +1656,24 @@ window.__ModuleLoader__.load({
         setSelected((current) => (current === row.id ? null : row.id))
       }, [])
 
+      if (view === 'library') {
+        return h(Library, {
+          sessionId,
+          lastRoot: root || '',
+          onOpen: openBook,
+          onNew: () => openNewBook('library'),
+          onSettings: () => setView('settings'),
+        })
+      }
+
       if (view === 'new') {
         const suggested = state.status === 'ready' && state.data.root ? state.data.root.replace(/[\\/]\.novel[\\/]?$/, '') : ''
-        return h(NewBook, { sessionId, suggestedDir: suggested, onCancel: () => setView('tree'), onCreated })
+        return h(NewBook, {
+          sessionId,
+          suggestedDir: suggested,
+          onCancel: () => setView(returnTo),
+          onCreated,
+        })
       }
 
       if (view === 'detail' && detail !== null) {
@@ -1487,7 +1692,7 @@ window.__ModuleLoader__.load({
         return h(Settings, {
           root: state.status === 'ready' && state.data.root ? state.data.root : '',
           roleCount: 4,
-          onBack: () => setView('tree'),
+          onBack: () => setView('library'),
           onOpenTeam: () => setView('team'),
         })
       }
@@ -1522,7 +1727,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { style: { marginTop: '8px' } },
-              h('button', { type: 'button', style: S.primaryButton, onClick: () => setView('new') }, '选择目录新建'),
+              h('button', { type: 'button', style: S.primaryButton, onClick: () => openNewBook('library') }, '选择目录新建'),
             ),
             h(
               'div',

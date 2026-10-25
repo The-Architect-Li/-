@@ -11,7 +11,7 @@ import { createServer, type Server } from 'node:http'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { resolveConfig } from '../src/config.ts'
 import { ProjectStore } from '../src/domain/store.ts'
 import type {
@@ -27,6 +27,15 @@ import type {
 import { buildPanelSnapshot, emptyPanelSnapshot } from '../src/panel/model.ts'
 import { PANEL_HEADER, PANEL_HEADER_VALUE, PANEL_PREFIX, readPanel } from '../src/panel/serve.ts'
 import { createHarness, type Harness } from './helpers.ts'
+
+// The shelf lives under dsh's state directory, which must not be the real one
+// during a test run: a suite that appends to the developer's book list is a bug.
+const stateHome = await mkdtemp(join(tmpdir(), 'inkwell-home-'))
+process.env.DSH_HOME = stateHome
+afterAll(async () => {
+  delete process.env.DSH_HOME
+  await rm(stateHome, { recursive: true, force: true })
+})
 
 const PREMISE = '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4)
 
@@ -595,6 +604,47 @@ describe('panel create route', () => {
   it('accepts only POST on the create route', async () => {
     const { base } = await serve()
     const response = await fetch(`${base}${PANEL_PREFIX}/init`)
+    expect(response.status).toBe(405)
+  })
+
+  it('lists the books on the shelf, newest door first', async () => {
+    const { base, space } = await serve()
+    const created = await postCreate(base, { dir: space, title: '雾港' })
+    const book = (await created.json()) as { data: { root: string } }
+
+    const response = await fetch(`${base}${PANEL_PREFIX}/books`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      ok: boolean
+      data: { books: Array<{ root: string; title: string; phase: string; chapters: number; words: number }>; current: string }
+    }
+    expect(body.ok).toBe(true)
+    const listed = body.data.books.find((entry) => entry.root === book.data.root)
+    // A book created through the panel is on the shelf: that is what makes the
+    // library page worth opening the second time.
+    expect(listed).toBeDefined()
+    expect(listed).toMatchObject({ title: '雾港', phase: 'premise', chapters: 0, words: 0 })
+  })
+
+  it('keeps a book off the shelf once its directory is gone', async () => {
+    const { base, space } = await serve()
+    const created = await postCreate(base, { dir: space, title: '雾港' })
+    const book = (await created.json()) as { data: { root: string } }
+    await rm(space, { recursive: true, force: true })
+
+    const response = await fetch(`${base}${PANEL_PREFIX}/books`)
+    const body = (await response.json()) as { data: { books: Array<{ root: string }> } }
+    // The shelf remembers a path, not a promise: a deleted book must not appear.
+    expect(body.data.books.some((entry) => entry.root === book.data.root)).toBe(false)
+  })
+
+  it('serves the shelf read-only', async () => {
+    const { base } = await serve()
+    const response = await fetch(`${base}${PANEL_PREFIX}/books`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: '{}',
+    })
     expect(response.status).toBe(405)
   })
 })
