@@ -13,6 +13,11 @@
  * - `POST /api/inkwell/import` — put that manuscript into the current book.
  * - `POST /api/inkwell/import-book` — create a book *from* a manuscript folder
  *   in one step: 新建 and 导入 are the same door, different cargo.
+ * - `POST /api/inkwell/export` — write the book out as txt or per-volume
+ *   markdown, into a folder the writer picked.
+ * - `POST /api/inkwell/delete-book` — delete a book directory. The only
+ *   destructive route here, and the only one that refuses paths that do not
+ *   end in `.novel`.
  * - `GET /api/inkwell/entry?kind=&key=` — the page behind one row.
  * - `POST /api/inkwell/entry` — save an edit to a character, world entry, or
  *   chapter body.
@@ -40,7 +45,9 @@
  * someone should have to argue for in words.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { basename, isAbsolute, join, resolve } from 'node:path'
+import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
@@ -53,7 +60,15 @@ import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
-import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from '../domain/shelf.ts'
+import {
+  bookKey,
+  describeBook,
+  forgetBook,
+  libraryFile,
+  readShelf,
+  rememberBook,
+  type LibraryBook,
+} from '../domain/shelf.ts'
 import { pinBook, pinnedRoot, sessionsFile } from '../domain/session-books.ts'
 import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
@@ -551,6 +566,119 @@ export async function importBook(deps: PanelDeps, body: Record<string, unknown>)
     ...(applied.phase === undefined ? {} : { phase: applied.phase }),
   }
   return { status: 200, body: { ok: true, data } }
+}
+
+/**
+ * Write a book out into a folder the writer picked.
+ *
+ * The panel and `novel_export` share `bookText`/`volumeFiles`, so the two
+ * doors produce the same bytes: a book exported from the panel is the book the
+ * conversation would have exported. The difference is only who chose the
+ * folder — the writer, through a real directory picker, rather than a path
+ * typed into a tool call.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ dir, format?: 'txt'|'markdown', root? }`.
+ * @param pinned - the book named in the query string, when the browser did.
+ * @returns where the files went, and their names.
+ */
+export async function exportBook(deps: PanelDeps, body: Record<string, unknown>, pinned?: string): Promise<PanelAnswer> {
+  const requested = typeof body.dir === 'string' ? body.dir.trim() : ''
+  if (requested === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有说导到哪个文件夹：dir 不能为空。' } } }
+  }
+  if (!isAbsolute(requested)) {
+    return { status: 400, body: { ok: false, error: { message: `dir 必须是绝对路径：${requested}` } } }
+  }
+  const format = body.format === 'markdown' ? 'markdown' : 'txt'
+  const dir = resolve(requested)
+  // The shelf exports a book that may not be the one on screen, so the body
+  // names it. `pinned` is the query-string spelling of the same thing, kept
+  // because every other route takes `?root=`.
+  const named = typeof body.root === 'string' ? body.root.trim() : ''
+  const store = storeFor(deps, undefined, named === '' ? pinned : named)
+  if (!(await store.exists())) {
+    return { status: 404, body: { ok: false, error: { message: `这里不是一本书：${store.root}（没有 project.json）` } } }
+  }
+  const snapshot = await store.snapshot()
+  const chapters = await store.allChapters()
+  if (chapters.length === 0) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        error: {
+          message: '这本书还没有落盘的正文，导出来会是空的。先 novel_chapter action="write" 写一章，或用 novel_export action="canon" 只导设定集。',
+        },
+      },
+    }
+  }
+  const files =
+    format === 'markdown' ? volumeFiles(snapshot, chapters) : [{ name: `${safeFileName(snapshot.project.title)}.txt`, body: bookText(snapshot, chapters) }]
+  await mkdir(dir, { recursive: true })
+  const written: string[] = []
+  for (const file of files) {
+    const target = join(dir, file.name)
+    await writeFile(target, file.body, 'utf8')
+    written.push(target)
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      data: {
+        dir,
+        format,
+        files: written,
+        chapters: chapters.length,
+        words: chapters.reduce((sum, draft) => sum + draft.words, 0),
+      },
+    },
+  }
+}
+
+/**
+ * Delete a book from disk, and from the shelf.
+ *
+ * This is the one destructive route in the plugin, so it refuses anything that
+ * does not look like a book it could have made: the path must be absolute, must
+ * end in `.novel`, and must hold a `project.json`. A writer's folder of
+ * manuscripts is never a book root — `init` puts the book in `.novel` beside
+ * them — so the suffix test is what keeps "delete my book" from becoming
+ * "delete my manuscript folder". The shelf entry goes first: a book deleted but
+ * still listed is a row that opens nothing, which is the worse leftover.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ root }`, the absolute project root.
+ * @returns what was removed.
+ */
+export async function removeBook(deps: PanelDeps, body: Record<string, unknown>): Promise<PanelAnswer> {
+  const requested = typeof body.root === 'string' ? body.root.trim() : ''
+  if (requested === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有说要删哪本书：root 不能为空。' } } }
+  }
+  if (!isAbsolute(requested)) {
+    return { status: 400, body: { ok: false, error: { message: `root 必须是绝对路径：${requested}` } } }
+  }
+  const root = resolve(requested)
+  if (basename(root) !== '.novel') {
+    return {
+      status: 400,
+      body: {
+        ok: false,
+        error: { message: `只删 inkwell 自己的书目录（必须以 .novel 结尾）：${root}。原稿文件夹不会被删。` },
+      },
+    }
+  }
+  const store = new ProjectStore(root)
+  if (!(await store.exists())) {
+    await forgetBook(libraryFile(), root)
+    return { status: 404, body: { ok: false, error: { message: `这里没有书：${root}` } } }
+  }
+  const title = await store.readProject().then((project) => project.title).catch(() => basename(root))
+  await forgetBook(libraryFile(), root)
+  await rm(root, { recursive: true, force: true })
+  return { status: 200, body: { ok: true, data: { root, title } } }
 }
 
 /** What the create dialog did with the manuscript. */
@@ -1131,6 +1259,25 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await importBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/export') {
+        const root = url.searchParams.get('root') ?? undefined
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/export 需要 POST' } } })
+          return
+        }
+        send(res, await exportBook(deps, await readJson(req), root))
+        return
+      }
+
+      if (path === '/delete-book') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/delete-book 需要 POST' } } })
+          return
+        }
+        send(res, await removeBook(deps, await readJson(req)))
         return
       }
 

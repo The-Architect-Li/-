@@ -175,6 +175,7 @@ const button = (label, primary = false) =>
   `<button type="button" class="${primary ? 'iw-btn iw-primary' : 'iw-btn'}" ${attr(primary ? S.primaryButton : S.iconButton)}>${escape(label)}</button>`
 
 const shelfCard = (title, meta, path, tag) =>
+  `<div ${attr(S.bookCard)}>` +
   `<button type="button" class="iw-book" ${attr(S.bookRow)}>` +
   `<span ${attr(S.bookIcon)}>▤</span>` +
   `<div ${attr(S.bookBody)}>` +
@@ -183,10 +184,15 @@ const shelfCard = (title, meta, path, tag) =>
   `<span ${attr(S.bookMeta)}>${escape(path)}</span>` +
   `</div>` +
   (tag ? `<span ${attr(S.pill)}>${escape(tag)}</span>` : '') +
-  `</button>`
+  `</button>` +
+  `<div ${attr(S.bookActions)}>` +
+  `<button type="button" class="iw-link" ${attr(S.linkButton)}>导出</button>` +
+  `<button type="button" class="iw-link iw-danger" ${attr(S.linkButton)}>删除</button>` +
+  `</div>` +
+  `</div>`
 
 const shelf = `<div ${attr(S.root)}>
-  ${headBar('小说工坊', button('＋ 新建', true))}
+  ${headBar('小说工坊', button('＋ 新建', true) + button('导入…'))}
   <div ${attr(S.listWrap)}>
     <div ${attr(style(S.fieldLabel, { padding: '4px 2px 2px' }))}>已有的书 2 本</div>
     ${shelfCard('待定', '创作中 · 85 章 · 351,401 字', ROOT_PATH, '上次')}
@@ -278,6 +284,37 @@ const importDialog = `<div ${attr(S.root)}>
   </div></div>
 </div>`
 
+const exportDialog = `<div ${attr(S.root)}>
+  ${headBar('小说工坊', button('＋ 新建', true) + button('导入…'))}
+  <div class="iw-backdrop"><div class="iw-dialog">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span ${attr(S.bookIcon)}>↗</span>
+      <span style="font-size:13px;font-weight:650">导出这本书</span>
+    </div>
+    <div class="iw-dialogpath">C:\\Users\\china\\Documents\\小说\\投稿</div>
+    <div style="display:flex;gap:8px;align-items:center">${button('选择文件夹…')}<span style="flex:1 1 auto"></span><span style="font-size:11.5px;color:var(--iw-fg-3)">85 章 · 351,401 字</span></div>
+    <label ${attr(S.checkRow)}><input type="radio" name="fmt" checked> 整本一个 .txt — 投稿用，只有章名和段落</label>
+    <label ${attr(S.checkRow)}><input type="radio" name="fmt"> 每卷一个 .md — 保留分卷，方便自己再看</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">${button('导出', true)}${button('取消')}</div>
+    <div ${attr(S.footer)}>导出的文件进你刚选的文件夹，书本身不会变。同一个文件夹再导一次会覆盖同名文件。</div>
+  </div></div>
+</div>`
+
+const deleteDialog = `<div ${attr(S.root)}>
+  ${headBar('小说工坊', button('＋ 新建', true) + button('导入…'))}
+  <div class="iw-backdrop"><div class="iw-dialog">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span ${attr(S.bookIcon)}>⚠</span>
+      <span style="font-size:13px;font-weight:650">删除这本书</span>
+    </div>
+    <div class="iw-dialogpath">${escape(ROOT_PATH)}</div>
+    <div ${attr(S.note)}>删除后不能恢复。<div style="margin-top:6px">待定 的 85 章正文、角色卡、大纲与账本都会一起删掉，书库里也不再出现。</div><div style="margin-top:6px">如果你写稿子的那个文件夹还在，删掉的只是它下面的 .novel 目录。</div></div>
+    <div style="display:flex;gap:8px">${button('先导出，再删除', true)}</div>
+    <label ${attr(S.checkRow)}><input type="checkbox"> 我确认不要这本书了，直接删除</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">${button('取消')}${button('直接删除')}</div>
+  </div></div>
+</div>`
+
 const views = [
   ['shelf', '书库', shelf],
   ['tree', '目录', tree],
@@ -285,6 +322,8 @@ const views = [
   ['prose', '正文页', prose],
   ['dialog', '建书弹窗', dialog],
   ['import', '导入弹窗', importDialog],
+  ['export', '导出弹窗', exportDialog],
+  ['delete', '删除弹窗', deleteDialog],
 ]
 
 const page = (body, dark, extra = '') => `<!doctype html>
@@ -304,7 +343,7 @@ writeFileSync(`${out}sheet-light.html`, page(views.slice(0, 4).map(([, , view]) 
 writeFileSync(`${out}sheet-dark.html`, page(views.slice(0, 4).map(([, , view]) => `<div class="pane">${view}</div>`).join(''), true, extractDark(CSS)))
 
 for (const [id, , view] of views) {
-  const isolate = id === 'dialog' || id === 'import' ? `.iw-backdrop { position: static; background: none; backdrop-filter: none; padding: 0; }` : ''
+  const isolate = ['dialog', 'import', 'export', 'delete'].includes(id) ? `.iw-backdrop { position: static; background: none; backdrop-filter: none; padding: 0; }` : ''
   writeFileSync(`${out}${id}.html`, page(`<div class="pane">${view}</div>`, false, isolate))
 }
 console.log(`wrote ${views.length + 2} preview pages to preview/`)

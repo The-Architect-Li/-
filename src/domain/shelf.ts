@@ -138,6 +138,29 @@ export async function rememberBook(file: string, root: string): Promise<void> {
 }
 
 /**
+ * Drop one root from the shelf, after the book itself is gone.
+ *
+ * Forgetting is not deleting: the shelf holds paths, so a deleted book that
+ * stayed on the shelf would be a row that opens nothing. Both halves happen
+ * in the delete route, shelf first and disk second, because a book deleted
+ * but still listed is the worse of the two failures to look at.
+ *
+ * @param file - the shelf path.
+ * @param root - the book's project root.
+ */
+export async function forgetBook(file: string, root: string): Promise<void> {
+  const entries = await readShelf(file)
+  const doomed = bookKey(resolve(root))
+  const next = entries.filter((entry) => bookKey(entry.root) !== doomed)
+  if (next.length === entries.length) return
+  try {
+    await writeShelf(file, next)
+  } catch {
+    // A read-only state directory costs the shelf, not the panel.
+  }
+}
+
+/**
  * Describe one book, or `undefined` when there is nothing there.
  *
  * @param store - a store rooted at the book.

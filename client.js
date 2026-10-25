@@ -58,6 +58,8 @@ window.__ModuleLoader__.load({
     const API_SCAN = '/api/inkwell/scan'
     const API_IMPORT = '/api/inkwell/import'
     const API_IMPORT_BOOK = '/api/inkwell/import-book'
+    const API_EXPORT = '/api/inkwell/export'
+    const API_DELETE_BOOK = '/api/inkwell/delete-book'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -313,6 +315,51 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ dir, title, targetWords }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Write one book out into a folder the writer chose.
+     *
+     * Same two formats the tool has, because it is the same writer: `txt` for a
+     * submission and `markdown` for one file per volume. `root` names the book,
+     * since the shelf can export a book that is not the one on screen.
+     *
+     * @param root - absolute project root of the book.
+     * @param dir - absolute folder to write into.
+     * @param format - `'txt'` or `'markdown'`.
+     * @returns `{ dir, files, chapters, words }`.
+     */
+    async function exportBookTo(root, dir, format) {
+      const response = await fetch(API_EXPORT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ root, dir, format }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Delete one book directory. Not reversible, and it does not touch the
+     * manuscript folder the book was made from.
+     *
+     * @param root - absolute project root of the book.
+     * @returns `{ root, title }`.
+     */
+    async function deleteBookAt(root) {
+      const response = await fetch(API_DELETE_BOOK, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ root }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -922,10 +969,10 @@ window.__ModuleLoader__.load({
         gap: '11px',
         width: '100%',
         boxSizing: 'border-box',
-        padding: '11px 12px',
-        borderRadius: '10px',
-        border: '1px solid var(--iw-line)',
-        backgroundColor: 'var(--iw-surface)',
+        padding: '11px 12px 6px',
+        borderRadius: '0',
+        border: 'none',
+        backgroundColor: 'transparent',
         color: 'var(--iw-fg)',
         font: 'inherit',
         textAlign: 'left',
@@ -956,6 +1003,24 @@ window.__ModuleLoader__.load({
         whiteSpace: 'nowrap',
         direction: 'rtl',
         textAlign: 'left',
+      },
+      bookCard: {
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid var(--iw-line)',
+        borderRadius: '10px',
+        backgroundColor: 'var(--iw-surface)',
+        overflow: 'hidden',
+      },
+      bookActions: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px 8px', gap: '10px' },
+      linkButton: {
+        border: 'none',
+        background: 'none',
+        font: 'inherit',
+        fontSize: '11.5px',
+        padding: '3px 4px',
+        borderRadius: '6px',
+        cursor: 'pointer',
       },
       actions: { display: 'flex', gap: '8px', padding: '10px 8px 6px', alignItems: 'center' },
       spacerBlock: { height: '8px' },
@@ -1066,6 +1131,16 @@ window.__ModuleLoader__.load({
 }
 .iw-row-sel:focus-visible { box-shadow: inset 2px 0 0 var(--iw-accent), 0 0 0 2px var(--iw-accent-soft); }
 
+/* Shelf links -------------------------------------------------------------- */
+.iw-link { cursor: pointer; color: var(--iw-fg-3); }
+.iw-link:hover { color: var(--iw-fg); background-color: var(--iw-surface-hover); }
+.iw-link:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--iw-accent-soft); color: var(--iw-fg); }
+/* A delete that only turns red once you are already hovering it is a delete you
+   can press by accident. This one is red at rest. */
+.iw-link.iw-danger { color: color-mix(in srgb, var(--iw-danger-fg) 80%, var(--iw-fg-3)); }
+.iw-link.iw-danger:hover { color: var(--iw-danger-fg); background-color: var(--iw-danger-bg); }
+.iw-link.iw-danger:focus-visible { box-shadow: 0 0 0 2px var(--iw-danger-line); color: var(--iw-danger-fg); }
+
 /* Drawer headings ---------------------------------------------------------- */
 .iw-open { cursor: pointer; user-select: none; background-color: transparent; border: 1px solid transparent; }
 .iw-open:hover { background-color: var(--iw-surface-hover); }
@@ -1124,6 +1199,7 @@ window.__ModuleLoader__.load({
 }
 .iw-dialog {
   width: min(412px, calc(100vw - 32px));
+  min-width: 0;
   max-height: calc(100vh - 48px);
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 12px; box-sizing: border-box;
@@ -1290,7 +1366,7 @@ window.__ModuleLoader__.load({
      * @returns the library element.
      */
     function Library(props) {
-      const { sessionId, lastRoot, onOpen, onNew, onImport, onSettings } = props
+      const { sessionId, lastRoot, onOpen, onNew, onImport, onExport, onDelete, onSettings } = props
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
 
@@ -1313,27 +1389,48 @@ window.__ModuleLoader__.load({
       const row = (book) => {
         const here = lastRoot !== '' && book.root === lastRoot
         return h(
-          'button',
-          {
-            key: book.root,
-            type: 'button',
-            className: 'iw-book', style: S.bookRow,
-            title: book.root,
-            onClick: () => onOpen(book),
-          },
-          h('span', { style: S.bookIcon }, '▤'),
+          'div',
+          { key: book.root, style: S.bookCard },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'iw-book', style: S.bookRow,
+              title: book.root,
+              onClick: () => onOpen(book),
+            },
+            h('span', { style: S.bookIcon }, '▤'),
+            h(
+              'div',
+              { style: S.bookBody },
+              h('span', { style: S.bookName }, book.title || '未命名'),
+              h(
+                'span',
+                { style: S.bookMeta },
+                `${PHASE_LABEL[book.phase] || book.phase} · ${num(book.chapters)} 章 · ${num(book.words)} 字`,
+              ),
+              h('span', { style: S.bookPath }, book.root),
+            ),
+            here ? h('span', { style: S.pill }, '上次') : book.current ? h('span', { style: S.pill }, '当前') : null,
+          ),
+          // Two verbs that act on the book rather than open it, kept off the card
+          // itself: a nested button inside a button is not a thing the DOM allows,
+          // and the row's own click means "read this", not "do something to it".
           h(
             'div',
-            { style: S.bookBody },
-            h('span', { style: S.bookName }, book.title || '未命名'),
+            { style: S.bookActions },
             h(
-              'span',
-              { style: S.bookMeta },
-              `${PHASE_LABEL[book.phase] || book.phase} · ${num(book.chapters)} 章 · ${num(book.words)} 字`,
+              'button',
+              { type: 'button', className: 'iw-link', style: S.linkButton, onClick: () => onExport(book), title: '导出成 txt 或按卷的 markdown' },
+              '导出',
             ),
-            h('span', { style: S.bookPath }, book.root),
+            h('span', { style: { ...S.aside, padding: '0 2px' } }, '·'),
+            h(
+              'button',
+              { type: 'button', className: 'iw-link iw-danger', style: S.linkButton, onClick: () => onDelete(book), title: '删除这本书的目录' },
+              '删除',
+            ),
           ),
-          here ? h('span', { style: S.pill }, '上次') : book.current ? h('span', { style: S.pill }, '当前') : null,
         )
       }
 
@@ -1682,6 +1779,183 @@ window.__ModuleLoader__.load({
             'div',
             { style: S.footer },
             '会把稿件读成正文、章卡、人物与大纲这些记录，把这个文件夹注册成工作区，并新开一个聊天会话。',
+          ),
+        ),
+      )
+    }
+
+    /**
+     * The delete-a-book question, asked once and answered with a verb.
+     *
+     * Deleting throws away every chapter, card, record and revision in the book
+     * directory, and there is no undo, so the dialog says that in the first line
+     * rather than in fine print. It offers the escape route too: exporting first
+     * is what most people actually want when they are about to lose a book, and
+     * asking costs one extra line here.
+     *
+     * @param props - the book, and the three things that can happen next.
+     * @returns the modal overlay.
+     */
+    function DeleteDialog(props) {
+      const { book, busy, error, onExportFirst, onDeleteNow, onCancel } = props
+      const [confirm, setConfirm] = useState(false)
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '删除这本书' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '⚠'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '删除这本书'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, book.root),
+          h(
+            'div',
+            { style: S.note },
+            '删除后不能恢复。',
+            h(
+              'div',
+              { style: { marginTop: '6px' } },
+              `${book.title || '这本书'} 的 ${num(book.chapters)} 章正文、角色卡、大纲与账本都会一起删掉，书库里也不再出现。`,
+            ),
+            h('div', { style: { marginTop: '6px' } }, '如果你写稿子的那个文件夹还在，删掉的只是它下面的 .novel 目录。'),
+          ),
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn iw-primary',
+                style: S.primaryButton,
+                disabled: busy,
+                onClick: onExportFirst,
+                title: '先导出成文件，成功后再删',
+              },
+              '先导出，再删除',
+            ),
+          ),
+          h(
+            'label',
+            { style: S.checkRow },
+            h('input', { type: 'checkbox', checked: confirm, onChange: (event) => setConfirm(event.target.checked) }),
+            h('span', null, '我确认不要这本书了，直接删除'),
+          ),
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '取消'),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn iw-danger',
+                style: { ...S.iconButton, color: 'var(--iw-danger-fg)', borderColor: 'var(--iw-danger-line)' },
+                disabled: busy || !confirm,
+                onClick: onDeleteNow,
+                title: confirm ? '直接删除，不导出' : '先勾选上面的确认框',
+              },
+              busy ? '正在删除…' : '直接删除',
+            ),
+          ),
+        ),
+      )
+    }
+
+    /**
+     * The export dialog: where to write, in which shape.
+     *
+     * It is reached two ways — from the shelf, and from the delete dialog's "先
+     * 导出" — and the only difference is the button's label and what happens
+     * after a successful write, so `afterDelete` decides that rather than a
+     * second copy of this dialog.
+     *
+     * @param props - the book, the chosen folder, the format, and callbacks.
+     * @returns the modal overlay.
+     */
+    function ExportDialog(props) {
+      const { book, dir, busy, error, afterDelete, onExport, onRepick, onCancel } = props
+      const [format, setFormat] = useState('txt')
+      const ready = dir !== '' && dir !== null && !busy
+      const pick = (value) => (event) => setFormat(value)
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '导出这本书' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '↗'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, afterDelete ? '导出后再删除' : '导出这本书'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, dir === '' || dir === null ? '还没有选文件夹' : dir),
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onRepick, title: '选择一个导出文件夹' },
+              '选择文件夹…',
+            ),
+            h('span', { style: S.spacer }),
+            h('span', { style: { ...S.aside, padding: 0 } }, `${num(book.chapters)} 章 · ${num(book.words)} 字`),
+          ),
+          h(
+            'label',
+            { style: S.checkRow },
+            h('input', { type: 'radio', name: 'iw-export-format', checked: format === 'txt', onChange: pick('txt') }),
+            h('span', null, '整本一个 .txt —  投稿用，只有章名和段落'),
+          ),
+          h(
+            'label',
+            { style: S.checkRow },
+            h('input', { type: 'radio', name: 'iw-export-format', checked: format === 'markdown', onChange: pick('markdown') }),
+            h('span', null, '每卷一个 .md —  保留分卷，方便自己再看'),
+          ),
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn iw-primary',
+                style: S.primaryButton,
+                disabled: !ready,
+                onClick: () => onExport(dir, format),
+              },
+              busy ? (afterDelete ? '正在导出，随后删除…' : '正在导出…') : afterDelete ? '导出并删除' : '导出',
+            ),
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '取消'),
+          ),
+          h(
+            'div',
+            { style: S.footer },
+            afterDelete
+              ? '导出成功才会删除；导出失败就停在这里，书还在。'
+              : '导出的文件进你刚选的文件夹，书本身不会变。同一个文件夹再导一次会覆盖同名文件。',
           ),
         ),
       )
@@ -2461,6 +2735,16 @@ window.__ModuleLoader__.load({
       // A caveat that belongs to the book, not to the dialog: the dialog closes
       // on success, so anything the writer still needs to know is said here.
       const [notice, setNotice] = useState('')
+      // Export and delete both act on a book rather than open one. `exportFor`
+      // keeps the book and the reason (`afterDelete`), because the same dialog
+      // serves both doors.
+      const [exportFor, setExportFor] = useState(null)
+      const [exportDir, setExportDir] = useState('')
+      const [exporting, setExporting] = useState(false)
+      const [exportError, setExportError] = useState('')
+      const [deleteFor, setDeleteFor] = useState(null)
+      const [deleting, setDeleting] = useState(false)
+      const [deleteError, setDeleteError] = useState('')
 
       // The interaction sheet goes in once, on first mount of any view: hover,
       // focus and pressed states cannot live in inline styles.
@@ -2648,6 +2932,87 @@ window.__ModuleLoader__.load({
         [onCreated, sessionId],
       )
 
+      // 导出 asks for a folder the same way 新建 does: the host's own chooser when
+      // it has one. `afterDelete` only decides what happens once the write
+      // succeeds, so the delete dialog reuses this dialog instead of a copy.
+      const beginExport = useCallback((book, afterDelete) => {
+        setExportFor({ book, afterDelete })
+        setExportError('')
+        setExportDir('')
+        if (!hostCanPick()) return
+        pickHostDirectory()
+          .then((picked) => {
+            if (picked !== null) setExportDir(picked)
+          })
+          .catch((failure) => setExportError(String((failure && failure.message) || failure)))
+      }, [])
+
+      // A deleted book that is also the open book would leave the panel pointing
+      // at a directory that no longer exists, so the shelf is where it goes back
+      // to — the same place a writer who just threw a book away expects to stand.
+      const forgetDeleted = useCallback(
+        (book, note) => {
+          setNotice(note)
+          setTick((n) => n + 1)
+          if (root !== book.root) return
+          setRoot('')
+          setDetail(null)
+          setSelected(null)
+          setView('library')
+        },
+        [root],
+      )
+
+      const submitExport = useCallback(
+        (dir, format) => {
+          const target = exportFor
+          if (target === null || dir === '') return
+          setExporting(true)
+          setExportError('')
+          exportBookTo(target.book.root, dir, format)
+            .then((written) => {
+              if (!target.afterDelete) {
+                setExporting(false)
+                setExportFor(null)
+                setNotice(`导出好了：${written.files.length} 个文件写到 ${written.dir}`)
+                return undefined
+              }
+              return deleteBookAt(target.book.root).then((gone) => {
+                setExporting(false)
+                setExportFor(null)
+                forgetDeleted(target.book, `已导出 ${written.files.length} 个文件到 ${written.dir}，然后删掉了《${gone.title}》。`)
+              })
+            })
+            .catch((failure) => {
+              setExporting(false)
+              setExportError(String((failure && failure.message) || failure))
+            })
+        },
+        [exportFor, forgetDeleted],
+      )
+
+      const beginDelete = useCallback((book) => {
+        setDeleteError('')
+        setDeleteFor(book)
+      }, [])
+
+      const submitDelete = useCallback(() => {
+        const target = deleteFor
+        if (target === null) return
+        setDeleting(true)
+        setDeleteError('')
+        deleteBookAt(target.root)
+          .then((gone) => {
+            setDeleting(false)
+            setDeleteFor(null)
+            forgetDeleted(target, `已经删掉《${gone.title}》。`)
+          })
+          .catch((failure) => {
+            setDeleting(false)
+            setDeleteError(String((failure && failure.message) || failure))
+          })
+      }, [deleteFor, forgetDeleted])
+
       const header = h(
         'div',
         { style: S.head },
@@ -2699,64 +3064,98 @@ window.__ModuleLoader__.load({
         setSelected((current) => (current === row.id ? null : row.id))
       }, [])
 
-      // One dialog, whichever view is behind it. `display: contents` keeps the
-      // wrapper out of the layout, and the overlay itself is position: fixed.
+      // Every dialog in this panel is an overlay over whichever view is behind
+      // it. `display: contents` keeps the wrapper out of the layout, and the
+      // overlay itself is position: fixed. Keeping them in one list means a
+      // fourth dialog is a row here rather than another nesting level.
       const withDialog = (element) => {
-        const withImport =
+        const overlays = [
           importDir === null
-            ? element
-            : h(
-                'div',
-                { style: { display: 'contents' } },
-                element,
-                h(ImportDialog, {
-                  dir: importDir,
-                  sessionId,
-                  busy: importing,
-                  error: importError,
-                  onImport: submitImport,
-                  onCancel: () => {
-                    setImportDir(null)
-                    setImportError('')
-                  },
-                  onRepick: () => {
-                    pickHostDirectory()
-                      .then((picked) => {
-                        if (picked !== null) setImportDir(picked)
-                      })
-                      .catch((failure) => setImportError(String((failure && failure.message) || failure)))
-                  },
-                }),
-              )
-        if (draft === null) return withImport
-        return h(
-          'div',
-          { style: { display: 'contents' } },
-          withImport,
-          h(CreateDialog, {
-            dir: draft,
-            sessionId,
-            busy: creating,
-            error: createError,
-            onCreate: submitCreate,
-            onCancel: () => {
-              setDraft(null)
-              setCreateError('')
-            },
-            onBrowse: () => {
-              setDraft(null)
-              setCreateError('')
-              setView('new')
-            },
-            onRepick: () => {
-              pickHostDirectory()
-                .then((picked) => {
-                  if (picked !== null) setDraft(picked)
-                })
-                .catch((failure) => setCreateError(String((failure && failure.message) || failure)))
-            },
-          }),
-        )
+            ? null
+            : h(ImportDialog, {
+                dir: importDir,
+                sessionId,
+                busy: importing,
+                error: importError,
+                onImport: submitImport,
+                onCancel: () => {
+                  setImportDir(null)
+                  setImportError('')
+                },
+                onRepick: () => {
+                  pickHostDirectory()
+                    .then((picked) => {
+                      if (picked !== null) setImportDir(picked)
+                    })
+                    .catch((failure) => setImportError(String((failure && failure.message) || failure)))
+                },
+              }),
+          draft === null
+            ? null
+            : h(CreateDialog, {
+                dir: draft,
+                sessionId,
+                busy: creating,
+                error: createError,
+                onCreate: submitCreate,
+                onCancel: () => {
+                  setDraft(null)
+                  setCreateError('')
+                },
+                onBrowse: () => {
+                  setDraft(null)
+                  setCreateError('')
+                  setView('new')
+                },
+                onRepick: () => {
+                  pickHostDirectory()
+                    .then((picked) => {
+                      if (picked !== null) setDraft(picked)
+                    })
+                    .catch((failure) => setCreateError(String((failure && failure.message) || failure)))
+                },
+              }),
+          exportFor === null
+            ? null
+            : h(ExportDialog, {
+                book: exportFor.book,
+                dir: exportDir,
+                busy: exporting,
+                error: exportError,
+                afterDelete: exportFor.afterDelete,
+                onExport: submitExport,
+                onRepick: () => {
+                  pickHostDirectory()
+                    .then((picked) => {
+                      if (picked !== null) setExportDir(picked)
+                    })
+                    .catch((failure) => setExportError(String((failure && failure.message) || failure)))
+                },
+                onCancel: () => {
+                  setExportFor(null)
+                  setExportError('')
+                },
+              }),
+          deleteFor === null
+            ? null
+            : h(DeleteDialog, {
+                book: deleteFor,
+                busy: deleting,
+                error: deleteError,
+                onExportFirst: () => {
+                  const book = deleteFor
+                  setDeleteFor(null)
+                  beginExport(book, true)
+                },
+                onDeleteNow: submitDelete,
+                onCancel: () => {
+                  setDeleteFor(null)
+                  setDeleteError('')
+                },
+              }),
+        ].filter((overlay) => overlay !== null)
+        if (overlays.length === 0) return element
+        return h('div', { style: { display: 'contents' } }, element, ...overlays)
       }
 
       if (view === 'library') {
@@ -2767,6 +3166,8 @@ window.__ModuleLoader__.load({
             onOpen: openBook,
             onNew: () => beginCreate('library'),
             onImport: () => beginImport('library'),
+            onExport: (book) => beginExport(book, false),
+            onDelete: beginDelete,
             onSettings: () => setView('settings'),
           }),
         )
@@ -3011,6 +3412,11 @@ window.__ModuleLoader__.load({
     // how the panel's one real wiring bug (a row that only highlighted instead
     // of opening its page) stays visible to CI instead of to a reader's eye.
     exports.tree = { Row, Section }
+    // Same reason, for the two dialogs that can throw work away: the delete
+    // question must not be answerable without the confirming checkbox, and the
+    // export must not run before a folder has been chosen. Both are state the
+    // stub React can render once and inspect.
+    exports.dialogs = { DeleteDialog, ExportDialog }
 
     return module.exports
   },
