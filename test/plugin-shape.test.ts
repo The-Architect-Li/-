@@ -61,6 +61,7 @@ describe('plugin module shape', () => {
     } as unknown as Context
 
     expect(() => inkwell.apply(ctx, {})).not.toThrow()
-    expect(tools.size).toBe(9)
+    expect(tools.size).toBe(10)
+    expect([...tools.keys()]).toContain('novel_export')
   })
 })

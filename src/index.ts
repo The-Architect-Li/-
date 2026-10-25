@@ -1,7 +1,7 @@
 /**
  * dsh-inkwell plugin entry point.
  *
- * Registers the nine `novel_*` tools and one pre-execute gate. The gate is the
+ * Registers the ten `novel_*` tools and one pre-execute gate. The gate is the
  * only place studio rules are enforced for *calls*; the tools themselves guard
  * their arguments. Nothing here knows about prose — that lives in `domain/`.
  */
@@ -18,6 +18,7 @@ import { registerCanonTool } from './tools/canon.ts'
 import { registerChapterTool } from './tools/chapter.ts'
 import { registerCheckTool } from './tools/check.ts'
 import { registerDispatchTool } from './tools/dispatch.ts'
+import { registerExportTool } from './tools/export.ts'
 import { registerLedgerTool } from './tools/ledger.ts'
 import { registerOutlineTool } from './tools/outline.ts'
 import { registerProjectTool } from './tools/project.ts'
@@ -63,6 +64,7 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerCheckTool(ctx, deps)
   registerRolesTool(ctx, deps)
   registerDispatchTool(ctx, deps)
+  registerExportTool(ctx, deps)
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()
