@@ -186,22 +186,27 @@ client.js            浏览器半边：先书库再抽屉树，每 15 秒 GET �
 
 `rememberBook` 只在书不在第一位时才写盘。快照路由每 15 秒轮询一次，每次都 `readFile` 一份几十行了列表无所谓，每次都 `writeFile` 就是拿读者的磁盘换取零信息。
 
-### 面板写操作只开三扇门
+### 面板写操作只开四扇门
 
-面板能写的东西只有三件，而且三件都不是新权力：
+面板能写的东西只有四件，而且四件都不是新权力：
 
-1. **建书。** `POST /api/inkwell/init` 直接调 `ProjectStore.init`，也就是 `novel_project action="init"` 调的那个函数，所以两条路落在磁盘上的字节相同。门禁本来就无条件放行 `init`（没有项目就没有可保护的东西），面板因此没有扩大任何权限。
-2. **给智能体挑模型。** `POST /api/inkwell/roles` 写的是 `project.json` 的 `roles`，与 `novel_roles action="set"` 同一个字段、同一个三态语义（省略＝不管、有值＝钉住、空串＝清掉这一层）。模型清单来自宿主的 `llm` 服务而不是插件自带表，因此「面板里能选的」恰好等于「dsh 里配过的」。
-3. **改一条已经存在的东西。** `POST /api/inkwell/entry` 只改**已有**的角色卡、设定条目、章节正文：角色与设定走 `upsertCharacter`／`upsertWorld`（`novel_canon` 的那两个函数），正文走 `saveChapterBody`（`novel_chapter action="write"` 的那一个）。它不能新建角色、不能改章纲、不能推阶段、不能记账本事实——那些需要「理由」，而面板没有地方放理由。
+1. **建书。** `POST /api/inkwell/init` 直接调 `ProjectStore.init`，也就是 `novel_project action="init"` 调的那个函数，所以两条路落在磁盘上的字节相同。门禁本来就无条件放行 `init`（没有项目就没有可保护的东西），面板因此没有扩大任何权限。v0.11 起建完还会调宿主的工作区服务（`create({ path })` → `connectWorkspace` → `openSession`），这不是插件的写操作，是**用户点了一下之后宿主替自己做的那件事**。
+2. **把会话钉到一本书。** `POST /api/inkwell/pin` 写的是 `<DSH_HOME>/inkwell/sessions.json`，与 `novel_project action="open"` 同一个文件、同一个键。它不动书里的任何东西，只回答「这个会话看哪本」——而这个答案本来就存在（v0.10 的换书工具就是它），面板只是让建完书的那一刻不必手动再说一次。
+3. **给智能体挑模型。** `POST /api/inkwell/roles` 写的是 `project.json` 的 `roles`，与 `novel_roles action="set"` 同一个字段、同一个三态语义（省略＝不管、有值＝钉住、空串＝清掉这一层）。模型清单来自宿主的 `llm` 服务而不是插件自带表，因此「面板里能选的」恰好等于「dsh 里配过的」。
+4. **改一条已经存在的东西。** `POST /api/inkwell/entry` 只改**已有**的角色卡、设定条目、章节正文：角色与设定走 `upsertCharacter`／`upsertWorld`（`novel_canon` 的那两个函数），正文走 `saveChapterBody`（`novel_chapter action="write"` 的那一个）。它不能新建角色、不能改章纲、不能推阶段、不能记账本事实——那些需要「理由」，而面板没有地方放理由。
 
-四条约束写在这三个动作上，缺一条都会变成一次「安静的破坏」：
+四条约束写在这四个动作上，缺一条都会变成一次「安静的破坏」：
 
 1. **必须带 `x-dsh-plugin: inkwell` 头**——跨站的简单表单提交设不了自定义头，这是同源之外唯一能拦住的东西。
 2. **目录必须是绝对路径**——相对路径一律 400，绝不让宿主进程的 cwd 替用户猜一个位置。
 3. **插件的 `root` 是绝对路径时拒绝建书**（409）——那时全书只有一个固定位置，面板上的「选目录」是谎话，不如直接说清并让用户改用工具。
 4. **正文写入前先问一遍闸门**：`writeEntry` 对章节先跑 `gateToolCall('novel_chapter', {action:'write', number})`，非空就把那句话原样作为 409 返回。这样「章纲没批准就写不进去」这条规则只写在 `gate.ts` 里一次，面板只是它的第二个调用者。
 
-选目录优先走宿主自己的选择框（`ctx.uiWorkspace.pickDirectory()`，由 `dsh-client-ui-workspace` 提供），读的是**惰性** `ctx.get('uiWorkspace')` 而不是声明进 `inject`：老宿主没有这个服务时，整个客户端包不该因此不激活，面板退回自己的目录浏览器。
+选目录优先走宿主自己的选择框（`ctx.uiWorkspace.pickDirectory()`，由 `dsh-client-ui-workspace` 提供），读的是**惰性** `ctx.get('uiWorkspace')` 而不是声明进 `inject`：老宿主没有这个服务时，整个客户端包不该因此不激活，面板退回自己的目录浏览器。v0.11 又细分了一层：`hostCanPick()` 把「宿主没有选择器」和「用户点了取消」分开，只有前者才该把用户推进另一个页面——**取消是一次回答，不是一次失败**。
+
+换工作区那段同理靠惰性服务：`ctx.get('workspaces')`（`dsh-api-workspace-controller`）+ `ctx.get('uiWorkspace')`。宿主缺一个就返回一句「书已经建好，在书库里点它就能进来」，而不是抛错——建书是插件能独立完成的事，换工作区是宿主的能力，两件事不该绑在一起成败。
+
+`openSession` 的签名是 `openSession(target: SessionTarget)`，`SessionTarget = SessionId | SubagentAddress`，**直接传 id**。传 `{ sessionId }` 不会报错，只会静默不动——这类「参数形状对了但语义错了」的调用，靠类型看不出来（客户端包不带类型检查），只能读宿主自己的调用点。
 
 `roles` 的路由来源一度全标错：配置 schema 会把四个角色物化成 `{}`，而旧判据只看「这一层存不存在」，于是四个角色都显示 `全局默认`，实际跑的是会话模型。判据改成「这一层有没有真字段」——**空对象不是一层**，这条同样适用于将来的任何覆写表。
 

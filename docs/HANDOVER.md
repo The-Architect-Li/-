@@ -1,17 +1,17 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.10.0。
+> 最后更新：2026-10-25，对应 release v0.11.0。
 
 ## 一句话
 
-dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）、抽屉里点开即看的人物／设定／章节详情页（v0.7）、可随手编辑的二级页面（v0.8）、先看书再进书的那层书库（v0.9）、会回应的鼠标悬停与键盘操作（v0.9.2）和把审稿意见、章节版本、换书与导出都落到磁盘上的那一层（v0.10）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
+dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）、抽屉里点开即看的人物／设定／章节详情页（v0.7）、可随手编辑的二级页面（v0.8）、先看书再进书的那层书库（v0.9）、会回应的鼠标悬停与键盘操作（v0.9.2）和把审稿意见、章节版本、换书与导出都落到磁盘上的那一层（v0.10），以及「点一下新建就落在自己的新工作区里」的那一步（v0.11）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
 
 ## 仓库现状
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -122,12 +122,27 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **命名迁移**：`src/panel/library.ts` → `src/domain/shelf.ts`（工具侧也要读书架）；`dshHome()` / `bookKey()` 提到 `src/domain/home.ts`。
 - **验证**：296 个用例（22 个文件；新增 `test/reviews.test.ts` 12 例、`test/switching.test.ts` 11 例、`test/export.test.ts` 14 例，其余为既有用例的适配）。其中一条专门守「v0.9 写的章节没有 `revision` 字段」：老章节读作第 1 版而不是第 0 版，面板回传的 1 能被接受——否则每一本旧书的编辑都会被「revision 必须是正整数」挡回去。
 
+### v0.11 点一下新建，就落在自己的新工作区里
+
+用户原话（m06653）：「打开小说工坊不是有新建吗，新建点一下就会弹窗让你选择本地目录，然后你选择了一个文件夹，确定后小说工坊就会出现一个新书，并且左边侧边栏的工作区会自动以你一开始新建书籍的文件夹作为工作区，并且新开一个聊天窗口……在这个工作区下的会话是互通的，跨工作区的是不互通的。」
+
+- **弹窗代替目录浏览器**：`client.js` 新增 `CreateDialog`（`.iw-backdrop` 遮罩 + `.iw-dialog` 卡片，书名默认取文件夹名，Enter 提交、Esc 取消、点遮罩取消）。点「＋ 新建」先调 `ctx.get('uiWorkspace').pickDirectory()`（宿主自己的原生选择框）；只有在宿主没有选择器时才回退到面板内的 `view === 'new'` 目录浏览页。`hostCanPick()` 把「没有选择器」和「用户取消」分开——取消不该把用户推进另一个页面。
+- **建完换工作区、换会话**：`openBookWorkspace(dir, root)` 依次 `workspaces.create({ path: dir })`（幂等）→ `ui.connectWorkspace(workspaceId)` 拿到 session id → `POST /api/inkwell/pin` 写 pin → `sessionStorage` 记一下面板自己的 root → `ui.openSession(sessionId)`。
+  - **`openSession` 收的是 `SessionTarget = SessionId | SubagentAddress`**，直接传 id，传 `{ sessionId }` 是错的（我第一版就写错了，宿主自己的调用是 `uiWorkspace.openSession(sessionId)`，见 `dsh-client-ui-workspace/lib/client.js:4164`）。
+  - 服务名依据：`dsh-api-workspace-controller/lib/client.js` 里 `super(ctx, "workspaces")`，`dsh-client-ui-workspace/lib/client.js` 里 `super(ctx, "uiWorkspace")`。
+  - `openSession` 前必须先把 pin 写盘：面板随宿主切视图就挂起来了，pin 晚了会读到旧书。
+- **`POST /api/inkwell/pin`**（`src/panel/serve.ts` 的 `pinSession`）：`{ session, root }`，root 必须绝对（相对 400）、目录里必须有 `project.json`（否则 404「这里没有书」）；成功后 `pinBook` + `rememberBook`。和 `novel_project action="open"` 写的是同一个 `sessions.json`。
+- **面板的 `storeFor` 补上 pin 这一层**（真 bug）：此前只有 `src/tools/deps.ts` 读 pin，面板路由不读，同一个会话在工具和面板里可能指向不同的书。现在两边同为 `显式 root > 会话 pin > perWorkspace 下的 cwd > baseStore`。
+- **`perWorkspace` 默认改为 `true`**：一本书跟一个工作区走，跨工作区不串。想回到「全进程一本书」显式写 `perWorkspace: false`。
+- **验证**：303 个用例（23 个文件；新增 `test/pin.test.ts` 7 例，其中 `makes the panel read the pinned book for that session` 是上面那条 bug 的回归）。真机（隔离 profile，端口 19415）：`POST /init` → `POST /pin` → `GET /snapshot?session=probe-session` 不带 root 也返回那本书；无头写 403、相对 root 400；组合 bundle 480,500 字节，含 `CreateDialog` / `openBookWorkspace` / `api/inkwell/pin` / `iw-dialog` / `hostCanPick` / `创建并开始写`。另核对了 shell 预载的 65 个客户端模块里有 `@deepseek-ai/dsh-client-ui-workspace/client.js` 与 `@deepseek-ai/dsh-api-workspace-controller/client.js`，即 `workspaces` / `uiWorkspace` 两个服务在页面里确实存在。
+- **没验到的**：浏览器那半（真实点击 → 原生选择框 → 切工作区）在无头环境点不了，要用户在自己的 Desktop 应用里重启插件后实测。
+
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 296 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 303 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -166,7 +181,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 296 个用例全过（vitest，22 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
+- ✅ 303 个用例全过（vitest，23 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**面板把会话钉到一本书**（`test/pin.test.ts`：403／400／404／405，以及「同一个 session 不带 root 也读到那本书」）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，10 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
   - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
@@ -251,8 +266,9 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.11 候选，按性价比排序）
+## 下一步（v0.12 候选，按性价比排序）
 
+0. **把 v0.11 的浏览器那半真点一遍**：建书 → 工作区出现 → 新会话切过去，这条链路无头环境点不了，是唯一没验到的环节。顺带确认 `connectWorkspace` 复用的是同一个空白会话（同一文件夹建第二本书会落进同一个会话，见 CHANGELOG 的已知边界）。
 1. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，四者都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
 2. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
 3. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
@@ -261,7 +277,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 296 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 303 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。

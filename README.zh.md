@@ -200,7 +200,14 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 - **就在那一页改**（v0.8）：角色页与设定页点「编辑」进输入态，章节页有「预览正文／改正文」两态——正文按段落预览（首行缩进 2em），改的时候输入框下方实时显示去空白字数。保存走 `POST /entry`，落盘的仍是同一批文件；随手在聊天窗口说「把沈砚的目标改成把妹妹带回岸上」也能改同一处，两条路不会各写一份。
 - **改不动会说为什么**（v0.8）：章纲没批准时，章节页直接把闸门那句话放在页面上（「第4章的章纲还没批准…」）；正文里漏了必写人物时，保存返回 409 并列出缺谁。面板不比工具宽松，也不比工具啰嗦。
 - **进度就是状态**：每章标 `已完成`（定稿）、`N 稿`（有草稿未定稿）、`可写`（章纲已批准）、`未写`。
-- **能建书。** 书库页与树头都有「新建」：点「选择目录…」开系统目录选择框（`ctx.uiWorkspace.pickDirectory()`），也可以逐层点面板里的目录浏览器（Windows 上可切盘符）。建书与 `novel_project action="init"` 走同一个 `ProjectStore.init`，两条路字节相同；建完直接进那本书，也顺势进书库列表。
+- **能建书**（v0.11：一次点击）。书库页、树头、空书态都有「新建」：点一下先弹系统目录选择框
+  （`ctx.uiWorkspace.pickDirectory()`），选完出现一张小卡片填书名（默认取文件夹名）与目标字数，
+  `创建并开始写` 之后就落在新书里。建书与 `novel_project action="init"` 走同一个
+  `ProjectStore.init`，两条路字节相同。
+- **建完顺手把工作区也建了**（v0.11）：面板调用工作区服务 `create({ path })`（幂等）、
+  `connectWorkspace()` 拿到会话、把一个会话钉到这本书、再 `openSession()` 跳过去。于是侧边栏工作区
+  里多了这个文件夹，而你已经坐在那个目录下的新聊天里。这个工作区里的会话都看这本书，别的文件夹看别的
+  ——「会话互通、跨工作区不互通」是工作区本来就有的语义，面板只是把你的选择落进去。
 - **不含糊。** 目录里已经有书就报「已经有《…》」并给「打开这本书」，不覆盖；相对路径一律 400，绝不让宿主进程的 cwd 替用户猜。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
@@ -210,11 +217,12 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 ```text
 GET  /api/inkwell                      # 进程那一本
-GET  /api/inkwell?session=<id>          # 该会话工作区里的那一本
+GET  /api/inkwell?session=<id>          # 该会话钉住的那本（没钉才按工作区解析）
 GET  /api/inkwell/snapshot?root=<绝对路径>  # 指定的那一本
 GET  /api/inkwell/books                 # 书库：这台机器上已有的书（当前会话那本标 current）
 GET  /api/inkwell/dirs?path=<绝对路径>      # 列一层子目录、盘符，并回报该目录里有没有书
 POST /api/inkwell/init                  # { dir, title?, targetWords? } 建书
+POST /api/inkwell/pin                   # { session, root } 把会话钉到一本书（建完书后面板用它）
 GET  /api/inkwell/entry?kind=&key=      # 一行背后的那一页：character／world／chapter
 POST /api/inkwell/entry                 # { kind, key, fields } 改角色／设定／章节正文
 GET  /api/inkwell/roles                 # 四个智能体的当前路由 + 可选接口/模型/思考档位
@@ -298,7 +306,7 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，296 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由、审稿落盘与章节版本冲突、换书与导出
+npm test            # vitest，303 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由、审稿落盘与章节版本冲突、换书、导出与面板钉书
 npm run build       # 产出 lib/
 npm run verify      # 冒烟：用假上下文挂载构建产物，确认 10 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部

@@ -195,41 +195,49 @@ Pick one and you get that book's tree:
 - **When it cannot save, it says why** (v0.8): an unapproved chapter shows the
   gate's sentence on the page before you reach for the button; a body that drops
   a required character comes back 409 with the missing names.
-- **It can create a book.** "New" opens the host's own directory chooser
-  (`ctx.uiWorkspace.pickDirectory()`), or you can walk the in-panel browser level
-  by level — including other drives on Windows. Creation goes through the same
-  `ProjectStore.init` as `novel_project action="init"`, so both doors produce the
-  same bytes on disk; the new book then opens and joins the shelf.
+- **It creates a book in one click** (v0.11). "New" raises the host's own
+  directory chooser (`ctx.uiWorkspace.pickDirectory()`); a small card then asks
+  for the title (defaulted from the folder name) and an optional word target.
+  Creation goes through the same `ProjectStore.init` as
+  `novel_project action="init"`, so both doors produce the same bytes on disk.
+- **And it moves you there** (v0.11). After creating, the panel registers the
+  folder as a workspace (`workspaces.create({ path })`, idempotent), asks for its
+  session (`connectWorkspace`), pins that session to the book
+  (`POST /api/inkwell/pin`), and navigates to it (`openSession`). You end up in a
+  fresh conversation under that folder, with the workspace in the sidebar; that
+  workspace sees this book, other folders see theirs.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
 - **No tokens.** The snapshot is `src/panel/model.ts`, the pages are
-  `src/panel/entry.ts`, the shelf rows are `src/panel/library.ts`; all three are
+  `src/panel/entry.ts`, the shelf rows are `src/panel/shelf.ts`; all three are
   computed from disk.
-- **Per session.** With `perWorkspace` on, the panel resolves the book from the
-  session's `cwd`, so switching sessions switches books.
+- **Per session.** With `perWorkspace` on (the default since v0.11), the panel
+  resolves the book from the session's pin, else its `cwd`, so switching sessions
+  switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
-  profile has no web server and still gets all nine tools.
+  profile has no web server and still gets all ten tools.
 
 The host routes, polled by the browser half:
 
 ```text
 GET  /api/inkwell                        # the process-wide book
-GET  /api/inkwell?session=<id>            # the book in that session's workspace
+GET  /api/inkwell?session=<id>            # the book that session is pinned to (else its cwd)
 GET  /api/inkwell/snapshot?root=<abs>     # a named book
 GET  /api/inkwell/books                   # the shelf: books this machine has opened
 GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
 POST /api/inkwell/init                    # { dir, title?, targetWords? }
+POST /api/inkwell/pin                     # { session, root } pin one session to one book
 GET  /api/inkwell/entry?kind=&key=        # the page behind a row: character / world / chapter
 POST /api/inkwell/entry                   # { kind, key, fields } edit that character, place or body
 GET  /api/inkwell/roles                   # four agents, their routes, and what the host offers
 POST /api/inkwell/roles                   # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-The reads answer 405 to anything but GET. There are three writes — create a book,
-pick an agent's model, edit one existing row — and each requires
-`x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
-Advancing a phase, approving an outline, committing a chapter and recording a
+The reads answer 405 to anything but GET. There are four writes — create a book,
+pin a session to it, pick an agent's model, edit one existing row — and each
+requires `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot
+set. Advancing a phase, approving an outline, committing a chapter and recording a
 ledger fact still go through the tools, so the gate stays the only writer of the
 things that need an argument. The shelf cannot delete, rename or move a book:
 that is the file manager's job, not a sidebar's. `/entry` answers 404 for a row
