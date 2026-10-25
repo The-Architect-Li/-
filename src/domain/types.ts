@@ -95,12 +95,74 @@ export interface ChapterMeta {
   words: number
   summary: string
   writtenAt: string
+  /**
+   * How many times this chapter's body has been written, starting at 1.
+   *
+   * Two windows can hold the same chapter at once — a panel tab and a chat
+   * turn — and last-write-wins would silently eat one of them. Writes carry the
+   * revision they were based on, and a stale one is refused instead of applied.
+   * Files written before v0.10 have no revision on disk and read as 0; the type
+   * stays optional so a hand-built snapshot in a test or a script need not
+   * invent one, and every reader treats absent as 0.
+   */
+  revision?: number
 }
 
 /** A completed chapter on disk. */
 export interface ChapterDraft extends ChapterMeta {
   text: string
 }
+
+/** Whether a review item was acted on. */
+export const REVIEW_STATES = ['open', 'fixed', 'waived'] as const
+
+/** One review item's state. */
+export type ReviewState = (typeof REVIEW_STATES)[number]
+
+/**
+ * One thing a reviewer said about one draft round.
+ *
+ * Findings used to live only in the chat transcript, so "the logic reviewer
+ * raised five points and three were addressed" was unanswerable a week later.
+ * Every item is stored with who raised it, which round it judged, and what was
+ * done about it.
+ */
+export interface ReviewItem {
+  /** Stable id within the book, e.g. `c005-r2-3`. */
+  id: string
+  /** Draft round this item judged. */
+  round: number
+  severity: Severity
+  code: string
+  message: string
+  evidence: string
+  state: ReviewState
+  /** Why it was fixed or waived, when someone said. */
+  note: string
+  updatedAt: string
+}
+
+/** One reviewer's pass over one draft round. */
+export interface ReviewRound {
+  /** 1-based; a book-wide counter, not per chapter. */
+  round: number
+  /** Who said it: a role id, or `human`. */
+  role: string
+  /** Which role's route ran, when a model produced the findings. */
+  route: string
+  /** Draft round it judged, as stored under `drafts/`. */
+  draftRound: number
+  at: string
+  items: ReviewItem[]
+}
+
+/** Everything reviewers have said about one chapter. */
+export interface ReviewFile {
+  formatVersion: 1
+  chapter: number
+  rounds: ReviewRound[]
+}
+
 
 /** Role identifiers for the studio dispatch flow. */
 export const ROLE_IDS = ['writer', 'logic', 'character', 'chief'] as const

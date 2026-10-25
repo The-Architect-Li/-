@@ -1354,6 +1354,10 @@ window.__ModuleLoader__.load({
         const fields = {}
         for (const input of inputs) fields[input.key] = draft[input.key] === undefined ? input.value : String(draft[input.key])
         if (prose) fields[prose.key] = draft[prose.key] === undefined ? prose.value : String(draft[prose.key])
+        // The version this page was showing. The host refuses the save if the
+        // chapter moved on since — better a reload than silently losing words.
+        const revision = data && data.edit ? data.edit.revision : undefined
+        if (typeof revision === 'number') fields.revision = revision
         setSaving(true)
         setError('')
         try {

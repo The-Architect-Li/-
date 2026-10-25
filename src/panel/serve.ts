@@ -36,6 +36,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, resolve } from 'node:path'
 import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
+import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
 import type { CharacterCard, Finding, InkwellConfig } from '../domain/types.ts'
@@ -43,7 +44,7 @@ import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readChapterPatch, readCharacterPatch, readWorldPatch } from './edit.ts'
-import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from './library.ts'
+import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from '../domain/shelf.ts'
 import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 import type { LlmCatalogSource } from './ports.ts'
@@ -517,7 +518,11 @@ export async function readEntry(
       kind === 'chapter' && Number.isInteger(number) && number > 0
         ? (await store.chapter(number))?.text
         : undefined
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose)
+    const reviewRounds =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? await store.reviews(number)
+        : []
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds)
     if (entry === undefined) {
       return {
         status: 404,
@@ -631,11 +636,28 @@ export async function writeEntry(
       )
       if (reason !== null) throw new PanelInputError(reason, 409)
       try {
-        await saveChapterBody(store, deps.config, edit)
+        await saveChapterBody(store, deps.config, {
+          number: edit.number,
+          text: edit.text,
+          title: edit.title,
+          summary: edit.summary,
+          // The page sends the revision it opened. A mismatch means someone
+          // else saved in between — refuse rather than overwrite their work.
+          baseRevision: edit.revision,
+        })
       } catch (error) {
         if (error instanceof ChapterBlockedError) {
           throw new PanelInputError(
             `第${edit.number}章未通过章纲合同，没有保存：\n${formatBlockers(error.blockers)}\n\n改正文让这些角色出场，或者去改章纲（改完章纲要重新批准）。`,
+            409,
+          )
+        }
+        if (error instanceof ChapterConflictError) {
+          throw new PanelInputError(
+            [
+              `第${edit.number}章已经被别处改过了（磁盘上是第 ${error.current} 版，你编辑的是第 ${edit.revision ?? 0} 版）。`,
+              '没有保存，以免覆盖那边的内容。刷新页面拿到最新版，把你的改动重贴一次。',
+            ].join('\n'),
             409,
           )
         }
@@ -653,7 +675,11 @@ export async function writeEntry(
       kind === 'chapter' && Number.isInteger(number) && number > 0
         ? (await store.chapter(number))?.text
         : undefined
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose)
+    const reviewRounds =
+      kind === 'chapter' && Number.isInteger(number) && number > 0
+        ? await store.reviews(number)
+        : []
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds)
     return { status: 200, body: { ok: true, data: entry ?? null } }
   } catch (error) {
     if (error instanceof PanelInputError) {

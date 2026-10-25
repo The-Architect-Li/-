@@ -17,7 +17,7 @@
 import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
-import type { ChapterPlan, DraftRound, Snapshot } from '../domain/types.ts'
+import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
 
 /** One labelled line, e.g. `说话方式` → `短句，问句多`. */
 export interface EntryField {
@@ -48,6 +48,14 @@ export interface EntryEdit {
   inputs: EntryInput[]
   /** The long body, when the thing has one (a chapter's prose). */
   body?: { key: string; label: string; value: string }
+  /**
+   * The version this page is showing, for things that have versions.
+   *
+   * A chapter is edited from two places at once in real life — a panel tab and
+   * the conversation. Sending this back with the save is what turns "last write
+   * wins" into "the second writer is told to reload".
+   */
+  revision?: number
 }
 
 /** Everything the detail page draws. */
@@ -223,6 +231,7 @@ function chapterPage(
   rounds: readonly DraftRound[],
   root: string,
   body: string | undefined,
+  reviews: readonly ReviewRound[] = [],
 ): EntryPayload | undefined {
   const number = Number(key)
   if (!Number.isInteger(number) || number <= 0) return undefined
@@ -233,6 +242,10 @@ function chapterPage(
   const written = chapter !== undefined
   const chip = chapterChip(plan, written, rounds)
   const findings = newestFindings(rounds)
+  // Reviewer notes are permanent now, so the page shows the ones nobody has
+  // answered yet. The rest stay in `reviews/` and in `novel_chapter review`.
+  const openItems = reviews.flatMap((round) => round.items).filter((item) => item.state === 'open')
+  const totalItems = reviews.reduce((sum, round) => sum + round.items.length, 0)
   // Once a chapter exists its own title wins: the outline names the chapter in
   // advance, but the thing you wrote is what you renamed. Before that, the
   // outline is the only name there is.
@@ -257,10 +270,14 @@ function chapterPage(
       ...(plan?.beats.length ? [{ label: '必写节拍', items: plan.beats }] : []),
       ...(plan?.hooks.length ? [{ label: '章末钩子', items: plan.hooks }] : []),
       ...(findings.length > 0 ? [{ label: '最新一稿的自动发现', items: findings }] : []),
+      ...(totalItems > 0
+        ? [{ label: `审稿（${openItems.length}/${totalItems} 条未结）`, items: openItems.slice(0, 6).map((item) => `[${item.severity}] ${item.message}　${item.id}`) }]
+        : []),
     ],
     edit: {
       inputs: [{ key: 'title', label: '标题', value: title }],
       body: { key: 'text', label: '正文', value: body ?? '' },
+      ...(chapter === undefined ? {} : { revision: chapter.revision }),
     },
     root,
   }
@@ -284,10 +301,11 @@ export function buildEntry(
   drafts: readonly ChapterDrafts[],
   root: string,
   body?: string | undefined,
+  reviews: readonly ReviewRound[] = [],
 ): EntryPayload | undefined {
   if (key === '') return undefined
   if (kind === 'character') return characterPage(snapshot, key, root)
   if (kind === 'world') return worldPage(snapshot, key, root)
   const rounds = drafts.find((entry) => entry.number === Number(key))?.rounds ?? []
-  return chapterPage(snapshot, key, rounds, root, body)
+  return chapterPage(snapshot, key, rounds, root, body, reviews)
 }

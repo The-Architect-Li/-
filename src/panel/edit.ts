@@ -93,6 +93,14 @@ export interface ChapterPatch {
   text: string
   title?: string | undefined
   summary?: string | undefined
+  /**
+   * The revision the editor was looking at, when it said.
+   *
+   * The panel and a chat turn can be editing the same chapter at once. The
+   * store compares this against what is on disk and refuses a stale write, so
+   * one of the two gets a "reload" instead of silently losing their words.
+   */
+  revision?: number | undefined
 }
 
 /**
@@ -113,10 +121,15 @@ export function readChapterPatch(key: string, body: Record<string, unknown>): Ch
   const text = readText(body, 'text', MAX_CHAPTER_CHARS, '正文')
   if (text === undefined) throw new PanelInputError('缺少 text：正文不能为空。')
   if (text === '') throw new PanelInputError('正文不能为空。')
+  const revision = body.revision === undefined ? undefined : Number(body.revision)
+  if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) {
+    throw new PanelInputError('revision 必须是正整数（页面打开时那一版的版本号）。')
+  }
   return {
     number,
     text,
     title: readText(body, 'title', MAX_TITLE_CHARS, '标题'),
     summary: readText(body, 'summary', MAX_FIELD_CHARS, '摘要'),
+    revision,
   }
 }

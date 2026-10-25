@@ -15,6 +15,9 @@ import type {
   DraftRound,
   LedgerEntry,
   ProjectFile,
+  ReviewFile,
+  ReviewItem,
+  ReviewRound,
   Snapshot,
   VolumeOutline,
   WorldEntry,
@@ -34,6 +37,26 @@ export class ProjectMissingError extends Error {
   constructor(root: string) {
     super(`No Inkwell project at ${root}. Run novel_project with action "init" first.`)
     this.name = 'ProjectMissingError'
+  }
+}
+
+/**
+ * Raised when a write was based on a version of the chapter that is gone.
+ *
+ * This is the difference between "your save did not happen" and "your save
+ * happened and somebody else's did not". The caller gets the revision that is
+ * actually on disk so it can re-read, merge, or deliberately overwrite.
+ */
+export class ChapterConflictError extends Error {
+  /** The chapter's revision on disk right now. */
+  readonly current: number
+
+  constructor(number: number, expected: number, current: number) {
+    super(
+      `第${number}章已经被改过：你基于第 ${expected} 版，磁盘上现在是第 ${current} 版。先重新读一遍这一章，或者显式用 revision=${current} 覆盖。`,
+    )
+    this.name = 'ChapterConflictError'
+    this.current = current
   }
 }
 
@@ -213,7 +236,11 @@ export class ProjectStore {
   /** Chapter metadata, ordered by number. */
   async chapters(): Promise<ChapterMeta[]> {
     const list = await readJson<ChapterMeta[]>(join(this.root, INDEX_FILE), [])
-    return list.sort((a, b) => a.number - b.number)
+    // Chapters written before revisions existed read as 0, so the first write
+    // through this build claims revision 1 without a migration step.
+    return list
+      .map((item) => ({ ...item, revision: typeof item.revision === 'number' ? item.revision : 0 }))
+      .sort((a, b) => a.number - b.number)
   }
 
   /** Load one chapter with its text. Returns `undefined` when absent. */
@@ -228,26 +255,45 @@ export class ProjectStore {
     }
   }
 
-  /** Write one chapter body plus its index row. */
-  async writeChapter(draft: ChapterDraft): Promise<void> {
+  /**
+   * Write one chapter body plus its index row.
+   *
+   * The write is a compare-and-swap on the chapter's revision: a caller that
+   * read revision 3 and saves while the disk is at 4 gets a refusal, not
+   * silence. Pass no `baseRevision` only when the caller genuinely means to
+   * overwrite whatever is there (a commit of an approved draft, a restore of a
+   * named round).
+   *
+   * @param draft - the body and its metadata; `revision` is ignored on input.
+   * @param options - `baseRevision` the caller edited.
+   * @returns the metadata actually written, including the new revision.
+   * @throws {ChapterConflictError} when `baseRevision` no longer matches.
+   */
+  async writeChapter(draft: ChapterDraft, options: { baseRevision?: number | undefined } = {}): Promise<ChapterMeta> {
+    const index = await this.chapters()
+    const position = index.findIndex((item) => item.number === draft.number)
+    const current = position >= 0 ? (index[position]!.revision ?? 0) : 0
+    if (options.baseRevision !== undefined && options.baseRevision !== current) {
+      throw new ChapterConflictError(draft.number, options.baseRevision, current)
+    }
     const file = this.chapterPath(draft.number)
     await mkdir(dirname(file), { recursive: true })
     const temp = `${file}.${process.pid}.tmp`
     await writeFile(temp, `${draft.text.trim()}\n`, 'utf8')
     await rename(temp, file)
-    const index = await this.chapters()
     const meta: ChapterMeta = {
       number: draft.number,
       title: draft.title,
       words: draft.words,
       summary: draft.summary,
       writtenAt: draft.writtenAt,
+      revision: current + 1,
     }
-    const existing = index.findIndex((item) => item.number === draft.number)
-    if (existing >= 0) index[existing] = meta
+    if (position >= 0) index[position] = meta
     else index.push(meta)
     index.sort((a, b) => a.number - b.number)
     await writeJson(join(this.root, INDEX_FILE), index)
+    return meta
   }
 
   /** Every chapter body, ordered by number. */
@@ -319,7 +365,9 @@ export class ProjectStore {
    * Promote the latest draft of a chapter into the manuscript.
    *
    * Drafts are kept so the review history survives a later rewrite; the chapter
-   * on disk is replaced by the latest approved prose.
+   * on disk is replaced by the latest approved prose. This is the one write that
+   * deliberately does not compare revisions: a human said "this draft is the
+   * chapter", and re-reading first would not change their answer.
    *
    * @returns the committed chapter metadata.
    */
@@ -332,9 +380,98 @@ export class ProjectStore {
       words: draft.words,
       summary: draft.summary,
       writtenAt: draft.writtenAt,
+      revision: 0,
     }
-    await this.writeChapter({ ...meta, text: draft.text })
-    return meta
+    return this.writeChapter({ ...meta, text: draft.text })
+  }
+
+  /** Path of one chapter's review record. */
+  reviewPath(number: number): string {
+    return join(this.root, 'reviews', `${chapterKey(number)}.json`)
+  }
+
+  /** Every review round recorded for one chapter, oldest first. */
+  async reviews(number: number): Promise<ReviewRound[]> {
+    const file = await readJson<ReviewFile | undefined>(this.reviewPath(number), undefined)
+    if (file === undefined || !Array.isArray(file.rounds)) return []
+    return [...file.rounds].sort((a, b) => a.round - b.round)
+  }
+
+  /**
+   * Append one reviewer's pass to a chapter's review record.
+   *
+   * Ids are assigned here rather than by the caller, so "which item did I just
+   * resolve?" has one answer for the tool, the panel and the transcript.
+   *
+   * @param number - the chapter reviewed.
+   * @param input - who reviewed, which draft round, and what they said.
+   * @returns the round as stored, ids included.
+   */
+  async appendReview(
+    number: number,
+    input: {
+      role: string
+      route: string
+      draftRound: number
+      items: readonly { severity: ReviewItem['severity']; code: string; message: string; evidence: string }[]
+    },
+  ): Promise<ReviewRound> {
+    const rounds = await this.reviews(number)
+    const round: number = rounds.length + 1
+    const at = new Date().toISOString()
+    const items: ReviewItem[] = input.items.map((item, index) => ({
+      id: `${chapterKey(number)}-r${round}-${index + 1}`,
+      round: input.draftRound,
+      severity: item.severity,
+      code: item.code,
+      message: item.message,
+      evidence: item.evidence,
+      state: 'open',
+      note: '',
+      updatedAt: at,
+    }))
+    const record: ReviewRound = {
+      round,
+      role: input.role,
+      route: input.route,
+      draftRound: input.draftRound,
+      at,
+      items,
+    }
+    const file: ReviewFile = { formatVersion: 1, chapter: number, rounds: [...rounds, record] }
+    await writeJson(this.reviewPath(number), file)
+    return record
+  }
+
+  /**
+   * Mark one review item fixed or waived.
+   *
+   * @param number - the chapter the item belongs to.
+   * @param id - the item id, as returned by {@link appendReview}.
+   * @param state - what was done about it.
+   * @param note - why, in the author's words.
+   * @returns the updated item, or `undefined` when no such id exists.
+   */
+  async setReviewState(
+    number: number,
+    id: string,
+    state: ReviewItem['state'],
+    note: string,
+  ): Promise<ReviewItem | undefined> {
+    const rounds = await this.reviews(number)
+    let found: ReviewItem | undefined
+    const next = rounds.map((round) => ({
+      ...round,
+      items: round.items.map((item) => {
+        if (item.id !== id) return item
+        found = { ...item, state, note: note.trim(), updatedAt: new Date().toISOString() }
+        return found
+      }),
+    }))
+    if (found === undefined) return undefined
+    const file: ReviewFile = { formatVersion: 1, chapter: number, rounds: next }
+    await writeJson(this.reviewPath(number), file)
+    return found
   }
 
   /** Remove the whole project directory. Used by tests and explicit resets only. */

@@ -144,11 +144,26 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         const output = await runRole(ctx, role.persona, prompt, exec, route)
         const { items, parsed } = parseReviewerOutput(output)
         const findings = parsed ? items : [unparsedFinding('chief', output)]
+        const stored = await store.appendReview(number, {
+          role: roleId,
+          route: routeText,
+          draftRound: draft.round,
+          items: findings.map((finding) => ({
+            severity: finding.severity,
+            code: finding.code,
+            message: finding.message,
+            evidence: finding.evidence ?? '',
+          })),
+        })
         return {
           role: roleId,
           number,
           findings,
-          report: summarize(roleId, findings, routeText),
+          report: [
+            summarize(roleId, findings, routeText),
+            `已记账：第${number}章第 ${stored.round} 轮审稿（${stored.items.length} 条）。`,
+            reviewHint(number, stored.items),
+          ].join('\n'),
         }
       }
 
@@ -156,11 +171,27 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       const output = await runRole(ctx, role.persona, prompt, exec, route)
       const { items, parsed } = parseReviewerOutput(output)
       const findings = parsed ? items : [unparsedFinding(roleId, output)]
+      const stored = await store.appendReview(number, {
+        role: roleId,
+        route: routeText,
+        draftRound: draft.round,
+        items: findings.map((finding) => ({
+          severity: finding.severity,
+          code: finding.code,
+          message: finding.message,
+          evidence: finding.evidence ?? '',
+        })),
+      })
       return {
         role: roleId,
         number,
         findings,
-        report: summarize(roleId, findings, routeText),
+        report: [
+          summarize(roleId, findings, routeText),
+          `${ROLES[roleId]?.label ?? roleId} 这一轮（第 ${stored.round} 轮）已记账，每条都有 id：`,
+          ...stored.items.map((item) => `  ${item.id}　${item.severity}　${item.message}`),
+          reviewHint(number, stored.items),
+        ].join('\n'),
       }
     },
   }))
@@ -202,5 +233,24 @@ function summarize(roleId: RoleId, findings: ReviewerFinding[], routeText: strin
   return [
     `${ROLES[roleId]?.label ?? roleId} 完成（模型 ${routeText}）：${errors} 必改 / ${warns} 建议改 / ${infos} 可忽略。`,
     findings.length === 0 ? '无意见。' : findings.map((item) => `[${item.severity}] ${item.code}：${item.message}`).join('\n'),
+  ].join('\n')
+}
+
+/**
+ * Tell the writer how to close the loop on what was just filed.
+ *
+ * The point of persisting a review is that it can be answered. Saying so in the
+ * same breath is what makes the record get used instead of ignored.
+ *
+ * @param number - the chapter reviewed.
+ * @param items - the stored items, ids included.
+ * @returns one line of next steps, or an empty string when there is nothing open.
+ */
+function reviewHint(number: number, items: readonly { id: string }[]): string {
+  if (items.length === 0) return ''
+  const example = items[0]?.id ?? ''
+  return [
+    `改动第${number}章后逐条结案：novel_chapter action="review" number=${number} id="${example}" state="fixed"（已改）/ "waived"（认了，写理由）。`,
+    `看全部未结案：novel_chapter action="review" number=${number}。`,
   ].join('\n')
 }

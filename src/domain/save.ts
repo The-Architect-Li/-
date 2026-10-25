@@ -18,6 +18,14 @@ export interface ChapterSaveInput {
   text: string
   title?: string | undefined
   summary?: string | undefined
+  /**
+   * The revision the caller was looking at when it edited.
+   *
+   * Omitted means "write regardless" — the tool prompt and the panel both pass
+   * it, so the only callers that leave it out are the ones that deliberately
+   * overwrite (a commit of an approved draft, a restore, an explicit force).
+   */
+  baseRevision?: number | undefined
 }
 
 /** One-sentence summary taken from the last paragraph, for later briefings. */
@@ -73,9 +81,10 @@ export async function saveChapterBody(
     words: countChars(text),
     summary: input.summary?.trim() || deriveSummary(text),
     writtenAt: new Date().toISOString(),
+    revision: 0,
     text,
   }
   const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, config)])
-  await store.writeChapter(draft)
-  return { draft, findings }
+  const meta = await store.writeChapter(draft, { baseRevision: input.baseRevision })
+  return { draft: { ...draft, ...meta }, findings }
 }
