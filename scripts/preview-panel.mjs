@@ -233,6 +233,14 @@ const prose = `<div ${attr(S.root)}>
   ${headBar('第1章 裂缝', button('返回') + button('编辑'))}
   ${crumbLine(['正文', '第一卷', '第1章 裂缝'])}
   ${heading('第1章 裂缝', '已完成', '2,230 字 · 修订 1')}
+  ${fieldBlock('场景', '雾港旧码头')}
+  ${fieldBlock('故事梗概', '沈砚在雨夜发现一具不该出现的尸体，签放行单的人不是账房先生。')}
+  ${listHead('关键事件')}
+  <div ${attr(S.entryItem)}>发现第三号仓的货与货单对不上</div>
+  <div ${attr(S.entryItem)}>账房先生不肯说谁签的放行单</div>
+  <div ${attr(S.entryItem)}>沈砚拿走了一张空白放行单</div>
+  ${listHead('正文里出现了')}
+  <div ${attr(S.entryItem)}>沈砚、账房先生</div>
   ${listHead('正文')}
   <div ${attr(S.prose)}>
     ${paragraph('雨落了一夜，码头的木板吸饱了水，踩上去像踩在人的胸口。沈砚把伞收在门外，抖了抖袖口，才推门进去。')}

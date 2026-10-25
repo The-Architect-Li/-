@@ -99,7 +99,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 |---|---|---|
 | `novel_project` | init, status, premise, advance; books, open, close to switch books | premise too short, cast incomplete, no such book to open |
 | `novel_canon` | character cards, world entries, places with per-chapter history | missing name, detail or kind |
-| `novel_outline` | volumes, chapter contracts, approval | fewer than 2 beats, unknown character |
+| `novel_outline` | volumes, chapter contracts, approval; `card` fills in the chapter card (recap, events, scene) | fewer than 2 beats, unknown character; a card naming someone with no character card, or naming no field at all |
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
@@ -366,6 +366,32 @@ on, and which layer that route came from.
   *restore* drops the book's override and falls back to the global layer.
 - **Three layers, named.** *this book* > *global* (the plugin's `roles` config) >
   *inherit* (the parent session's model). The panel only edits the first.
+
+### Chapter cards: what the chapter was about (v0.18)
+
+An outline and a card are two different objects, and merging them does neither job well.
+
+**The outline is a contract.** Beats, hooks, promised cast — the prose must honour it, and
+changing it means re-approving. It answers "what is *supposed* to happen here".
+
+**The card is a record.** Recap, key events, scene, who was on the page — written afterwards,
+never approved. It answers "what *did* happen here".
+
+```text
+novel_outline action="card" number=1 \
+  summary="Shen Yan finds a body that should not be there" \
+  scene="the old wharf" \
+  events=["the third hold does not match the manifest","the clerk will not say whose signature it is"]
+```
+
+`card` touches only the fields you send. A name with no character card behind it is refused:
+the card's names have to be the book's names, or search and the context pack will walk past
+that person for the rest of the book.
+
+The panel's chapter page edits the card next to the prose — recap, scene, events and the body
+in one submit; the prose is saved first (contract still applies), then the card. The page also
+carries a "named in the text" line: the people the prose actually calls by name. It disagrees
+with the promised cast often enough to be worth its own row.
 
 ## Non-goals
 

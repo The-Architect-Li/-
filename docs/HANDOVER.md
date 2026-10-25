@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.17.0。
+> 最后更新：2026-10-25，对应 release v0.18.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -183,7 +183,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
   空字符串仍可用于清空；`novel_canon` 不带 `notes` 时沿用旧值），角色页把 `notes` 当「其他材料」
   显示并可编辑。教训写在这里是因为它还会再来：**这仓库里任何「整卡/整条目替换」的地方，新增字段
   都必须去接一遍**，`test/notes.test.ts` 的六条用例（走 HTTP + 真 store）就是照着这个形状写的。
-- **验证**：395 个用例（31 文件），`npm run check` 全绿；`verify` 报 `tools registered : 13`
+- **验证**：434 个用例（36 文件），`npm run check` 全绿；`verify` 报 `tools registered : 13`
   与 `client bundle : ./client.js 101760 bytes`。
 
 ### v0.13 面板重做外观：先把样式看见，再谈好看
@@ -284,7 +284,7 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   没有宿主选择框的宿主上，「导入…」退回到浏览页的「建好之后导进来」勾选（两步等价）。
 - **测试**：`test/records.test.ts` 7 例、`test/manuscript-txt.test.ts` 8 例、
   `test/panel-import.test.ts` 增 `/import-book` 两例（单文件 txt 建书 `written=2`、`phase=drafting`；无章号 422）。
-  全量 **395 个用例（31 文件）**。
+  全量 **434 个用例（36 文件）**。
 
 **教训**：`PHASES`/`Phase` 不在 `phase.ts` 里导出，从 `domain/types.ts` 拿；
 「实时更新」靠提示词不如靠工具输出里那句具体的欠账——模型会读工具结果，不一定会读文档。
@@ -358,12 +358,49 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   （`scripts/verify-install.mjs` 这一版才开始报**真字节数**：它原来打的是 `bundle.length`，
   也就是 UTF-16 码元数，这份文件汉字多，于是长期少报约 4KB——131,140 是那个错的数。）
 
+### v0.18 章卡是总结，不是合同
+
+写到八十章之后，章纲回答不了「那一章到底讲了什么」——它记的是计划。于是章卡从章纲的
+同义词变成正文的总结，两者分工固定下来：**章纲是合同（改了要重新批准），章卡是记录（改了
+不用）**。
+
+- **字段**：`src/domain/types.ts` 的 `ChapterPlan` 多了三个可选字段，注释里写了为什么分开：
+  `summary?: string`（故事梗概，**不要与 `ChapterMeta.summary` 混**——后者是从正文末段截出来
+  喂后续章节的背景）、`events?: string[]`（关键事件，一行一件）、`scene?: string`（场景，尽量
+  与地点卡同名）。
+- **唯一写入口**：`src/domain/cards.ts` 的
+  `export async function updateCard(store: ProjectStore, number: number, patch: CardPatch): Promise<ChapterPlan>`
+  ——读 `store.plans()`、找不到抛 `MissingPlanError`、`{...previous}` 后按字段合并（`summary`/
+  `scene` 传空串是**清掉**，undefined 才是「不动」）。合并而不是整卡替换：v0.12.1 已经因为
+  整卡替换丢过一次导入的 `notes`。
+- **`novel_outline action="card"`**（`src/tools/outline.ts`）：只改给的字段；`characters` 必须
+  都在角色卡里，否则报 `章卡里写了角色卡上没有的人：…`；一个字段都没给报
+  `card 至少要给一个字段：summary / events / scene / hooks / characters / pov / title。`。
+  报告末行明说「这只是记录，不改变章纲合同，也不需要重新批准。」。同时 `add_chapter` 分支
+  现在会**搬着**旧的 `summary/events/scene` 走，改章纲不再顺手抹掉章卡。
+- **面板一次提交写两样**：`src/panel/edit.ts` 的 `readChapterPatch` 多了 `story`（→`summary`，
+  上限 `MAX_STORY_CHARS = 4000`）、`scene`（上限 `MAX_TITLE_CHARS`）、`events`（`readLines`
+  按行切、剥行首 `-*·`、空行丢掉）。`src/panel/serve.ts` 的章节写分支先 `saveChapterBody`
+  （章纲合同照旧），成功后再 `updateCard`。
+- **没有章纲的章节能改了**：导入的书大纲可能没排到最后一两章（用户那本是第 84、85 章），
+  以前面板保存会被闸门挡在「第1章还没有章纲」上。现在写之前先补一张 `shellPlan(...)` 空壳章卡；
+  **已经有正文的**章节补成 `approved: true`（没有节拍可违反，不批准只会把页面锁死），
+  没有正文的仍是未批准、闸门照旧。这一步必须在 `gateToolCall` **之前**做——闸门就是问章纲的那个。
+- **章节页**（`src/panel/entry.ts` 的 `chapterPage`）：字段多「场景」「故事梗概」，列表多
+  「关键事件」「正文里出现了」；`edit.inputs` 变成 `title / scene / story / events`。`正文里
+  出现了` 用 `presentInText(body, 全部角色名)`——**只用于显示**，不喂给章纲合同，否则校验空转。
+- **导入回填**：`src/domain/import-scan.ts` 的 `planImport` 把大纲行 `- 第1章 裂缝：一句话`
+  冒号后的文字同时写进 `beats` 与 `summary`，导入的书不是从空章卡开始。
+- **测试**：`test/cards.test.ts` 9 例（合并、空串清字段、无章纲拒绝、`presentInText`、面板一次
+  保存写正文+章卡、无章纲章节补壳后可写、`card` 动作改名不改合同、未知角色拒绝、空 card 拒绝）。
+  全量 **434 个用例（36 文件）**。
+
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 395 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 434 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -489,9 +526,9 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.18 候选，按性价比排序）
+## 下一步（v0.19 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里点一次「分卷 → 自动划分」与「先导出，再删除」**：v0.16／v0.17 的链路在 HTTP 层与组件层都有测试
+0. **让用户在他的 Desktop 应用里点一次「分卷 → 自动划分」「先导出，再删除」与「在章节页写章卡」**：v0.16／v0.17 的链路在 HTTP 层与组件层都有测试
    （`panel-deliver.test.ts`、`client-shelf.test.ts`、`volumes.test.ts`、`client-window.test.ts`），但从原生选择框点下去、导出成功、再真的删掉书这一步
    只有他自己能验。
 1. **把地点历史接进上下文包**：时间线已经进了包（`src/domain/briefing.ts` 的 `resolveTimeline` + `windowAt` 给出一行「本章故事时间」，没有锚点时会提示去记），
@@ -507,11 +544,11 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 422 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 434 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.18 列表的哪一项。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.19 列表的哪一项。
 
 ## 项目记忆
 
