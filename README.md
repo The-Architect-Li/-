@@ -274,6 +274,19 @@ Pick one and you get that book's tree:
   can be pressed. Only the `.novel` directory goes, and the route rejects any absolute
   path that does not end in `.novel`, so deleting a book has no way to reach the folder
   holding your manuscript.
+- **Volumes are editable (v0.17).** A 分卷 button in the tree header opens one dialog with
+  two ways in: split mode takes *chapters per volume* and numbers the whole book
+  (`action: "split"`), manual mode lists every chapter, marks the volume it is in now,
+  and moves the checked ones to a volume or back to none (`action: "assign"`,
+  `volume: null`). The volume number is written back to that chapter's plan
+  (`plan.volume`), so "never assigned", "split automatically" and "moved by hand" are
+  all the same field. A chapter with no plan — the tail an imported outline never
+  reached — gets a shell plan carrying only its volume number, so no chapter can fall
+  out of the count. A resplit moves chapters; it never deletes one and never clears the
+  volumes the previous split made.
+- **Long lists stay small (v0.17).** A flat run of more than 40 leaves mounts only the
+  rows in the window and swaps the window as you scroll, so 300 chapters are never 300
+  DOM nodes and the scrollbar stays within one screen.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
@@ -305,16 +318,21 @@ POST /api/inkwell/import                  # { dir } put that manuscript into thi
 POST /api/inkwell/import-book             # { dir, title?, targetWords? } build the book and fill it
 POST /api/inkwell/export                  # { root, dir, format } write one book into a folder you chose
 POST /api/inkwell/delete-book             # { root } remove that book's .novel directory
+GET  /api/inkwell/volumes?root=<abs>      # which volume each chapter is in, and the ones in none
+POST /api/inkwell/volumes                 # { root, action: "assign"|"split", chapters?, volume?, perVolume? }
 ```
 
-The reads answer 405 to anything but GET. There are six writes — create a book,
-pin a session to it, pick an agent's model, edit one existing row, export a book and
-delete one — and each requires `x-dsh-plugin: inkwell`, a header a cross-site simple
-form post cannot set. Advancing a phase, approving an outline, committing a chapter
-and recording a ledger fact still go through the tools, so the gate stays the only
-writer of the things that need an argument. `/delete-book` accepts only an absolute
-path ending in `.novel`: what it removes is the plugin's book directory, never the
-folder holding the manuscript. Export and delete are the two things the shelf does
+The reads answer 405 to anything but GET. There are seven writes — create a book,
+pin a session to it, pick an agent's model, edit one existing row, export a book,
+delete one and move chapters between volumes — and each requires `x-dsh-plugin: inkwell`,
+a header a cross-site simple form post cannot set. Advancing a phase, approving an
+outline, committing a chapter and recording a ledger fact still go through the tools,
+so the gate stays the only writer of the things that need an argument. `/delete-book`
+accepts only an absolute path ending in `.novel`: what it removes is the plugin's book
+directory, never the folder holding the manuscript. `/volumes` with
+`action: "assign"` and `volume: null` puts chapters back into no volume; `"split"`
+only writes volume numbers — it never deletes a chapter, and it never clears the
+volumes an earlier split made. Export and delete are the two things the shelf does
 among its own files — it still will not rename or move a book, and it never touches
 anything outside a `.novel` directory. `/entry` answers 404 for a row the book no
 longer has — a browser holding a stale tree should be told to refresh rather than
@@ -352,13 +370,14 @@ on, and which layer that route came from.
 ## Non-goals
 
 It does not generate prose itself, does not judge literary quality, and does not
-encode any platform's content policy. The panel opens five write doors — creating a
+encode any platform's content policy. The panel opens six write doors — creating a
 book, picking an agent's model, editing a row that already exists (all equivalent to
 a tool call, and the third one through the very same `saveChapterBody` the writer
-tool uses), exporting a book, and deleting one — while phase transitions, outline
-approval, committing and ledger facts still go through the tools and their gate.
-Export and delete are the only two things the shelf does among its own files: it
-never renames or moves a book, and it never writes outside a `.novel` directory.
+tool uses), exporting a book, deleting one, and moving chapters between volumes —
+while phase transitions, outline approval, committing and ledger facts still go
+through the tools and their gate. Export and delete are the only two things the shelf
+does among its own files: it never renames or moves a book, and it never writes
+outside a `.novel` directory.
 
 ## Development
 

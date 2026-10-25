@@ -168,7 +168,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线 → v0.15 独立导入 → v0.16 导出与删除）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线 → v0.15 独立导入 → v0.16 导出与删除 → v0.17 分卷与虚拟列表）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -239,6 +239,13 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   「先导出，再删除」（导出成功才删；导出失败就停在那里，书还在），另一个入口要先勾
   「我确认不要这本书了，直接删除」。删除只删 `.novel` 那个目录，原稿文件夹不动；服务端也拒绝任何
   结尾不是 `.novel` 的路径，删书没有顺手动到原稿的机会。
+- **分卷是可以改的**（v0.17）：树头「分卷」按钮打开一个弹窗，两种用法——自动模式填「每卷几章」
+  按一下就划好（`action: "split"`），手动模式列出全部章节、勾选后选「归到第几卷」或「未分卷」
+  （`action: "assign"`，`volume: null` 就是拿回未分卷）。卷号只写回每章的章纲（`plan.volume`），
+  所以从未分卷、自动划、手动挪，走的都是同一条数据。没有章纲的章节（导入时大纲没覆盖到的）会
+  补一个只有卷号的「壳章纲」，分卷因此不会漏章；重新划分是搬章节，不是删章节，旧的卷也不会被清掉。
+- **长列表不铺满**（v0.17）：一条超过 40 个叶子的平铺列表只挂载窗口里那十几行，滚动时换窗口。
+  「正文」下面三百章不会再是三百个节点，滚动条也回到一屏之内。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
 - **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 13 个工具，只是没有面板。
@@ -262,9 +269,11 @@ POST /api/inkwell/import                # { dir } 把稿子导进当前这本
 POST /api/inkwell/import-book           # { dir, title?, targetWords? } 建书 + 导入，一次做完
 POST /api/inkwell/export                # { root, dir, format } 把一本书导到你选的文件夹
 POST /api/inkwell/delete-book           # { root } 删掉这本书的 .novel 目录（先从书架摘掉）
+GET  /api/inkwell/volumes?root=<绝对路径>  # 每章现在在第几卷，以及未分卷的那些
+POST /api/inkwell/volumes               # { root, action: "assign"|"split", chapters?, volume?, perVolume? }
 ```
 
-`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有五扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目、`/export` 导出、`/delete-book` 删书，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。`/delete-book` 只接受结尾是 `.novel` 的绝对路径：删的是插件的书目录，不是你的原稿文件夹。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
+`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles`、`/volumes` 的读法只认 GET，非 GET 一律 405；写有六扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目、`/export` 导出、`/delete-book` 删书、`/volumes` 分卷，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。`/delete-book` 只接受结尾是 `.novel` 的绝对路径：删的是插件的书目录，不是你的原稿文件夹。`/volumes` 的 `action: "assign"` 里 `volume: null` 就是「拿回未分卷」；`"split"` 只写卷号，不删章节，也不会清掉上一轮划出来的卷。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
 
 ### 设置 → 智能体团队（v0.6）
 

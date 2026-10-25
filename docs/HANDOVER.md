@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.16.0。
+> 最后更新：2026-10-25，对应 release v0.17.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -289,6 +289,31 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
 **教训**：`PHASES`/`Phase` 不在 `phase.ts` 里导出，从 `domain/types.ts` 拿；
 「实时更新」靠提示词不如靠工具输出里那句具体的欠账——模型会读工具结果，不一定会读文档。
 
+### v0.17 分卷是可以改的，长列表只画看得见的行
+
+正文的「第几卷」以前只能来自章纲里的一个数字：导入带来的 83 条章纲之外，第 84、85 章
+无处可去，落在「未分卷」；三百章的平铺列表在侧边栏里就是一条走不完的楼梯。这一版把
+卷变成可写的数据，把列表变成窗口。
+
+- `src/domain/volumes.ts`（新建）：`membershipOf(plans, numbers)` 把「每章在第几卷」与
+  「未分卷的那些」算出来，`ChapterPlan.volume === 0` 就是未分卷（沿用 `tree.ts` 的语义，
+  没有新增字段）；`splitRuns(numbers, perVolume)` 分块，`perVolume` 非正整数抛 `RangeError`；
+  `shellPlan(number, volume, written)` 给没有章纲的章节造一张只有卷号与标题的壳卡
+  （`beats: []`、`approved: false`）；`assignVolume(store, chapters, volume | null)` 与
+  `splitVolumes(store, perVolume)` 写回 `plan.volume`，卷不存在时先 `upsertVolume` 一张
+  空壳，**不删章节、不清旧卷**。
+- `src/panel/serve.ts`：`GET /volumes` 读映射（无书时 `noBook: true`），`POST /volumes` 收
+  `action: "assign"`（`chapters[]` + `volume: number | null`）或 `"split"`（`perVolume`），
+  其它 action 与越界参数一律 400，`RangeError` 也映射成 400。写路由由此变六扇门。
+- `client.js`：`VirtualRows`（常量 `ROW_H = 30`、`WINDOW_H = 320`、`OVERSCAN = 4`、
+  `VIRTUAL_AT = 40`）只挂窗口内的行，`Row` 在「子节点全是叶子且超过 40」时用它；
+  `WindowList` 是给弹窗的同类窗口；`VolumesDialog` 有手动（逐章勾选 + 归到哪一卷）与
+  自动（每卷几章）两种模式。
+- 测试：`test/volumes.test.ts`（12 例，纯函数 + 真 HTTP）、`test/client-window.test.ts`
+  （3 例：300 章只挂十几行、5 章仍走普通 map、弹窗文案与 `aria-label`）。
+
+两条铁律：**卷号只存 `plan.volume`**（三个入口写同一处）；**重新划分是搬章节，不是删章节**。
+
 ### v0.16 导出与删除：书能搬出去，也能丢掉
 
 书搬进来了，就得能搬出去、能丢掉。两条都不改书里的一个字，只决定这份书留在哪个磁盘上。
@@ -456,10 +481,10 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.16 候选，按性价比排序）
+## 下一步（v0.18 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里点一次「先导出，再删除」**：v0.16 的两条链路在 HTTP 层与组件层都有测试
-   （`panel-deliver.test.ts`、`client-shelf.test.ts`），但从原生选择框点下去、导出成功、再真的删掉书这一步
+0. **让用户在他的 Desktop 应用里点一次「分卷 → 自动划分」与「先导出，再删除」**：v0.16／v0.17 的链路在 HTTP 层与组件层都有测试
+   （`panel-deliver.test.ts`、`client-shelf.test.ts`、`volumes.test.ts`、`client-window.test.ts`），但从原生选择框点下去、导出成功、再真的删掉书这一步
    只有他自己能验。
 1. **把地点历史接进上下文包**：时间线已经进了包（`src/domain/briefing.ts` 的 `resolveTimeline` + `windowAt` 给出一行「本章故事时间」，没有锚点时会提示去记），
    但 **地点还没进包**——`briefing.ts` 至今不读 `snapshot.places`，写第 45 章时看不到「三号舱现在是烧过一半」。
@@ -469,16 +494,16 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 4. **导入时补 voice 的入口**：v0.12 故意留空并点名，下一步可以给面板一个「补齐说话方式」的批量页，把这 N 张卡一次填完，而不是逐个点进去编辑。
 5. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
 6. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
-7. **面板里的搜索**：抽屉树截断在 25 行，94 章的书要靠折叠去找。给树加一个「搜角色／搜章节」输入框，仍然是纯函数投影。
+7. **面板里的搜索**：正文已经窗口化了，但「找第 62 章」仍然要靠滚动（或者记住它在第几卷）。给树加一个「搜角色／搜章节」输入框，仍然是纯函数投影。
 8. **docx / epub 导出**：`src/domain/export.ts` 已经是纯函数、只把文本拼成文件，接一个 OOXML 或 EPUB 打包器是纯增量；难点在样式表而不是数据。
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 406 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 422 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.16 列表的哪一项。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.18 列表的哪一项。
 
 ## 项目记忆
 
