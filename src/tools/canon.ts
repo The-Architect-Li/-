@@ -1,13 +1,38 @@
-/** `novel_canon`: character cards and world entries. */
+/** `novel_canon`: character cards, world entries and place cards. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { CharacterCard, CharacterRole } from '../domain/types.ts'
+import type { CharacterCard, CharacterRole, PlaceCard, PlaceState } from '../domain/types.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ToolDeps } from './deps.ts'
 
 function asRole(value: string | undefined): CharacterRole {
   if (value && (CHARACTER_ROLES as readonly string[]).includes(value)) return value as CharacterRole
   return 'supporting'
+}
+
+/**
+ * Fold a newly seen state of a place into its history.
+ *
+ * A place changes in the text, not on a schedule: the same building is a
+ * three-storey walk-up in chapter 1 and a gutted flat in chapter 100. Each
+ * distinct description becomes a state stamped with the chapter it appeared in,
+ * so later chapters can be written against the right version of the room.
+ *
+ * @param previous - the card on disk, when there is one.
+ * @param chapter - chapter the new state was observed in; 0 means setup.
+ * @param detail - what the place looks like from now on.
+ * @param note - why it changed, when the text says.
+ * @returns the states list, ordered by chapter.
+ */
+function foldState(previous: PlaceCard | undefined, chapter: number, detail: string, note: string | undefined): PlaceState[] {
+  const states = [...(previous?.states ?? [])]
+  const last = states.at(-1)
+  if (last && last.detail === detail) {
+    if (note && note !== last.note) states[states.length - 1] = { ...last, note }
+    return states
+  }
+  states.push({ chapter, detail, ...(note ? { note } : {}) })
+  return states.sort((a, b) => a.chapter - b.chapter)
 }
 
 /**
@@ -20,15 +45,15 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_canon',
     description:
-      '管理角色卡与世界观。upsert_character 写角色（name 必填，voice 是说话方式，必须填，用来防止所有角色一个腔调）；upsert_world 写地点/势力/规则/物品；list 列出当前全部设定。同一个 name 会覆盖旧卡。',
+      '管理角色卡、世界观与地点。upsert_character 写角色（name 必填，voice 是说话方式，必须填，用来防止所有角色一个腔调）；upsert_world 写势力/规则/物品/历史；upsert_place 记地点（正文里真正出现过的地点，写清这一章它长什么样、第几章出现的，同一地点再次变化时再写一次，旧状态会留在历史里）；list 列出当前全部设定。同一个 name 会覆盖旧卡。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['upsert_character', 'upsert_world', 'list'],
-        description: 'upsert_character 写角色 / upsert_world 写世界观 / list 列表',
+        enum: ['upsert_character', 'upsert_world', 'upsert_place', 'list'],
+        description: 'upsert_character 写角色 / upsert_world 写世界观 / upsert_place 记地点 / list 列表',
       },
-      name: { type: 'string', description: '角色名或设定名，同名覆盖' },
+      name: { type: 'string', description: '角色名、设定名或地点名，同名覆盖' },
       role: {
         type: 'string',
         enum: ['protagonist', 'antagonist', 'supporting', 'minor'],
@@ -42,8 +67,11 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         type: 'string',
         description: '关系网、成长线这类归不到上面几个字段的材料；不填则保留原样',
       },
-      kind: { type: 'string', description: '世界观条目类型：地点/势力/规则/物品/历史' },
-      detail: { type: 'string', description: '世界观条目的内容' },
+      kind: { type: 'string', description: '世界观条目类型，或地点的类别（室内/街区/机构/城市）' },
+      detail: { type: 'string', description: '世界观条目的内容；对地点是它现在长什么样' },
+      aliases: { type: 'array', items: { type: 'string' }, description: '地点的其他叫法，避免同一个地方被当成两个' },
+      chapter: { type: 'number', description: '这条地点状态出现在第几章；设定阶段用 0' },
+      note: { type: 'string', description: '地点为什么变了，例如「搬走后重新装修」' },
     },
     output: {
       schema: {
@@ -54,6 +82,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           name: { type: 'string' },
           characters: { type: 'array', items: { type: 'string' } },
           world: { type: 'array', items: { type: 'string' } },
+          places: { type: 'array', items: { type: 'string' } },
           report: { type: 'string' },
         },
       },
@@ -115,13 +144,49 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
+      if (args.action === 'upsert_place') {
+        const name = args.name?.trim()
+        if (!name) throw new Error('upsert_place 需要 name。')
+        const detail = args.detail?.trim() ?? ''
+        if (detail === '') throw new Error('upsert_place 需要 detail，写清这个地点现在长什么样。')
+        const chapter = Math.max(0, Math.trunc(args.chapter ?? 0))
+        const previous = (await store.places()).find((item) => item.name === name)
+        const states = foldState(previous, chapter, detail, args.note?.trim())
+        const firstChapter = previous?.firstChapter === undefined ? chapter : Math.min(previous.firstChapter, chapter)
+        const latestChapter = Math.max(previous?.latestChapter ?? 0, chapter)
+        const aliases = args.aliases?.map((alias) => alias.trim()).filter((alias) => alias !== '')
+        const card: PlaceCard = {
+          name,
+          aliases: aliases && aliases.length > 0 ? aliases : (previous?.aliases ?? []),
+          kind: args.kind?.trim() || previous?.kind || '地点',
+          firstChapter,
+          latestChapter,
+          detail,
+          states,
+          ...(previous?.notes ? { notes: previous.notes } : {}),
+          updatedAt: new Date().toISOString(),
+        }
+        const list = await store.upsertPlace(card)
+        const history = states.length > 1 ? `（第 ${states.length} 个状态，前面还有 ${states.length - 1} 次变化）` : ''
+        return {
+          action: args.action,
+          name,
+          characters: (await store.characters()).map((item) => item.name),
+          world: (await store.world()).map((item) => item.name),
+          places: list.map((item) => item.name),
+          report: `已记下地点「${name}」，第 ${chapter} 章的样子已存${history}。当前 ${list.length} 个地点。`,
+        }
+      }
+
       const characters = await store.characters()
       const world = await store.world()
+      const places = await store.places()
       return {
         action: 'list',
         name: '',
         characters: characters.map((item) => item.name),
         world: world.map((item) => item.name),
+        places: places.map((item) => item.name),
         report: [
           `《${project.title}》　阶段：${project.phase}`,
           '',
@@ -130,6 +195,9 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           '',
           `世界观（${world.length}）：`,
           ...world.map((item) => `- ${item.name}［${item.kind}］${item.detail.slice(0, 60)}`),
+          '',
+          `地点（${places.length}）：`,
+          ...places.map((item) => `- ${item.name}［第 ${item.firstChapter} 章起，${item.states.length} 个状态］${item.detail.slice(0, 50)}`),
         ].join('\n'),
       }
     },

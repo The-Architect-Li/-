@@ -16,6 +16,7 @@
  */
 import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
+import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
 
@@ -289,6 +290,168 @@ function chapterPage(
 }
 
 /**
+ * The place page: what the corner of the world looks like *now*, and what it
+ * looked like in earlier chapters.
+ *
+ * `states` is why this page exists. A courtyard in chapter 1 and a flat there in
+ * chapter 100 are the same address; a place card that only holds one description
+ * silently overwrites the first one, and later chapters "remember" the flat.
+ *
+ * @param snapshot - the book.
+ * @param name - the place's name.
+ * @param root - project directory, for the footer.
+ * @returns the page, or `undefined` when no such place exists.
+ */
+function placePage(snapshot: Snapshot, name: string, root: string): EntryPayload | undefined {
+  const place = snapshot.places.find((item) => item.name === name)
+  if (place === undefined) return undefined
+  const facts = snapshot.ledger.filter((item) => item.subject === name && item.supersedes === null)
+  const states = place.states.slice().sort((a, b) => a.chapter - b.chapter)
+  // `detail` is meant to be the newest description, but a card can arrive from
+  // an import with only states filled in — the newest state wins when it exists,
+  // so the page never shows chapter 1 while claiming to show "now".
+  const current = states.at(-1)?.detail || place.detail
+  return {
+    kind: 'place',
+    title: place.name,
+    subtitle: place.kind ? `${place.kind} · 第${place.firstChapter}章起` : `第${place.firstChapter}章起`,
+    chip: states.length > 1 ? `${states.length} 次变化` : undefined,
+    breadcrumb: ['剧情设计', '地点'],
+    fields: [
+      { label: '类别', value: place.kind || '（未分类）' },
+      { label: '别名', value: place.aliases.length > 0 ? place.aliases.join('、') : '（无）' },
+      { label: '首次出现', value: `第${place.firstChapter}章` },
+      { label: '最近出现', value: `第${place.latestChapter}章` },
+      { label: '现在的样子', value: current || '（还没写）' },
+      ...(place.notes ? [{ label: '备注', value: place.notes }] : []),
+    ],
+    lists: [
+      ...(states.length > 0
+        ? [{ label: '样子变过几次', items: states.map((state) => `第${state.chapter}章：${state.detail}${state.note ? `（${state.note}）` : ''}`) }]
+        : []),
+      ...(facts.length > 0
+        ? [{ label: '账本里的事实', items: facts.map((item) => `${item.predicate}＝${item.value}${item.chapter > 0 ? `（第${item.chapter}章）` : '（设定）'}`) }]
+        : []),
+    ],
+    edit: {
+      inputs: [
+        { key: 'detail', label: '现在的样子', value: place.detail, multiline: true },
+        { key: 'notes', label: '备注', value: place.notes ?? '', multiline: true },
+      ],
+    },
+    root,
+  }
+}
+
+/**
+ * The story-point page: one stretch of the book that is *about* one thing.
+ *
+ * @param snapshot - the book.
+ * @param id - the story point's id (`sp-001`).
+ * @param root - project directory, for the footer.
+ * @returns the page, or `undefined` when no such point exists.
+ */
+function storyPage(snapshot: Snapshot, id: string, root: string): EntryPayload | undefined {
+  const point = snapshot.storyPoints.find((item) => item.id === id)
+  if (point === undefined) return undefined
+  const covered = snapshot.plans
+    .filter((plan) => plan.number >= point.startChapter && (point.endChapter === null || plan.number <= point.endChapter))
+    .sort((a, b) => a.number - b.number)
+  const span = point.endChapter === null ? `第${point.startChapter}章起` : `第${point.startChapter}–${point.endChapter}章`
+  return {
+    kind: 'story',
+    title: point.name,
+    subtitle: `${span} · ${point.characters.length} 人`,
+    chip: point.closed ? '已收尾' : '进行中',
+    breadcrumb: ['剧情设计', '故事点'],
+    fields: [
+      { label: '范围', value: span },
+      { label: '状态', value: point.closed ? '已经收尾，后面不属于这里' : '还在进行，新的一章默认归到这里' },
+      { label: '这段讲什么', value: point.premise || '（还没写）' },
+      { label: '主要人物', value: point.characters.length > 0 ? point.characters.join('、') : '（未指定）' },
+      { label: '建立于', value: point.createdAt },
+      ...(point.notes ? [{ label: '备注', value: point.notes }] : []),
+    ],
+    lists: [
+      ...(covered.length > 0
+        ? [{ label: `覆盖 ${covered.length} 张章卡`, items: covered.slice(0, 12).map((plan) => `第${plan.number}章 ${plan.title}`.trim()) }]
+        : []),
+    ],
+    edit: {
+      inputs: [
+        { key: 'premise', label: '这段讲什么', value: point.premise, multiline: true },
+        { key: 'notes', label: '备注', value: point.notes ?? '', multiline: true },
+      ],
+    },
+    root,
+  }
+}
+
+/**
+ * The timeline page: the book's clock, chapter by chapter.
+ *
+ * Read-only on purpose. A date is a fact about the prose, so it is written by
+ * `novel_timeline` where the sentence that asserted it can be kept as evidence;
+ * a date typed into a panel has no sentence behind it.
+ *
+ * @param snapshot - the book.
+ * @param root - project directory, for the footer.
+ * @returns the page.
+ */
+function timelinePage(snapshot: Snapshot, root: string): EntryPayload {
+  const highest = Math.max(1, snapshot.chapters.length, ...snapshot.plans.map((plan) => plan.number))
+  const resolution = resolveTimeline(snapshot.timeline, highest)
+  const now = windowAt(resolution, highest)
+  const first = snapshot.timeline.anchors.slice().sort((a, b) => a.chapter - b.chapter)[0]
+  const recalls = snapshot.timeline.recalls ?? []
+  const byChapter = Array.from({ length: Math.min(highest, 20) }, (_, index) => index + 1)
+  const errors = resolution.findings.filter((finding) => finding.severity === 'error')
+  return {
+    kind: 'timeline',
+    title: '时间线',
+    subtitle: `${snapshot.timeline.anchors.length} 个锚点 · ${snapshot.timeline.spans.length} 段跨度 · ${recalls.length} 次回忆`,
+    chip: now ? describeWindow(now) : undefined,
+    breadcrumb: ['剧情设计', '时间线'],
+    fields: [
+      { label: '起点', value: first ? `第${first.chapter}章是 ${first.when}${first.label ? `（${first.label}）` : ''}` : '（还没有锚点）' },
+      { label: '现在', value: now ? `写到第${highest}章时约 ${describeWindow(now)}` : '（算不出来，先记一个锚点）' },
+      { label: '体检', value: errors.length > 0 ? `${errors.length} 个矛盾需要处理` : resolution.findings.length > 0 ? `${resolution.findings.length} 条提醒` : '没有矛盾' },
+    ],
+    lists: [
+      ...(snapshot.timeline.anchors.length > 0
+        ? [{
+            label: '锚点',
+            items: snapshot.timeline.anchors.slice().sort((a, b) => a.chapter - b.chapter)
+              .map((anchor) => `第${anchor.chapter}章：${anchor.when}${anchor.label ? `　${anchor.label}` : ''}`),
+          }]
+        : []),
+      ...(snapshot.timeline.spans.length > 0
+        ? [{
+            label: '跨度',
+            items: snapshot.timeline.spans.slice().sort((a, b) => a.toChapter - b.toChapter)
+              .map((span) => `第${span.fromChapter} → ${span.toChapter} 章：${span.days.min === span.days.max ? `${span.days.min}` : `${span.days.min}–${span.days.max}`} 天（${span.text}）`),
+          }]
+        : []),
+      ...(recalls.length > 0
+        ? [{
+            label: '回忆',
+            items: recalls.map((recall) => `第${recall.chapter}章回忆${recall.eventChapter === null ? '' : `第${recall.eventChapter}章的`}「${recall.about}」，说成 ${recall.claimed}`),
+          }]
+        : []),
+      {
+        label: '按章对照',
+        items: byChapter.map((chapter) => {
+          const window = windowAt(resolution, chapter)
+          return window ? `第${chapter}章：${describeWindow(window)}` : `第${chapter}章：（还没有锚点）`
+        }),
+      },
+    ],
+    edit: { inputs: [] },
+    root,
+  }
+}
+
+/**
  * Build the page for one row.
  *
  * @param snapshot - the book.
@@ -308,9 +471,12 @@ export function buildEntry(
   body?: string | undefined,
   reviews: readonly ReviewRound[] = [],
 ): EntryPayload | undefined {
-  if (key === '') return undefined
+  if (key === '' && kind !== 'timeline') return undefined
   if (kind === 'character') return characterPage(snapshot, key, root)
   if (kind === 'world') return worldPage(snapshot, key, root)
+  if (kind === 'place') return placePage(snapshot, key, root)
+  if (kind === 'story') return storyPage(snapshot, key, root)
+  if (kind === 'timeline') return timelinePage(snapshot, root)
   const rounds = drafts.find((entry) => entry.number === Number(key))?.rounds ?? []
   return chapterPage(snapshot, key, rounds, root, body, reviews)
 }

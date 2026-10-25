@@ -48,7 +48,7 @@ import type { CharacterCard, Finding, InkwellConfig } from '../domain/types.ts'
 import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
-import { readChapterPatch, readCharacterPatch, readWorldPatch } from './edit.ts'
+import { readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from '../domain/shelf.ts'
 import { pinBook, pinnedRoot, sessionsFile } from '../domain/session-books.ts'
 import { buildEntry } from './entry.ts'
@@ -681,10 +681,12 @@ export async function readEntry(
   root: string | undefined,
 ): Promise<PanelAnswer> {
   try {
-    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter') {
-      throw new PanelInputError(`未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter。`)
+    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter' && kind !== 'place' && kind !== 'story' && kind !== 'timeline') {
+      throw new PanelInputError(`未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／place／story／timeline。`)
     }
-    if (key === undefined || key === '') throw new PanelInputError('缺少 key：角色名、世界观名或章号。')
+    if ((key === undefined || key === '') && kind !== 'timeline') {
+      throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
+    }
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) {
       return { status: 404, body: { ok: false, error: { message: '这本书还没有项目文件。' } } }
@@ -705,11 +707,11 @@ export async function readEntry(
       kind === 'chapter' && Number.isInteger(number) && number > 0
         ? await store.reviews(number)
         : []
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds)
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key ?? '', drafts, store.root, prose, reviewRounds)
     if (entry === undefined) {
       return {
         status: 404,
-        body: { ok: false, error: { message: `找不到 ${kind}「${key}」。它可能刚被改名或删掉，刷新一下。` } },
+        body: { ok: false, error: { message: `找不到 ${kind}「${key ?? ''}」。它可能刚被改名或删掉，刷新一下。` } },
       }
     }
     if (kind === 'chapter') {
@@ -763,11 +765,17 @@ export async function writeEntry(
 ): Promise<PanelAnswer> {
   try {
     const kind = body.kind
-    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter') {
-      throw new PanelInputError(`未知的条目类型 ${String(kind)}，只支持 character／world／chapter。`)
+    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter' && kind !== 'place' && kind !== 'story' && kind !== 'timeline') {
+      throw new PanelInputError(`未知的条目类型 ${String(kind)}，只支持 character／world／chapter／place／story／timeline。`)
+    }
+    if (kind === 'timeline') {
+      throw new PanelInputError(
+        '时间线不能在这里改。日期是对正文的断言，要用 novel_timeline 记，它会把原文那句话一起存下来——面板里没有那句话。',
+        409,
+      )
     }
     const key = typeof body.key === 'string' ? body.key.trim() : ''
-    if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名或章号。')
+    if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
     const fields = body.fields
     if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
       throw new PanelInputError('fields 必须是一个对象。')
@@ -811,6 +819,34 @@ export async function writeEntry(
         kind: edit.kind || existing.kind,
         detail,
         updatedAt: new Date().toISOString(),
+      })
+    } else if (kind === 'place') {
+      const edit = readPlacePatch(key, patch)
+      const existing = (await store.places()).find((item) => item.name === key)
+      if (existing === undefined) {
+        throw new PanelInputError(`找不到地点「${key}」。它可能刚被改名或删掉，刷新一下。`, 404)
+      }
+      const detail = edit.detail ?? existing.detail
+      if (detail === '') throw new PanelInputError('地点的样子不能为空。')
+      // The state history is replaced wholesale like every other card here, so
+      // it has to be carried over: it is the record of what this place used to
+      // look like, and dropping it is exactly the bug the page exists to stop.
+      await store.upsertPlace({
+        ...existing,
+        detail,
+        notes: edit.notes ?? existing.notes,
+        updatedAt: new Date().toISOString(),
+      })
+    } else if (kind === 'story') {
+      const edit = readStoryPatch(key, patch)
+      const existing = (await store.storyPoints()).find((item) => item.id === key)
+      if (existing === undefined) {
+        throw new PanelInputError(`找不到故事点「${key}」。它可能刚被收尾或删掉，刷新一下。`, 404)
+      }
+      await store.upsertStoryPoint({
+        ...existing,
+        premise: edit.premise ?? existing.premise,
+        notes: edit.notes ?? existing.notes,
       })
     } else {
       const edit = readChapterPatch(key, patch)

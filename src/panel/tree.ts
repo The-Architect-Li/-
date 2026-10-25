@@ -11,6 +11,7 @@
  * ("人物设计 12"), so a miscount is a test failure, not a visual nit.
  */
 import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
+import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 
 /** How one row wants to be drawn: finished work, open work, or a warning. */
 export type PanelTone = 'done' | 'todo' | 'warn' | 'muted'
@@ -41,7 +42,7 @@ export interface PanelRow {
 }
 
 /** The kinds of thing a row can open. */
-export type PanelEntryKind = 'character' | 'world' | 'chapter'
+export type PanelEntryKind = 'character' | 'world' | 'chapter' | 'place' | 'story' | 'timeline'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -66,6 +67,8 @@ const CAP = {
   cards: 24,
   chapters: 40,
   beats: 8,
+  places: 24,
+  points: 12,
 } as const
 
 /** Draft rounds keyed by chapter number, as the route already read them. */
@@ -176,39 +179,39 @@ function chaptersOfVolume(plans: readonly ChapterPlan[], volume: number): number
 }
 
 /**
- * The plot drawer: the spine, the beats, the hooks, the cards.
+ * The plot drawer: places, story points, the clock, and the chapter cards.
  *
- * `count` is the drawer total the screenshot shows, so it is the sum of the
- * things a writer would count as plot material — beats, hooks and cards.
+ * The list is short on purpose. A drawer with six entries where four are
+ * derived views of the same outlines taught nobody anything; a writer opening
+ * 剧情设计 wants to know *where* things happen, *which story* they are in, and
+ * *when* it is — three questions the prose keeps breaking, plus the cards.
  *
  * @param snapshot - the book.
  * @returns the drawer.
  */
 function plotSection(snapshot: Snapshot): PanelSection {
-  const beats = snapshot.plans.reduce((sum, plan) => sum + plan.beats.length, 0)
-  const hooks = snapshot.plans.reduce((sum, plan) => sum + plan.hooks.length, 0)
+  const placeRows: PanelRow[] = snapshot.places.slice(0, CAP.places).map((place, index) => ({
+    id: `plot.place.${index}`,
+    label: place.name,
+    kind: 'place',
+    key: place.name,
+    aside: place.kind || undefined,
+    chip: place.states.length > 1 ? `${place.states.length} 次变化` : undefined,
+  }))
 
-  const volumeRows: PanelRow[] = snapshot.volumes.map((volume) => {
-    const numbers = chaptersOfVolume(snapshot.plans, volume.number)
-    return {
-      id: `plot.volume.${volume.number}`,
-      label: `第${volume.number}卷 ${volume.title}`,
-      count: numbers.length,
-      chip: volume.approved ? '已批准' : '待批准',
-      tone: volume.approved ? 'done' : 'todo',
-      children: numbers.slice(0, CAP.beats).map((number) => {
-        const plan = snapshot.plans.find((entry) => entry.number === number)
-        return {
-          id: `plot.volume.${volume.number}.${number}`,
-          label: `第${number}章 ${plan?.title ?? ''}`.trim(),
-          kind: 'chapter',
-          key: String(number),
-          chip: plan?.approved ? undefined : '待批准',
-          tone: 'muted',
-        }
-      }),
-    }
-  })
+  const pointRows: PanelRow[] = snapshot.storyPoints.slice(0, CAP.points).map((point) => ({
+    id: `plot.story.${point.id}`,
+    label: point.name,
+    kind: 'story',
+    key: point.id,
+    aside: `第${point.startChapter}${point.endChapter === null ? ' 章起' : `–${point.endChapter} 章`}`,
+    chip: point.closed ? '已收尾' : '进行中',
+    tone: point.closed ? 'done' : 'todo',
+  }))
+
+  const resolution = resolveTimeline(snapshot.timeline, Math.max(1, snapshot.chapters.length, ...snapshot.plans.map((plan) => plan.number)))
+  const now = windowAt(resolution, Math.max(1, snapshot.chapters.length))
+  const clockCount = snapshot.timeline.anchors.length + snapshot.timeline.spans.length + (snapshot.timeline.recalls ?? []).length
 
   const cards: PanelRow[] = snapshot.plans.slice(0, CAP.cards).map((plan) => ({
     id: `plot.card.${plan.number}`,
@@ -223,17 +226,31 @@ function plotSection(snapshot: Snapshot): PanelSection {
   return {
     id: 'plot',
     label: '剧情设计',
-    count: beats + hooks + snapshot.plans.length,
+    count: snapshot.places.length + snapshot.storyPoints.length + clockCount + snapshot.plans.length,
     rows: [
       {
-        id: 'plot.spine',
-        label: '全书故事线',
-        chip: '故事线',
-        aside: `${snapshot.volumes.length} 卷`,
-        children: capped(volumeRows, snapshot.volumes.length, CAP.cards, 'plot.volume'),
+        id: 'plot.places',
+        label: '地点',
+        count: snapshot.places.length,
+        tone: snapshot.places.length === 0 ? 'muted' : 'todo',
+        children: capped(placeRows, snapshot.places.length, CAP.places, 'plot.place'),
       },
-      { id: 'plot.beats', label: '剧情点', count: beats, tone: beats === 0 ? 'muted' : 'todo' },
-      { id: 'plot.hooks', label: '伏笔总览', count: hooks, tone: hooks === 0 ? 'muted' : 'todo' },
+      {
+        id: 'plot.stories',
+        label: '故事点',
+        count: snapshot.storyPoints.length,
+        tone: snapshot.storyPoints.length === 0 ? 'muted' : 'todo',
+        children: capped(pointRows, snapshot.storyPoints.length, CAP.points, 'plot.story'),
+      },
+      {
+        id: 'plot.clock',
+        label: '时间线',
+        kind: 'timeline',
+        key: 'clock',
+        aside: clockCount === 0 ? '还没记' : `${snapshot.timeline.anchors.length} 锚点`,
+        ...(now ? { chip: describeWindow(now) } : {}),
+        tone: clockCount === 0 ? 'muted' : 'done',
+      },
       {
         id: 'plot.cards',
         label: '章卡',

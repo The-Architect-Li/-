@@ -7,7 +7,7 @@
  * The last case must be `undefined` — a blank page is worse than "刷新一下".
  */
 import { describe, expect, it } from 'vitest'
-import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, LedgerEntry, Snapshot, VolumeOutline, WorldEntry } from '../src/domain/types.ts'
+import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, LedgerEntry, PlaceCard, Snapshot, StoryPoint, VolumeOutline, WorldEntry } from '../src/domain/types.ts'
 import { buildEntry } from '../src/panel/entry.ts'
 
 const PREMISE = '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4)
@@ -27,6 +27,9 @@ function book(overrides: Partial<Snapshot> = {}): Snapshot {
     },
     characters: [],
     world: [],
+    places: [],
+    storyPoints: [],
+    timeline: { formatVersion: 1, anchors: [], spans: [] },
     volumes: [],
     plans: [],
     ledger: [],
@@ -218,6 +221,102 @@ describe('editable projection', () => {
     const page = buildEntry(snapshot, 'chapter', '2', [], ROOT)
     expect(page?.edit.body?.value).toBe('')
     expect(page?.breadcrumb).toEqual(['正文', '第1卷'])
+  })
+})
+
+describe('place page', () => {
+  const dock: PlaceCard = {
+    name: '雾港旧码头',
+    aliases: ['旧码头'],
+    kind: '地点',
+    firstChapter: 1,
+    latestChapter: 7,
+    detail: '三层砖楼，楼梯窄得抬不进箱子',
+    states: [
+      { chapter: 1, detail: '三层砖楼，楼梯窄得抬不进箱子' },
+      { chapter: 7, detail: '拆成一片大平层，旧楼梯没了', note: '沈砚认不出' },
+    ],
+    notes: '库房在西侧',
+    updatedAt: '2026-10-25T00:00:00.000Z',
+  }
+
+  it('keeps every state the place went through, oldest first', () => {
+    const page = buildEntry(book({ places: [dock] }), 'place', '雾港旧码头', [], ROOT)
+    expect(page?.breadcrumb).toEqual(['剧情设计', '地点'])
+    expect(page?.chip).toBe('2 次变化')
+    expect(page?.fields.find((field) => field.label === '现在的样子')?.value).toBe('拆成一片大平层，旧楼梯没了')
+    expect(page?.lists.find((list) => list.label === '样子变过几次')?.items).toEqual([
+      '第1章：三层砖楼，楼梯窄得抬不进箱子',
+      '第7章：拆成一片大平层，旧楼梯没了（沈砚认不出）',
+    ])
+  })
+
+  it('offers the description and the note for editing, not the chapter numbers', () => {
+    const page = buildEntry(book({ places: [dock] }), 'place', '雾港旧码头', [], ROOT)
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['detail', 'notes'])
+  })
+
+  it('returns undefined for a place that is gone', () => {
+    expect(buildEntry(book(), 'place', '雾港旧码头', [], ROOT)).toBeUndefined()
+  })
+})
+
+describe('story point page', () => {
+  const point: StoryPoint = {
+    id: 'sp-001',
+    name: '翻身',
+    startChapter: 1,
+    endChapter: 2,
+    premise: '王上从码头混进上势',
+    characters: ['王上'],
+    closed: true,
+    createdAt: '2026-10-25T00:00:00.000Z',
+  }
+
+  it('names the range it covers and the cards inside it', () => {
+    const snapshot = book({
+      storyPoints: [point],
+      plans: [plan(1, { title: '裂缝' }), plan(2, { title: '过秤' }), plan(3, { title: '别处' })],
+    })
+    const page = buildEntry(snapshot, 'story', 'sp-001', [], ROOT)
+    expect(page?.subtitle).toBe('第1–2章 · 1 人')
+    expect(page?.chip).toBe('已收尾')
+    expect(page?.lists.find((list) => list.label === '覆盖 2 张章卡')?.items).toEqual(['第1章 裂缝', '第2章 过秤'])
+  })
+
+  it('shows the newest point as still running', () => {
+    const running: StoryPoint = { ...point, id: 'sp-002', startChapter: 3, endChapter: null, closed: false }
+    const page = buildEntry(book({ storyPoints: [running] }), 'story', 'sp-002', [], ROOT)
+    expect(page?.subtitle).toBe('第3章起 · 1 人')
+    expect(page?.chip).toBe('进行中')
+  })
+})
+
+describe('timeline page', () => {
+  it('reads the clock back as dates, not as the entries that were stored', () => {
+    const snapshot = book({
+      chapters: [written(1, '裂缝', 10)],
+      timeline: {
+        formatVersion: 1,
+        anchors: [{ id: 'ta-001', chapter: 1, when: '2019-03', label: '开局' }],
+        spans: [{ id: 'ts-001', fromChapter: 1, toChapter: 1, days: { min: 60, max: 90 }, text: '过了两三个月' }],
+        recalls: [{ id: 'tr-001', chapter: 1, about: '那船货', eventChapter: null, claimed: '2019-01', text: '去年一月' }],
+      },
+    })
+    const page = buildEntry(snapshot, 'timeline', 'clock', [], ROOT)
+    expect(page?.breadcrumb).toEqual(['剧情设计', '时间线'])
+    expect(page?.fields.find((field) => field.label === '起点')?.value).toBe('第1章是 2019-03（开局）')
+    expect(page?.lists.find((list) => list.label === '按章对照')?.items[0]).toBe('第1章：2019-03-01 ~ 2019-03-31')
+  })
+
+  it('says so instead of guessing when the book never said when it is', () => {
+    const page = buildEntry(book(), 'timeline', 'clock', [], ROOT)
+    expect(page?.fields.find((field) => field.label === '现在')?.value).toBe('（算不出来，先记一个锚点）')
+    expect(page?.chip).toBeUndefined()
+  })
+
+  it('is read-only: a date needs the sentence that asserted it', () => {
+    expect(buildEntry(book(), 'timeline', 'clock', [], ROOT)?.edit.inputs).toEqual([])
   })
 })
 

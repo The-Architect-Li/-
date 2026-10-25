@@ -97,6 +97,59 @@ export function readWorldPatch(key: string, body: Record<string, unknown>): Worl
   return patch
 }
 
+/** A validated place patch: the description and the free-form note. */
+export interface PlacePatch {
+  name: string
+  detail?: string | undefined
+  notes?: string | undefined
+}
+
+/**
+ * Validate a place edit.
+ *
+ * Only the description and the note are editable here. The chapter a state was
+ * recorded in is evidence — a writer who could retype it could make the book
+ * remember a courtyard that was already a flat.
+ *
+ * @param key - the place's current name, from the route.
+ * @param body - the submitted fields.
+ * @returns the patch to apply.
+ * @throws {PanelInputError} when a field is the wrong type or too long.
+ */
+export function readPlacePatch(key: string, body: Record<string, unknown>): PlacePatch {
+  return {
+    name: key,
+    detail: readText(body, 'detail', MAX_FIELD_CHARS, '地点样子'),
+    notes: readText(body, 'notes', MAX_NOTES_CHARS, '备注'),
+  }
+}
+
+/** A validated story-point patch. */
+export interface StoryPatch {
+  id: string
+  premise?: string | undefined
+  notes?: string | undefined
+}
+
+/**
+ * Validate a story-point edit.
+ *
+ * The chapter range stays out of reach: it decides which chapters a later
+ * review is judged against, so it is set where the point is opened.
+ *
+ * @param key - the point's id (`sp-001`), from the route.
+ * @param body - the submitted fields.
+ * @returns the patch to apply.
+ * @throws {PanelInputError} when a field is the wrong type or too long.
+ */
+export function readStoryPatch(key: string, body: Record<string, unknown>): StoryPatch {
+  return {
+    id: key,
+    premise: readText(body, 'premise', MAX_FIELD_CHARS, '故事点梗概'),
+    notes: readText(body, 'notes', MAX_NOTES_CHARS, '备注'),
+  }
+}
+
 /** A validated chapter patch. */
 export interface ChapterPatch {
   number: number

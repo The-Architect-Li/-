@@ -57,6 +57,139 @@ export interface WorldEntry {
   updatedAt: string
 }
 
+/**
+ * How one place looked from a given chapter on.
+ *
+ * A place is not frozen: the rented three-storey walk-up in chapter 1 is a
+ * gutted flat by chapter 100, and the prose simply says "他回到大平层". The
+ * state list is how the book remembers that the move happened, instead of the
+ * model quietly re-inventing the building every hundred chapters.
+ */
+export interface PlaceState {
+  /** First chapter this state is true from. */
+  chapter: number
+  /** What it looks like, smells like, who is inside — free prose. */
+  detail: string
+  /** Why it changed, when the text says. */
+  note?: string | undefined
+}
+
+/**
+ * A place the manuscript has used.
+ *
+ * Deliberately separate from `WorldEntry` with `kind === '地点'`: a world entry
+ * describes the setting once, while a place card tracks what the text actually
+ * did to it, chapter by chapter.
+ */
+export interface PlaceCard {
+  name: string
+  /** Other names the prose uses for it, so `老宅` and `沈家老宅` are one place. */
+  aliases: string[]
+  /** Free label: 室内/街区/机构/城市. */
+  kind: string
+  /** 0 means "declared during setup", before any chapter exists. */
+  firstChapter: number
+  /** Latest chapter that touched it. */
+  latestChapter: number
+  /** Standing description, kept equal to the newest state's detail. */
+  detail: string
+  /** Ordered by chapter; the last one is current. */
+  states: PlaceState[]
+  notes?: string | undefined
+  updatedAt: string
+}
+
+/**
+ * One arc of the book: the unit a reader would call "一段故事".
+ *
+ * Story points exist so a new arc does not bleed into the old one, and so a
+ * character recalling an old arc has the old arc's material to recall from.
+ */
+export interface StoryPoint {
+  /** Stable id within the book, e.g. `sp-003`. */
+  id: string
+  name: string
+  /** First chapter that belongs to this arc. */
+  startChapter: number
+  /** Last chapter, or null while the arc is still open. */
+  endChapter: number | null
+  /** One line: what this arc is about. */
+  premise: string
+  characters: string[]
+  closed: boolean
+  notes?: string | undefined
+  createdAt: string
+}
+
+/** A dated statement: "第 1 章是 2019 年 1 月 15 日". */
+export interface TimelineAnchor {
+  id: string
+  chapter: number
+  /** `YYYY`, `YYYY-MM` or `YYYY-MM-DD`; a coarser value means the whole span. */
+  when: string
+  /** What happened, in one line. */
+  label: string
+}
+
+/** A duration the prose stated between two chapters: "过了两三个月". */
+export interface TimelineSpan {
+  id: string
+  /** Chapter the duration is announced in. */
+  fromChapter: number
+  /** Chapter the story has arrived at after it. */
+  toChapter: number
+  /** Lower and upper bound in days, so "两三个月" stays honest. */
+  days: { min: number; max: number }
+  /** The sentence as written, kept for evidence. */
+  text: string
+}
+
+/**
+ * One place in the text where someone remembers something with a date on it.
+ *
+ * "八月份的时候，有人提起 19 年 1 月那件事" is the failure mode this exists for:
+ * the remembered date must fall inside the window the book actually assigned to
+ * that event, not a month either side of it.
+ */
+export interface TimelineRecall {
+  id: string
+  /** Chapter where the remembering happens. */
+  chapter: number
+  /** What is being remembered, as the text words it. */
+  about: string
+  /** Chapter the remembered event happened in, when the book knows. */
+  eventChapter: number | null
+  /** The date the remembering text claims, `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. */
+  claimed: string
+  /** The sentence, kept as evidence. */
+  text: string
+}
+
+/**
+ * The book's clock.
+ *
+ * Four kinds of entry only: where the clock stands (anchors), how far it moved
+ * (spans), what someone remembered with a date on it (recalls). Everything
+ * else — each chapter's date, whether a recall is off by a month — is computed,
+ * so there is one arithmetic path and no second copy of the truth to drift.
+ */
+export interface TimelineFile {
+  formatVersion: 1
+  anchors: TimelineAnchor[]
+  spans: TimelineSpan[]
+  /** Optional so books written before v0.14 read as "no recalls yet". */
+  recalls?: TimelineRecall[]
+}
+
+/** One chapter's resolved story time, in days since the epoch. */
+export interface StoryTime {
+  earliest: number
+  latest: number
+  /** True when an anchor pins this chapter rather than a span. */
+  anchored: boolean
+}
+
+
 /** A volume-level outline. */
 export interface VolumeOutline {
   number: number
@@ -221,6 +354,9 @@ export interface Snapshot {
   project: ProjectFile
   characters: CharacterCard[]
   world: WorldEntry[]
+  places: PlaceCard[]
+  storyPoints: StoryPoint[]
+  timeline: TimelineFile
   volumes: VolumeOutline[]
   plans: ChapterPlan[]
   ledger: LedgerEntry[]

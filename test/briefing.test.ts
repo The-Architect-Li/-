@@ -35,6 +35,9 @@ function snapshot(): Snapshot {
       },
     ],
     world: [{ name: '雾港', kind: '地点', detail: '终年起雾', updatedAt: '2026-01-01T00:00:00.000Z' }],
+    places: [],
+    storyPoints: [],
+    timeline: { formatVersion: 1, anchors: [], spans: [] },
     volumes: [{ number: 1, title: '入港', summary: '', approved: true }],
     plans: [
       {

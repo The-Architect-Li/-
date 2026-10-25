@@ -14,11 +14,14 @@ import type {
   ChapterPlan,
   DraftRound,
   LedgerEntry,
+  PlaceCard,
   ProjectFile,
   ReviewFile,
   ReviewItem,
   ReviewRound,
   Snapshot,
+  StoryPoint,
+  TimelineFile,
   VolumeOutline,
   WorldEntry,
 } from './types.ts'
@@ -27,6 +30,9 @@ import type {
 export const PROJECT_FILE = 'project.json'
 const CHARACTERS_FILE = 'canon/characters.json'
 const WORLD_FILE = 'canon/world.json'
+const PLACES_FILE = 'canon/places.json'
+const STORY_POINTS_FILE = 'outline/story-points.json'
+const TIMELINE_FILE = 'timeline/clock.json'
 const VOLUMES_FILE = 'outline/volumes.json'
 const PLANS_FILE = 'outline/chapters.json'
 const LEDGER_FILE = 'ledger/facts.json'
@@ -182,12 +188,69 @@ export class ProjectStore {
     return list
   }
 
+  /** Every place the manuscript has used, newest chapter last. */
+  async places(): Promise<PlaceCard[]> {
+    return readJson<PlaceCard[]>(join(this.root, PLACES_FILE), [])
+  }
+
+  /** Insert or replace one place card by name, keeping the list ordered by chapter. */
+  async upsertPlace(card: PlaceCard): Promise<PlaceCard[]> {
+    const list = await this.places()
+    const index = list.findIndex((item) => item.name === card.name)
+    if (index >= 0) list[index] = card
+    else list.push(card)
+    list.sort((a, b) => a.firstChapter - b.firstChapter || a.name.localeCompare(b.name, 'zh'))
+    await writeJson(join(this.root, PLACES_FILE), list)
+    return list
+  }
+
+  /** Every story point, in chapter order. */
+  async storyPoints(): Promise<StoryPoint[]> {
+    return readJson<StoryPoint[]>(join(this.root, STORY_POINTS_FILE), [])
+  }
+
+  /** Insert or replace one story point by id. */
+  async upsertStoryPoint(point: StoryPoint): Promise<StoryPoint[]> {
+    const list = await this.storyPoints()
+    const index = list.findIndex((item) => item.id === point.id)
+    if (index >= 0) list[index] = point
+    else list.push(point)
+    list.sort((a, b) => a.startChapter - b.startChapter || a.id.localeCompare(b.id))
+    await writeJson(join(this.root, STORY_POINTS_FILE), list)
+    return list
+  }
+
+  /** The book's clock: anchors, spans and recalls — never resolved dates. */
+  async timeline(): Promise<TimelineFile> {
+    const file = await readJson<TimelineFile>(join(this.root, TIMELINE_FILE), {
+      formatVersion: 1,
+      anchors: [],
+      spans: [],
+    })
+    return {
+      formatVersion: 1,
+      anchors: Array.isArray(file.anchors) ? file.anchors : [],
+      spans: Array.isArray(file.spans) ? file.spans : [],
+      ...(Array.isArray(file.recalls) ? { recalls: file.recalls } : {}),
+    }
+  }
+
+  /** Replace the whole clock. Anchors, spans and recalls are small; partial writes are not worth it. */
+  async writeTimeline(file: TimelineFile): Promise<TimelineFile> {
+    const next: TimelineFile = {
+      formatVersion: 1,
+      anchors: file.anchors,
+      spans: file.spans,
+      ...(file.recalls === undefined ? {} : { recalls: file.recalls }),
+    }
+    await writeJson(join(this.root, TIMELINE_FILE), next)
+    return next
+  }
+
   /** All volume outlines. */
   async volumes(): Promise<VolumeOutline[]> {
     return readJson<VolumeOutline[]>(join(this.root, VOLUMES_FILE), [])
-  }
-
-  /** Insert or replace one volume outline by number. */
+  }  /** Insert or replace one volume outline by number. */
   async upsertVolume(volume: VolumeOutline): Promise<VolumeOutline[]> {
     const list = await this.volumes()
     const index = list.findIndex((item) => item.number === volume.number)
@@ -315,6 +378,9 @@ export class ProjectStore {
       project: await this.readProject(),
       characters: await this.characters(),
       world: await this.world(),
+      places: await this.places(),
+      storyPoints: await this.storyPoints(),
+      timeline: await this.timeline(),
       volumes: await this.volumes(),
       plans: await this.plans(),
       ledger: await this.ledger(),

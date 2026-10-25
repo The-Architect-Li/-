@@ -22,6 +22,9 @@ function snapshot(): Snapshot {
       { name: '阿鸢', role: 'supporting', voice: '快', appearance: '', goal: '航图', secret: '改过航', updatedAt: '' },
     ],
     world: [{ name: '雾港', kind: '地点', detail: '起雾', updatedAt: '' }],
+    places: [],
+    storyPoints: [],
+    timeline: { formatVersion: 1, anchors: [], spans: [] },
     volumes: [{ number: 1, title: '入港', summary: '', approved: true }],
     plans: [{
       number: 1, volume: 1, title: '夜渡', pov: '沈砚',

@@ -24,6 +24,8 @@ import { registerLedgerTool } from './tools/ledger.ts'
 import { registerOutlineTool } from './tools/outline.ts'
 import { registerProjectTool } from './tools/project.ts'
 import { registerRolesTool } from './tools/roles.ts'
+import { registerStoryTool } from './tools/story.ts'
+import { registerTimelineTool } from './tools/timeline.ts'
 import type { InkwellConfig } from './domain/types.ts'
 
 export const name = 'inkwell'
@@ -67,6 +69,8 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerDispatchTool(ctx, deps)
   registerExportTool(ctx, deps)
   registerImportTool(ctx, deps)
+  registerStoryTool(ctx, deps)
+  registerTimelineTool(ctx, deps)
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()

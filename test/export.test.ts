@@ -42,6 +42,9 @@ function snapshot(): Snapshot {
       { name: '沈砚', role: 'protagonist', voice: '短句，少形容词', appearance: '左手有旧疤', goal: '找到妹妹', secret: '他也替人顶罪', updatedAt: NOW },
     ],
     world: [{ name: '雾港', kind: '地点', detail: '终年不散的雾，码头三班倒。', updatedAt: NOW }],
+    places: [],
+    storyPoints: [],
+    timeline: { formatVersion: 1, anchors: [], spans: [] },
     volumes: [{ number: 1, title: '雾里的货单', summary: '三号舱的货单对不上。', approved: true }],
     plans: [
       { number: 1, volume: 1, title: '裂缝', pov: '沈砚', characters: ['沈砚'], beats: ['发现裂缝', '妹妹开口'], hooks: ['货单上多了一个名字'], approved: true },

@@ -53,6 +53,9 @@ function book(overrides: Partial<Snapshot> = {}): Snapshot {
     },
     characters: [],
     world: [],
+    places: [],
+    storyPoints: [],
+    timeline: { formatVersion: 1, anchors: [], spans: [] },
     volumes: [],
     plans: [],
     ledger: [],
@@ -153,7 +156,7 @@ describe('panel tree', () => {
     )
     expect(found.get('world')?.count).toBe(2)
     expect(found.get('cast')?.count).toBe(2)
-    expect(found.get('plot')?.count).toBe(2 + 1 + 1) // beats + hooks + cards
+    expect(found.get('plot')?.count).toBe(1) // 地点 + 故事点 + 时间线条目 + 章卡
     expect(found.get('text')?.count).toBe(1)
   })
 
@@ -176,10 +179,42 @@ describe('panel tree', () => {
     expect(cast?.rows.find((row) => row.label === '反派')?.count).toBe(0)
   })
 
-  it('builds the plot drawer from the spine, the beats, the hooks and the cards', () => {
+  it('builds the plot drawer from places, story points, the clock and the cards', () => {
     const sections = buildPanelSnapshot(
       book({
         volumes: [volume(1, '雾起'), volume(2, '潮落', false)],
+        places: [
+          {
+            name: '雾港旧码头',
+            aliases: ['旧码头'],
+            kind: '地点',
+            firstChapter: 1,
+            latestChapter: 7,
+            detail: '三层砖楼',
+            states: [
+              { chapter: 1, detail: '三层砖楼' },
+              { chapter: 7, detail: '大平层' },
+            ],
+            updatedAt: '2026-10-25T00:00:00.000Z',
+          },
+        ],
+        storyPoints: [
+          {
+            id: 'sp-001',
+            name: '翻身',
+            startChapter: 1,
+            endChapter: 11,
+            premise: '王上从码头混进「上势」',
+            characters: ['王上'],
+            closed: true,
+            createdAt: '2026-10-25T00:00:00.000Z',
+          },
+        ],
+        timeline: {
+          formatVersion: 1,
+          anchors: [{ id: 'ta-001', chapter: 1, when: '2019-03', label: '开局' }],
+          spans: [{ id: 'ts-001', fromChapter: 1, toChapter: 2, days: { min: 60, max: 90 }, text: '过了两三个月' }],
+        },
         plans: [
           { ...plan(1, true, '裂缝'), beats: ['血从船舱渗出来', '他认出了妹妹'], hooks: ['谁改了航向'] },
           { ...plan(2, false, '金童玉女'), volume: 2, beats: ['码头空了'] },
@@ -190,14 +225,18 @@ describe('panel tree', () => {
       '/nowhere',
     ).sections
     const plot = sections.find((section) => section.id === 'plot')
-    const spine = plot?.rows.find((row) => row.label === '全书故事线')
-    expect(spine?.chip).toBe('故事线')
-    expect(spine?.count).toBeUndefined()
-    expect(spine?.children?.map((row) => row.count)).toEqual([1, 1])
-    expect(spine?.children?.[0]?.children?.map((row) => row.label)).toEqual(['第1章 裂缝'])
-    expect(spine?.children?.[1]?.children?.map((row) => row.chip)).toEqual(['待批准'])
-    expect(plot?.rows.find((row) => row.label === '剧情点')?.count).toBe(3)
-    expect(plot?.rows.find((row) => row.label === '伏笔总览')?.count).toBe(1)
+    expect(plot?.rows.map((row) => row.label)).toEqual(['地点', '故事点', '时间线', '章卡'])
+    const places = plot?.rows.find((row) => row.label === '地点')
+    expect(places?.count).toBe(1)
+    expect(places?.children?.[0]?.kind).toBe('place')
+    expect(places?.children?.[0]?.chip).toBe('2 次变化')
+    const stories = plot?.rows.find((row) => row.label === '故事点')
+    expect(stories?.count).toBe(1)
+    expect(stories?.children?.[0]?.kind).toBe('story')
+    expect(stories?.children?.[0]?.aside).toBe('第1–11 章')
+    const clock = plot?.rows.find((row) => row.label === '时间线')
+    expect(clock?.kind).toBe('timeline')
+    expect(clock?.aside).toBe('1 锚点')
     const cards = plot?.rows.find((row) => row.label === '章卡')
     expect(cards?.count).toBe(2)
     expect(cards?.children?.map((row) => row.chip)).toEqual(['已批准', '待批准'])

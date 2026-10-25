@@ -11,7 +11,9 @@ import type {
   ChapterPlan,
   InkwellConfig,
   Snapshot,
+  StoryPoint,
 } from './types.ts'
+import { describeWindow, resolveTimeline, windowAt } from './clock.ts'
 import { activeEntries } from './ledger.ts'
 import { countChars, tailOf } from './text.ts'
 
@@ -46,6 +48,44 @@ function formatCharacter(snapshot: Snapshot, name: string): string {
   return `- ${parts.join('｜')}`
 }
 
+/**
+ * The chapter's place on the book's clock, plus the story point it belongs to.
+ *
+ * Reviewers keep asking "is this the right month"; answering that needs the date
+ * computed from what earlier chapters said, not a date invented here.
+ *
+ * @param snapshot - project state.
+ * @param chapter - the chapter about to be written.
+ * @param drafts - every chapter already written.
+ * @returns the section body.
+ */
+function formatClock(snapshot: Snapshot, chapter: number, drafts: ChapterDraft[]): string {
+  const highest = Math.max(chapter, drafts.length, ...snapshot.chapters.map((item) => item.number), 1)
+  const resolution = resolveTimeline(snapshot.timeline, highest)
+  const window = windowAt(resolution, chapter)
+  const point = snapshot.storyPoints
+    .filter((item) => item.startChapter <= chapter && (item.endChapter === null || chapter <= item.endChapter))
+    .sort((a, b) => b.startChapter - a.startChapter)[0] as StoryPoint | undefined
+  const covering = snapshot.timeline.spans.filter((span) => span.toChapter === chapter)
+  const lines = [
+    point
+      ? `所属故事点：${point.name}${point.closed ? '（已收尾）' : ''}　${point.premise}`
+      : '所属故事点：（还没有故事点，这一段故事没有名字，审核时无从判断跑没跑题）',
+    window
+      ? `本章故事时间：${describeWindow(window)}`
+      : '本章故事时间：（全书还没有日期锚点。正文里第一次写明时间时，用 novel_timeline anchor 记一条）',
+  ]
+  for (const span of covering) {
+    lines.push(
+      `时间跨度：第${span.fromChapter}章到本章过去了 ${span.days.min === span.days.max ? `${span.days.min}` : `${span.days.min}–${span.days.max}`} 天（原文「${span.text}」）`,
+    )
+  }
+  if (window) {
+    lines.push('正文里写死的日期要落在这个窗口内；「这几个月」不要写成「这几年」。')
+  }
+  return lines.join('\n')
+}
+
 function collectSections(
   snapshot: Snapshot,
   drafts: ChapterDraft[],
@@ -77,8 +117,16 @@ function collectSections(
   })
 
   sections.push({
-    name: '出场角色',
+    name: '本章时间与故事点',
     priority: 2,
+    chars: 0,
+    kept: true,
+    content: formatClock(snapshot, chapter, drafts),
+  })
+
+  sections.push({
+    name: '出场角色',
+    priority: 3,
     chars: 0,
     kept: true,
     content: castNames.length > 0
@@ -88,7 +136,7 @@ function collectSections(
 
   sections.push({
     name: '上一章结尾',
-    priority: 3,
+    priority: 4,
     chars: 0,
     kept: true,
     content: last ? `第${last.number}章《${last.title}》结尾：\n${tailOf(last.text, config.briefingTailChars)}` : '（这是第一章）',
@@ -100,7 +148,7 @@ function collectSections(
   )
   sections.push({
     name: '已确立事实',
-    priority: 4,
+    priority: 5,
     chars: 0,
     kept: true,
     content: relevant.length > 0
@@ -113,7 +161,7 @@ function collectSections(
   const summaries = previous.slice(0, config.briefingLookback).sort((a, b) => a.number - b.number)
   sections.push({
     name: '前情摘要',
-    priority: 5,
+    priority: 6,
     chars: 0,
     kept: true,
     content: summaries.length > 0
@@ -124,7 +172,7 @@ function collectSections(
   const pending = activeEntries(snapshot.ledger).filter((entry) => /伏笔|线索|悬念/.test(entry.predicate))
   sections.push({
     name: '待回收线索',
-    priority: 6,
+    priority: 7,
     chars: 0,
     kept: true,
     content: pending.length > 0
