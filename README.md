@@ -109,7 +109,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
 | `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
-| `novel_timeline` | anchors, spans, "what day is chapter N", recalls | an unreadable date or duration; it refuses instead of guessing |
+| `novel_timeline` | a start date, anchors, spans, "what day is chapter N", recalls | an unreadable date or duration; it refuses instead of guessing |
 
 ### Places, story points, and the clock (v0.14)
 
@@ -478,6 +478,21 @@ Relations now live in `canon/relations.json`, one edge per pair, both ends named
 
 A book written before v0.21 folds its card lines into edges on first read (`migrated: true`) and stops
 keeping a copy on the card.
+
+### A timeline is a line, not a table (v0.22)
+
+The timeline page used to list four tables — anchors, spans, recalls, and a chapter-by-chapter
+mapping. A table answers questions; it does not show shape. A book spanning three years and one
+spanning three weeks looked the same.
+
+Now it is a line. A start date (`bookStart`, e.g. `2020-10`) gets a dot, every twelve months after
+that gets another, the dots are joined, and chapters and anchors sit in the segment their date
+falls in, one bubble per event. A dense year reads as a dense year.
+
+The start can be pinned in the panel or with `novel_timeline action="start" when="2020-10"`. The
+panel pins the start and nothing else: dated anchors still come only from `novel_timeline
+action="anchor"`, because two ways of writing the same fact eventually disagree. Undated chapters
+are not pretended onto the line — they get their own short list and a count of what is missing.
 
 ## Non-goals
 

@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.21.0。
+> 最后更新：2026-10-25，对应 release v0.22.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）、`v0.22.0`（时间线是一条线：起点钉住、年点算出来、事件成气泡）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -425,6 +425,41 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
 
+### v0.22 时间线是一条线：起点钉住，年点是算出来的
+
+时间线以前是四张表（锚点/跨度/回忆/按章对照）。表能查，看不出形状。这一版画成一条线：
+起点一个点，往后每十二个月一个点，点与点连线，章节与锚点按日期落进对应的段，一个气泡一件事。
+
+- **域**（`src/domain/spine.ts`，纯投影，不写盘）：
+  `export interface SpineNode { at: number; label: string; kind: 'start' | 'year' }`、
+  `export interface SpineEvent { kind: 'anchor' | 'chapter'; chapter: number; at: number; label: string; text: string; note?: string; node: number }`、
+  `export interface Spine { start: number; nodes: SpineNode[]; events: SpineEvent[]; loose: SpineEvent[]; report: string }`、
+  `export interface SpineOptions { start?: string; stepMonths?: number; maxNodes?: number }`；
+  `buildSpine(snapshot, options): Spine`、`whenLabel(days, exact?)`、`addMonths(days, months)`。
+  起点优先级：`options.start` → `snapshot.project.bookStart` → 第一个锚点 → `windowAt(resolution, 1)`。
+  年点用 `addMonths(start, index * 12)`（保「同一个月日」）；`maxNodes` 默认 40；**一章一个气泡**，
+  锚点自述并进 `note`（渲染成「锚：…」），不另画一个。
+- **起点可钉**（`src/domain/book-start.ts`）：`async function setBookStart(store, when): Promise<string | undefined>`，
+  读不出日期就抛 `ClockFormatError`（不存猜测值），空串把 `bookStart` 从 `project.json` 里删掉。
+  `ProjectFile` 新增可选 `bookStart?: string`。
+- **工具**：`novel_timeline` 的 `action` 加 `start`；report 报「起点定在 …」或「起点清掉了」。
+- **面板**：`src/panel/entry.ts` 的 `timelinePage` 重写——`fields` 三个（起点/现在/体检）、一栏回忆、
+  一个 `spine`（`EntrySpine { report, points, loose }`，`points` 是 `{ when, kind, events }`），
+  `edit.inputs` 只有 `{ key: 'start', label: '起点（例如 2020-10；留空就回到第一个锚点）' }`。
+  `src/panel/serve.ts` 的 `writeEntry` 对 `kind === 'timeline'` 只接受 `fields.start`，其余 409 并指回
+  `novel_timeline`；`setBookStart` 抛错转 400，成功后重新 `readEntry`。
+- **客户端**：`function Spine(props)`（`client.js`），每年一个点 + 可折叠 + 气泡；轨道线**不是**绝对定位那条
+  竖线，而是每个点的 `borderLeft: 2px solid var(--iw-line-strong)` 自己接下去——一个点接着上一个点存在，
+  就不存在「某年三十章时高度算错」这件事。`Spine` 也挂在 `exports.tree` 上给测试用。
+- **测试**：`test/spine.test.ts` 9 例（守月日、31 日夹到 2 月、年点从钉住起点算、退回首锚、`loose`、
+  锚点与章卡合并、同年多章、`maxNodes` 截断）；`test/story.test.ts` 加 2 例（`action:'start'` 成功/清空/被拒）；
+  `test/entry.test.ts` 改 2 例；`test/panel.test.ts` 加 2 例（面板钉起点 200、非起点写入 409、读不出的起点 400 且不落盘）。
+  全量 **492 个用例（41 文件）**。
+- **预览**：`scripts/preview-timeline.mjs`（`npm run preview:timeline -- <书目录>`）加载真 `lib/domain/store.js`
+  + `lib/panel/entry.js` + 真 `client.js`（loader 垫片 + React 小桩），把时间线页渲染成 html 再截图。
+- **踩的坑**：`addMonths` 一度写成 `... / 1`（返回毫秒而不是天数），年点只出一个；`h('div', { className: 'iw-spine-rail' })`
+  那条绝对定位的轨道在真机上几乎看不见，改成每点 `borderLeft`。
+
 ### v0.21 关系是一张表：一条边两个名字，两页都能改
 
 v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了半句话：刘紫灵怎么当王上的妈写了，王上怎么
@@ -500,7 +535,7 @@ v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了�
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 462 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 492 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -626,10 +661,10 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.22 候选，按性价比排序）
+## 下一步（v0.23 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里看一眼关系表**：v0.21 的迁移（19 条边、`migrated: true`）在脚本里验过，
-   但「打开王上那一页，看见晨琳那一条、点进去能改」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19／v0.20 那几条链路。
+0. **让用户在他的 Desktop 应用里看一眼时间线**：v0.22 的线在预览里逐屏看过（`preview:timeline`），
+   但「钉一个 2020-10 的起点，看每年怎么长出来」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19／v0.20／v0.21 那几条链路。
 1. **把关系网接进上下文包**：关系现在是边表，但 `src/domain/briefing.ts` 还只按出场人物列卡，不列「这个人和谁是什么关系」「他走到哪一段了」。接法：取本章出场人物相关的边（`relationsOf`），对方也在本章时写「沈砚 与 阿鸢：彼此试探」，并取 `stages` 最后一段当作「他现在在哪」。
 2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）。
 3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
@@ -641,7 +676,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 479 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 492 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
