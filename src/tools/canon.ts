@@ -1,7 +1,7 @@
 /** `novel_canon`: character cards, world entries and place cards. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { updateCharacter } from '../domain/characters.ts'
+import { currentStage, recordTurn, updateCharacter } from '../domain/characters.ts'
 import type { CharacterRelation, CharacterRole, CharacterStage, PlaceCard, PlaceState } from '../domain/types.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ToolDeps } from './deps.ts'
@@ -89,14 +89,21 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_canon',
     description:
-      '管理角色卡、世界观与地点。upsert_character 写角色（name 必填，voice 是说话方式，必须填，用来防止所有角色一个腔调）；upsert_world 写势力/规则/物品/历史；upsert_place 记地点（正文里真正出现过的地点，写清这一章它长什么样、第几章出现的，同一地点再次变化时再写一次，旧状态会留在历史里）；list 列出当前全部设定。同一个 name 会覆盖旧卡。',
+      '管理角色卡、世界观与地点。upsert_character 写角色（name 必填，voice 是说话方式，必须填，用来防止所有角色一个腔调）；shift 记一个人的转变（从什么变成什么、第几章、因为什么事——旧的那一段会留在经历的阶段里，卡上的性格改成现在这个）；upsert_world 写势力/规则/物品/历史；upsert_place 记地点（正文里真正出现过的地点，写清这一章它长什么样、第几章出现的，同一地点再次变化时再写一次，旧状态会留在历史里）；list 列出当前全部设定。同一个 name 会覆盖旧卡。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['upsert_character', 'upsert_world', 'upsert_place', 'list'],
-        description: 'upsert_character 写角色 / upsert_world 写世界观 / upsert_place 记地点 / list 列表',
+        enum: ['upsert_character', 'shift', 'upsert_world', 'upsert_place', 'list'],
+        description: 'upsert_character 写角色 / shift 记角色转变 / upsert_world 写世界观 / upsert_place 记地点 / list 列表',
       },
+      chapter: {
+        type: 'number',
+        description: 'shift 用：转变发生在第几章（正整数），这一章里他已经是「现在」的样子；upsert_place 用：这条地点状态出现在第几章，设定阶段用 0',
+      },
+      from: { type: 'string', description: 'shift 用：原来是什么样（性格、想法、对人态度），写作者自己的话' },
+      to: { type: 'string', description: 'shift 用：现在是什么样；会覆盖卡上的 personality' },
+      cause: { type: 'string', description: 'shift 用：是什么事让他变成这样。没有原因的变化不算转变' },
       name: { type: 'string', description: '角色名、设定名或地点名，同名覆盖' },
       role: {
         type: 'string',
@@ -130,7 +137,6 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         items: { type: 'string' },
         description: '角色：别称（网名、绰号、别人当面叫的称呼）；地点：其他叫法，避免同一个地方被当成两个',
       },
-      chapter: { type: 'number', description: '这条地点状态出现在第几章；设定阶段用 0' },
       note: { type: 'string', description: '地点为什么变了，例如「搬走后重新装修」' },
     },
     output: {
@@ -182,6 +188,31 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
           characters: list.map((item) => item.name),
           world: (await store.world()).map((item) => item.name),
           report: [`已写入角色「${name}」（${card.role}），当前 ${list.length} 个角色。`, ...warnings].join('\n'),
+        }
+      }
+
+      if (args.action === 'shift') {
+        const name = args.name?.trim()
+        if (!name) throw new Error('shift 需要 name：要记谁的转变。')
+        const chapter = Number(args.chapter)
+        const card = await recordTurn(store, {
+          name,
+          chapter,
+          before: args.from ?? '',
+          after: args.to ?? '',
+          cause: args.cause ?? '',
+        })
+        const turn = currentStage(card)
+        return {
+          action: args.action,
+          name,
+          characters: (await store.characters()).map((item) => item.name),
+          world: (await store.world()).map((item) => item.name),
+          report: [
+            `记下「${name}」的转变：第${chapter}章，${turn?.text ?? ''}`,
+            '卡上的性格已经改成现在的样子；原来那一段留在「经历的阶段」里，写第' + `${chapter + 1}章的时候他已经是新的人。`,
+            '这不是设定改写，是一次有据可查的成长——写后续章节时按新的性格写，不要再按旧卡。',
+          ].join('\n'),
         }
       }
 

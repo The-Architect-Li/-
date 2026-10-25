@@ -38,7 +38,12 @@ export function cleanLines(lines: readonly string[]): string[] {
 /** Drop blank stages and blank relation names, keeping the order given. */
 export function cleanStages(stages: readonly CharacterStage[]): CharacterStage[] {
   return stages
-    .map((stage) => ({ label: stage.label.trim(), text: stage.text.trim() }))
+    .map((stage) => ({
+      label: stage.label.trim(),
+      text: stage.text.trim(),
+      ...(typeof stage.chapter === 'number' && Number.isFinite(stage.chapter) ? { chapter: stage.chapter } : {}),
+      ...(stage.cause === undefined || stage.cause.trim() === '' ? {} : { cause: stage.cause.trim() }),
+    }))
     .filter((stage) => stage.label !== '' || stage.text !== '')
 }
 
@@ -143,6 +148,84 @@ export async function updateCharacter(store: ProjectStore, name: string, edit: C
   if (notes !== undefined) card.notes = notes
   await store.upsertCharacter(card)
   return card
+}
+
+/** What one recorded turn says: who, where, from what, into what, and why. */
+export interface CharacterTurn {
+  /** The card's name, as stored. */
+  name: string
+  /** The chapter the turn shows in. */
+  chapter: number
+  /** Who he was before, in the author's words. */
+  before: string
+  /** Who he is after. This becomes the card's `personality` — the present tense. */
+  after: string
+  /** What did it. Required: a turn with no cause is a drift, not a turn. */
+  cause: string
+}
+
+/**
+ * Record a character turning, instead of a writer overwriting his personality.
+ *
+ * The card is written in the present tense — `personality` says who he is *now*,
+ * and it has no memory of who he used to be. That is why a rewrite loses the
+ * change: three chapters later nobody can tell 「他一直这么冷」 from 「他本来不
+ * 这样，是第 40 章那件事之后才这样的」. The difference is the whole character.
+ *
+ * So a turn appends a stage carrying the before, the chapter and the cause, and
+ * only then moves `personality` forward. The history is the record; the card is
+ * the current reading of it.
+ *
+ * @param store - the book.
+ * @param turn - the recorded turn.
+ * @returns the card after the turn.
+ * @throws when the card does not exist yet, since a turn is an edit, not a birth.
+ */
+export async function recordTurn(store: ProjectStore, turn: CharacterTurn): Promise<CharacterCard> {
+  const previous = (await store.characters()).find((card) => card.name === turn.name)
+  if (previous === undefined) {
+    throw new Error(`角色卡里还没有「${turn.name}」。先用 novel_canon action="upsert_character" 建卡，再记他的转变。`)
+  }
+  const before = turn.before.trim()
+  const after = turn.after.trim()
+  const cause = turn.cause.trim()
+  if (before === '' || after === '') throw new Error('转变要写清 from（原来）和 to（现在），差一个就不是转变。')
+  if (cause === '') throw new Error('转变要有 cause：是什么事让他变成这样的。没有原因的变化只是偏离。')
+  if (!Number.isInteger(turn.chapter) || turn.chapter < 1) {
+    throw new Error('转变要落在某一章上：chapter 必须是正整数。')
+  }
+
+  // The same turn recorded twice should not become two turns: a re-run of the
+  // same chapter is a correction, so the last word on that chapter wins.
+  const kept = (previous.stages ?? []).filter((stage) => stage.chapter !== turn.chapter)
+  const stage: CharacterStage = {
+    label: `第${turn.chapter}章 · ${after}`,
+    text: `原来是${before}。第${turn.chapter}章${cause}，之后${after}。`,
+    chapter: turn.chapter,
+    cause,
+  }
+  // Stages are told in book order; a turn found while writing chapter 12 does not
+  // belong after a stage that starts at chapter 40.
+  const stages = [...kept, stage].sort((left, right) => (left.chapter ?? 0) - (right.chapter ?? 0))
+
+  return await updateCharacter(store, turn.name, {
+    personality: after,
+    stages,
+  })
+}
+
+/**
+ * The stage a character is living in right now: the last one with a chapter.
+ *
+ * Undated stages are older than the recorded turns by construction — they came
+ * from an import that had no dates — so they never answer "now".
+ *
+ * @param card - the character card.
+ * @returns the current stage, or `undefined` when nobody recorded a turn.
+ */
+export function currentStage(card: CharacterCard): CharacterStage | undefined {
+  const dated = (card.stages ?? []).filter((stage) => typeof stage.chapter === 'number')
+  return dated.length === 0 ? undefined : dated[dated.length - 1]
 }
 
 /**

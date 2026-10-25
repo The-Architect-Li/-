@@ -196,7 +196,13 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
   const facts = snapshot.ledger.filter((entry) => entry.subject === name && entry.supersedes === null)
   const roleLabel = ROLE_LABEL[card.role] ?? card.role
   const aliases = (card.aliases ?? []).filter((alias) => alias.trim() !== '')
-  const stages = (card.stages ?? []).map((stage) => (stage.label === '' ? stage.text : `${stage.label}：${stage.text}`))
+  // A recorded turn carries a chapter and a cause; the panel says both, so the
+  // page reads as a life rather than a list of moods. Older stages keep the
+  // 阶段：发生了什么 shape they were imported with.
+  const stages = (card.stages ?? []).map((stage) => {
+    const head = stage.label === '' ? stage.text : `${stage.label}：${stage.text}`
+    return stage.chapter === undefined ? head : `第${stage.chapter}章起 — ${head}`
+  })
   const relations = relationsOf(snapshot.relations, snapshot.characters, name)
   const known = (other: string): boolean =>
     snapshot.characters.some((entry) => sameName(entry.name, other) || (entry.aliases ?? []).some((alias) => sameName(alias, other)))

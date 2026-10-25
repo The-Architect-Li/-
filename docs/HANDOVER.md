@@ -429,6 +429,18 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
 
+### v0.27 性格是现在时，转变是过去时
+
+角色卡只有现在时，这一次补上「他以前不是这样」。
+
+- **类型**（`src/domain/types.ts`）：`CharacterStage` 新增可选 `chapter?: number` 与 `cause?: string`。旧阶段（导入来的）没有这两个字段，照旧显示；`cleanStages` 只保留真实的数字章号与非空 cause。
+- **写入口**（`src/domain/characters.ts`）：`recordTurn(store, { name, chapter, before, after, cause })` → 「经历的阶段」追加 `{ label: `第${chapter}章 · ${after}`, text: `原来是${before}。第${chapter}章${cause}，之后${after}。`, chapter, cause }`，**然后**才 `updateCharacter(..., { personality: after, stages })`。同一章再记一次是改口（先 filter 掉同章），阶段按 `chapter ?? 0` 排序。拒绝条件：卡不存在（「先用 novel_canon action="upsert_character" 建卡」）、from/to 为空、cause 为空（「没有原因的变化只是偏离」）、chapter 不是正整数。`currentStage(card)` 返回最后一个带章号的阶段（无章号的阶段永远不是「现在」）。
+- **工具**（`src/tools/canon.ts`）：`action` 枚举加 `shift`，参数 `chapter`/`from`/`to`/`cause`（`chapter` 与 `upsert_place` 共用一个参数定义，描述里写明两种用法）。report 三行：记下了什么、卡上已改成现在、写下一章时按新的性格写。
+- **审核员**（`src/roles.ts` 的 `ROLES.character.persona`）：从「发现脱离人设」改成两种结论——没有铺垫的偏离报 `character/drift`（error）；像是有意的转变报 `character/shift`（warn），message 里把问题写成一句话问作者，并给出该填的 name/chapter/from/to/cause。
+- **上下文包**（`src/domain/briefing.ts` 的 `formatCharacter`）：出场角色那一行加 `现在：${personality}` 与 `转折：第${chapter}章${cause}`。
+- **面板**（`src/panel/entry.ts`）：阶段列表带「第N章起 — …」前缀。
+- **测试**：新建 `test/turns.test.ts` 7 例（先写阶段再推卡、旧阶段保留并按章排序、同章改口、四种拒绝、`novel_canon action="shift"` 的 report、上下文包里的「现在/转折」）。全量 **542 用例 / 46 文件**。
+
 ### v0.26 能算的交给算术，算不出的才交给模型
 
 两件事，一条原则。

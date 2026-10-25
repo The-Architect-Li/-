@@ -14,6 +14,7 @@ import type {
   Snapshot,
   StoryPoint,
 } from './types.ts'
+import { currentStage } from './characters.ts'
 import { describeWindow, resolveTimeline, windowAt } from './clock.ts'
 import { activeEntries } from './ledger.ts'
 import { describeRelation, relationsOf } from './relations.ts'
@@ -40,10 +41,13 @@ export interface BriefingResult {
 function formatCharacter(snapshot: Snapshot, name: string): string {
   const card = snapshot.characters.find((item) => item.name === name)
   if (!card) return `- ${name}（角色卡缺失）`
+  const stage = currentStage(card)
   const parts = [
     `**${card.name}**（${card.role}）`,
     card.voice ? `说话方式：${card.voice}` : '',
     card.appearance ? `外形：${card.appearance}` : '',
+    card.personality ? `现在：${card.personality}` : '',
+    stage === undefined ? '' : `转折：第${stage.chapter}章${stage.cause ?? ''}`,
     card.goal ? `目标：${card.goal}` : '',
     card.secret ? `隐秘：${card.secret}` : '',
   ].filter(Boolean)

@@ -30,6 +30,17 @@ export type CharacterRole = (typeof CHARACTER_ROLES)[number]
 export interface CharacterStage {
   label: string
   text: string
+  /**
+   * The chapter the stage opens on, when the author pinned it.
+   *
+   * Optional on purpose: a stage is allowed to span chapters, and inventing a
+   * number for one would be a fact the ledger has to defend later. But when a
+   * turn is recorded — "he stopped believing that in chapter 40" — the number is
+   * the whole point, and it is what makes 「他现在处在哪一段」 answerable.
+   */
+  chapter?: number
+  /** What turned him, in the author's words. Only a recorded turn has one. */
+  cause?: string
 }
 
 /**

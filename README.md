@@ -98,7 +98,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | Tool | Purpose | Refuses when |
 |---|---|---|
 | `novel_project` | init, status, premise, advance; books, open, close to switch books | premise too short, cast incomplete, no such book to open |
-| `novel_canon` | character cards (aliases, personality, appearance, stages, relations, status), world entries, places with per-chapter history | missing name, detail or kind; a relation or stage not written as "left: right" |
+| `novel_canon` | character cards (aliases, personality, appearance, stages, relations, status), recorded turns (`shift`), world entries, places with per-chapter history | missing name, detail or kind; a relation or stage not written as "left: right" |
 | `novel_outline` | volumes, chapter contracts, approval; `card` fills in the chapter card (recap, events, scene) | fewer than 2 beats, unknown character; a card naming someone with no character card, or naming no field at all |
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
@@ -110,6 +110,25 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
 | `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
 | `novel_timeline` | a start date, anchors, spans, "what day is chapter N", recalls, reading dates out of the prose | an unreadable date or duration; it refuses instead of guessing |
+
+### A person changes; the card holds the present tense (v0.27)
+
+`personality` says who a character is *now*, and it keeps no memory of who they
+were. Rewriting it is how growth gets lost: 「他一直这么冷」 and 「他本来不这样，
+是第 40 章那件事之后才这样的」 look identical once the old sentence is gone.
+
+So a turn is a record, not an overwrite:
+
+```
+novel_canon action="shift" name="沈砚" chapter="40" \
+  from="认死理，不肯把话圆" to="开始替人圆谎" cause="他把阿蘅送走以后"
+```
+
+It writes the stage (before, chapter, cause) first and only then moves the card
+forward. The character reviewer now reports two different things: `character/drift`
+when nothing set the change up, and `character/shift` — a question, not a verdict —
+when it looks deliberate. The chapter pack gains `现在：…` and `转折：第N章…`, so
+whoever writes chapter 86 meets the character as they are, not as they started.
 
 ### Places, story points, and the clock (v0.14)
 
