@@ -45,6 +45,12 @@ export async function gateToolCall(
 
   if (name === 'novel_project' && action === 'init') return null
 
+  // The book-switching actions exist *because* the session may be pointed at the
+  // wrong place: `books` lists what is here, `open` moves to another book, and
+  // `close` goes back to the workspace. Requiring a project first would make the
+  // escape hatch usable only by someone who does not need it.
+  if (name === 'novel_project' && (action === 'books' || action === 'open' || action === 'close')) return null
+
   if (!(await store.exists())) {
     // Naming the directory is the whole point: with per-workspace roots, "no
     // project" is ambiguous until the caller sees where we looked.

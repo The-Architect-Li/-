@@ -41,6 +41,26 @@ export function sessionCwdOf(exec: unknown): string | undefined {
 }
 
 /**
+ * Read a session's id out of a tool execution context.
+ *
+ * The id is what lets a conversation pin a book, so it is read the same guarded
+ * way as the cwd: a fake host in a test may hand over anything.
+ *
+ * @param exec - whatever the host passed as the execution context.
+ * @returns the session id, when the host reported one.
+ */
+export function sessionIdOf(exec: unknown): string | undefined {
+  if (typeof exec !== 'object' || exec === null) return undefined
+  const agent = (exec as { agent?: unknown }).agent
+  if (typeof agent !== 'object' || agent === null) return undefined
+  const session = (agent as { session?: unknown }).session
+  if (typeof session !== 'object' || session === null) return undefined
+  const id = (session as { id?: unknown }).id
+  if (typeof id !== 'string' || id.trim() === '') return undefined
+  return id
+}
+
+/**
  * Resolve a configured `root` against a session's cwd.
  *
  * An absolute root is used as-is: one book, one path, whatever the session. A

@@ -1,6 +1,7 @@
 /** Shared plumbing for the `novel_*` tools: findings formatting and deps. */
-import { resolveSessionRoot } from '../domain/scope.ts'
-import type { ProjectStore } from '../domain/store.ts'
+import { resolveSessionRoot, sessionIdOf } from '../domain/scope.ts'
+import { pinnedRoot, sessionsFile } from '../domain/session-books.ts'
+import { ProjectStore } from '../domain/store.ts'
 import type { Finding, InkwellConfig } from '../domain/types.ts'
 
 /** Severity glyphs, matching the marks used in tool reports. */
@@ -56,8 +57,8 @@ export interface ToolDeps {
   /**
    * Resolve the store for one call.
    *
-   * @param exec - the tool execution context; `agent.session.header.cwd` tells
-   *   us which workspace is asking.
+   * @param exec - the tool execution context; the session id picks a pinned
+   *   book and `agent.session.header.cwd` picks the workspace one.
    * @returns a store rooted at that session's project directory.
    */
   storeFor(exec: unknown): ProjectStore
@@ -66,13 +67,30 @@ export interface ToolDeps {
 /**
  * Build the deps for one plugin instance.
  *
+ * Resolution order, strongest first:
+ *
+ * 1. the book this session pinned with `novel_project action="open"`;
+ * 2. the session's own workspace (`perWorkspace`, a relative root);
+ * 3. the process-wide store.
+ *
+ * The pin is checked before the workspace because it is the more specific
+ * statement of intent: a writer who said "I am working on 雾港" outranks the
+ * directory they happen to sit in.
+ *
  * @param config - resolved plugin configuration.
  * @param baseStore - the store built at apply time from the process cwd.
- * @returns deps whose `storeFor` honours per-workspace resolution.
+ * @returns deps whose `storeFor` honours per-session pins and workspaces.
  */
 export function createDeps(config: InkwellConfig, baseStore: ProjectStore): ToolDeps {
   return {
     config,
-    storeFor: (exec) => resolveSessionRoot(exec, config, baseStore),
+    storeFor: (exec) => {
+      const sessionId = sessionIdOf(exec)
+      if (sessionId !== undefined) {
+        const pinned = pinnedRoot(sessionsFile(), sessionId)
+        if (pinned !== undefined) return new ProjectStore(pinned)
+      }
+      return resolveSessionRoot(exec, config, baseStore)
+    },
   }
 }

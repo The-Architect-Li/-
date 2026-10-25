@@ -13,8 +13,8 @@
  * titles, no text — so a stale entry costs one `exists()` and no privacy.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { bookKey, dshHome } from '../domain/home.ts'
 import type { ProjectStore } from '../domain/store.ts'
 import type { Phase } from '../domain/types.ts'
 
@@ -44,14 +44,11 @@ export interface LibraryBook {
 }
 
 /**
- * dsh's state directory.
+ * dsh's state directory, shared with the rest of the plugin.
  *
  * @returns `$DSH_HOME` when set (dsh itself honours it), else `~/.dsh`.
  */
-export function dshHome(): string {
-  const override = process.env.DSH_HOME?.trim()
-  return override !== undefined && override !== '' ? resolve(override) : join(homedir(), '.dsh')
-}
+export { bookKey, dshHome }
 
 /**
  * Where the shelf lives.
@@ -60,17 +57,6 @@ export function dshHome(): string {
  */
 export function libraryFile(): string {
   return join(dshHome(), 'inkwell', 'books.json')
-}
-
-/**
- * Normalise a root so two spellings of one book collide.
- *
- * @param root - any absolute path.
- * @returns the resolved path, lowercased on Windows where case is not identity.
- */
-export function bookKey(root: string): string {
-  const resolved = resolve(root)
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
 }
 
 /**

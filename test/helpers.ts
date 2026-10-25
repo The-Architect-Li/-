@@ -40,6 +40,8 @@ export type CallResult =
 export interface CallOptions {
   /** The session's working directory; omit to model a host that reports none. */
   cwd?: string
+  /** The session id; defaults to `parent-session`. Pins key off this. */
+  sessionId?: string
   /** Drop the agent entirely, to model a call made outside any session. */
   noAgent?: boolean
 }
@@ -170,7 +172,7 @@ export async function createHarness(
           ? undefined
           : {
               session: {
-                id: 'parent-session',
+                id: options.sessionId ?? 'parent-session',
                 ...(options.cwd === undefined ? {} : { header: { cwd: options.cwd } }),
               },
             },
