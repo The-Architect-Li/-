@@ -76,7 +76,7 @@ describe('planChapters', () => {
 })
 
 describe('planCast', () => {
-  it('routes sections onto the card, and keeps the rest as notes', () => {
+  it('routes sections onto the card, and keeps what it cannot place as notes', () => {
     const card = planCast(
       [
         source(
@@ -91,8 +91,12 @@ describe('planCast', () => {
             '## 隐性欲望',
             '- 内核：对当年被嘲笑的报复',
             '',
+            '## 经历',
+            '- 工地上：扛水泥，被人叫小名',
+            '',
             '## 关系网',
             '- 薛梦静：第一段收编的女人',
+            '- 这条没有冒号',
           ].join('\n'),
         ),
       ],
@@ -104,13 +108,27 @@ describe('planCast', () => {
     expect(card.role).toBe('protagonist')
     expect(card.appearance).toContain('一米七五出头')
     expect(card.goal).toContain('报复')
-    expect(card.notes).toContain('薛梦静')
+    expect(card.stages).toEqual([{ label: '工地上', text: '扛水泥，被人叫小名' }])
+    expect(card.relations).toEqual([{ name: '薛梦静', kind: '第一段收编的女人' }])
+    // A line under 关系网 that names nobody is still the writer's material.
+    expect(card.notes).toContain('这条没有冒号')
     expect(card.voice).toBe('')
     expect(card.updatedAt).toBe(NOW.toISOString())
   })
 
-  it('takes a voice bullet and marks everyone else supporting', () => {
-    const [lead, other] = planCast(
+  it('turns the bracketed names in a heading into aliases', () => {
+    const card = planCast(
+      [source('人物/刘紫灵.md', '# 刘紫灵（网名刘格格，正文里直接叫「格格」）\n\n## 关系网\n- 王上：压着的人')],
+      [],
+      NOW,
+    )[0]!.card
+    // The card keeps the heading as its name; renaming on import would leave the
+    // card that is already on disk sitting next to a second one.
+    expect(card.name).toBe('刘紫灵（网名刘格格，正文里直接叫「格格」）')
+    expect(card.aliases).toEqual(['刘格格', '格格', '刘紫灵'])
+  })
+
+  it('takes a voice bullet and marks everyone else supporting', () => {    const [lead, other] = planCast(
       [
         source('人物/甲.md', '## 说话方式\n- 短句，句尾常带「吧」。'),
         source('人物/乙.md', '# 乙\n\n## 外在底色\n- 外形：很高'),
@@ -243,7 +261,7 @@ describe('novel_import', () => {
     ) as CharacterCard[]
     expect(cast[0]!.name).toBe('王上')
     expect(cast[0]!.role).toBe('protagonist')
-    expect(cast[0]!.notes).toContain('薛梦静')
+    expect(cast[0]!.relations).toEqual([{ name: '薛梦静', kind: '第一段' }])
 
     const volumes = JSON.parse(
       await readFile(join(harness.root, 'outline', 'volumes.json'), 'utf8'),

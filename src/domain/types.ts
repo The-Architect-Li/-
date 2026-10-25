@@ -18,6 +18,35 @@ export const CHARACTER_ROLES = ['protagonist', 'antagonist', 'supporting', 'mino
 /** One character's structural position. */
 export type CharacterRole = (typeof CHARACTER_ROLES)[number]
 
+/**
+ * One stretch of a character's life, in the order the book tells it.
+ *
+ * A label plus what changed: 「工地上」→ 扛水泥、被人叫小名；「上势老板」→
+ * 开始有人替他挡酒。 The label is what the writer would say out loud; the text
+ * is what happened. Chapters are deliberately not a field here — a stage spans
+ * chapters, and pinning one number onto it would be a lie the ledger then has
+ * to defend.
+ */
+export interface CharacterStage {
+  label: string
+  text: string
+}
+
+/**
+ * A relationship as *this* card states it.
+ *
+ * Stored one-sided on purpose: 「王上 · 母女 · 刘紫灵」 lives on 刘紫灵's card, and
+ * the other side is derived by scanning the cast. Two copies of one fact drift
+ * apart the first time somebody edits one of them — the same reason volumes are
+ * a single field on the plan and not a reverse index on the volume.
+ */
+export interface CharacterRelation {
+  /** The other person's name, as their own card spells it. */
+  name: string
+  /** 「母女」「夫妻」「师徒」「对手」— free text, because books invent their own. */
+  kind: string
+}
+
 /** Root record of a project. */
 export interface ProjectFile {
   formatVersion: 1
@@ -40,10 +69,20 @@ export interface CharacterCard {
   appearance: string
   goal: string
   secret: string
+  /** Other names the book uses for this person: 网名、绰号、别人当面叫的称呼. */
+  aliases?: string[]
+  /** What they are like: temper, habits, what they do under pressure. */
+  personality?: string
+  /** The life they have lived so far, oldest first. */
+  stages?: CharacterStage[]
+  /** Who they are to whom, stated from this card's side. */
+  relations?: CharacterRelation[]
+  /** Where this person stands right now, as of the last chapter written. */
+  status?: string
   /**
-   * Material with no field of its own: a relationship map, a timeline, a note
-   * to self. Imported cards put what they could not classify here rather than
-   * dropping it, and the panel shows it under 其他.
+   * Material with no field of its own: a warning to self, a note about how a
+   * name should be spelled. Imported cards put what they could not classify
+   * here rather than dropping it, and the panel shows it under 其他.
    */
   notes?: string | undefined
   updatedAt: string

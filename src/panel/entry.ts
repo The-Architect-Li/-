@@ -17,6 +17,7 @@
 import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { presentInText } from '../domain/cards.ts'
+import { answersTo, inboundRelations } from '../domain/characters.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
@@ -144,24 +145,48 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
     .map((plan) => `第${plan.number}章 ${plan.title}`.trim())
   const facts = snapshot.ledger.filter((entry) => entry.subject === name && entry.supersedes === null)
   const roleLabel = ROLE_LABEL[card.role] ?? card.role
+  const aliases = (card.aliases ?? []).filter((alias) => alias.trim() !== '')
+  const stages = (card.stages ?? []).map((stage) => (stage.label === '' ? stage.text : `${stage.label}：${stage.text}`))
+  const relations = (card.relations ?? []).filter((relation) => relation.name.trim() !== '')
+  const inbound = inboundRelations(snapshot.characters, name)
   return {
     kind: 'character',
     title: card.name,
-    subtitle: `${roleLabel}${card.goal ? ` · ${card.goal}` : ''}`,
+    subtitle: `${roleLabel}${card.status ? ` · ${card.status}` : card.goal ? ` · ${card.goal}` : ''}`,
     chip: roleLabel,
     breadcrumb: ['人物设计', roleLabel],
     fields: [
-      { label: '说话方式', value: card.voice || '（还没写）' },
+      ...(aliases.length > 0 ? [{ label: '别称', value: aliases.join('、') }] : []),
+      { label: '性格', value: card.personality || '（还没写）' },
       { label: '外貌', value: card.appearance || '（还没写）' },
+      { label: '说话方式', value: card.voice || '（还没写）' },
       { label: '目标', value: card.goal || '（还没写）' },
       { label: '秘密', value: card.secret || '（还没写）' },
-      // Material the importer could not map onto a field of its own — the
-      // relationship web and growth lines a character sheet usually carries.
+      { label: '当前状态', value: card.status || '（还没写）' },
+      // Material the importer could not map onto a field of its own.
       // Hidden when empty so a hand-written card looks unchanged.
       ...(card.notes ? [{ label: '其他材料', value: card.notes }] : []),
       { label: '最近改动', value: card.updatedAt },
     ],
     lists: [
+      ...(stages.length > 0 ? [{ label: '经历的阶段', items: stages }] : []),
+      ...(relations.length > 0
+        ? [
+            {
+              label: '关系',
+              items: relations.map((relation) =>
+                snapshot.characters.some((other) => answersTo(other, relation.name))
+                  ? `${relation.name} —— ${relation.kind}`
+                  : `${relation.name} —— ${relation.kind}（角色卡里还没有这个人）`,
+              ),
+            },
+          ]
+        : []),
+      // The other side of every relation, derived on read. Editing happens on
+      // the card that states it, so one fact has one home.
+      ...(inbound.length > 0
+        ? [{ label: '别人写的', items: inbound.map((entry) => `${entry.from} —— ${entry.kind}`) }]
+        : []),
       ...(appearances.length > 0 ? [{ label: '出场章节', items: appearances }] : []),
       ...(facts.length > 0
         ? [{ label: '账本里的事实', items: facts.map((entry) => `${entry.predicate}＝${entry.value}${entry.chapter > 0 ? `（第${entry.chapter}章）` : '（设定）'}`) }]
@@ -170,10 +195,15 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
     edit: {
       inputs: [
         { key: 'role', label: '角色位置', value: card.role, options: ROLE_OPTIONS },
-        { key: 'voice', label: '说话方式', value: card.voice, multiline: true },
+        { key: 'aliases', label: '别称（用、分隔）', value: aliases.join('、') },
+        { key: 'personality', label: '性格', value: card.personality ?? '', multiline: true },
         { key: 'appearance', label: '外貌', value: card.appearance, multiline: true },
+        { key: 'voice', label: '说话方式', value: card.voice, multiline: true },
         { key: 'goal', label: '目标', value: card.goal },
         { key: 'secret', label: '秘密', value: card.secret, multiline: true },
+        { key: 'status', label: '当前状态', value: card.status ?? '', multiline: true },
+        { key: 'stages', label: '经历的阶段（一行一段：阶段：发生了什么）', value: stages.join('\n'), multiline: true },
+        { key: 'relations', label: '关系（一行一条：对方：关系）', value: relations.map((relation) => `${relation.name}：${relation.kind}`).join('\n'), multiline: true },
         { key: 'notes', label: '其他材料', value: card.notes ?? '', multiline: true },
       ],
     },

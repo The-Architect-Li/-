@@ -26,7 +26,7 @@
  */
 import { deriveSummary } from './save.ts'
 import { countChars, splitParagraphs } from './text.ts'
-import type { ChapterPlan, CharacterCard, CharacterRole, VolumeOutline } from './types.ts'
+import type { ChapterPlan, CharacterCard, CharacterRelation, CharacterRole, CharacterStage, VolumeOutline } from './types.ts'
 
 /** One markdown file lifted off the disk, before any interpretation. */
 export interface SourceFile {
@@ -288,7 +288,7 @@ function stripHeading(text: string, number: number): string {
 }
 
 /** Which card field a bullet belongs to, judged by its own key or its section. */
-type Slot = 'voice' | 'appearance' | 'goal' | 'secret' | 'notes'
+type Slot = 'voice' | 'appearance' | 'goal' | 'secret' | 'stages' | 'relations' | 'notes'
 
 /** Route one bullet by the words in front of its colon. */
 function slotOfKey(key: string, section: Slot): Slot {
@@ -302,17 +302,56 @@ function slotOfKey(key: string, section: Slot): Slot {
 /** Route a `## 标题` section by its heading. */
 function slotOfSection(heading: string): Slot {
   if (/说话|语气|口吻|语言|声音|台词/.test(heading)) return 'voice'
-  if (/外在|外貌|外形|形象|底色|履历|出身/.test(heading)) return 'appearance'
+  // 关系 before 外形: 「关系网」「人际」 are unmistakeable, while a heading that
+  // merely mentions a person's history is a stage.
+  if (/关系|人际|阵营|羁绊/.test(heading)) return 'relations'
+  if (/外在|外貌|外形|形象|底色|出身/.test(heading)) return 'appearance'
   if (/欲望|目标|动机|野心|想要/.test(heading)) return 'goal'
   if (/秘密|阈值|弱点|禁忌|软肋|心理/.test(heading)) return 'secret'
+  if (/经历|阶段|成长|年表|时间线|履历/.test(heading)) return 'stages'
   return 'notes'
+}
+
+/**
+ * Split one `左：右` line, or give up.
+ *
+ * @param line - a bullet's text with its marker removed.
+ * @returns both halves, or `undefined` when there is no colon to split on.
+ */
+function splitPair(line: string): { left: string; right: string } | undefined {
+  const match = /^([^：:]{1,40})[：:]\s*(.+)$/.exec(line)
+  if (match === null) return undefined
+  return { left: match[1]!.trim(), right: match[2]!.trim() }
+}
+
+/**
+ * Split the names out of a character file's heading.
+ *
+ * Writers label people the way the book does: 「刘紫灵（网名刘格格，正文里直接叫
+ * 「格格」）」. The parenthetical is exactly what `aliases` is for, and keeping the
+ * short form in it means a relation written as 「刘紫灵：母女」 still finds its
+ * person. The heading itself stays the card's name — renaming on import would
+ * write a second card next to the one already there.
+ *
+ * @param heading - the `# ` line of the file.
+ * @returns the name, and the other names the heading yields.
+ */
+function splitHeading(heading: string): { name: string; aliases: string[] } {
+  const match = /^(.+?)\s*[（(](.+)[）)]\s*$/.exec(heading)
+  if (match === null) return { name: heading, aliases: [] }
+  const name = match[1]!.trim()
+  const inner = match[2]!
+    .split(/[，,、;；]+/)
+    .map((part) => part.replace(/^(网名|昵称|绰号|外号|正文里(直接)?叫|人称|别名)\s*[：:]?\s*/, '').replace(/[「」“”"']/g, '').trim())
+    .filter((part) => part !== '')
+  return { name: heading, aliases: [...new Set([...inner, name].filter((alias) => alias !== '' && alias !== heading))] }
 }
 
 /**
  * Plan the character cards among a folder of markdown.
  *
- * Everything a card has no field for — a relationship map, a timeline, a
- * warning to the author — is kept in `notes` instead of being thrown away. A
+ * Everything a card has no field for — a warning to the author, a note about how
+ * a name should be spelled — is kept in `notes` instead of being thrown away. A
  * file that loses half its content on import teaches the writer not to trust
  * the importer.
  *
@@ -330,9 +369,18 @@ export function planCast(
   for (const file of files) {
     const text = file.text.replace(/^\uFEFF/, '')
     const heading = /^#\s+(.+)$/m.exec(text)?.[1]?.trim()
-    const name = heading ?? file.name.replace(/\.(md|markdown|txt)$/i, '').trim()
-    if (name === '') continue
-    const buckets: Record<Slot, string[]> = { voice: [], appearance: [], goal: [], secret: [], notes: [] }
+    const raw = heading ?? file.name.replace(/\.(md|markdown|txt)$/i, '').trim()
+    if (raw === '') continue
+    const { name, aliases } = splitHeading(raw)
+    const buckets: Record<Slot, string[]> = {
+      voice: [],
+      appearance: [],
+      goal: [],
+      secret: [],
+      stages: [],
+      relations: [],
+      notes: [],
+    }
     let section: Slot = 'notes'
     for (const raw of text.split(/\r?\n/)) {
       const line = raw.trim()
@@ -349,6 +397,21 @@ export function planCast(
       const slot = colon === null ? section : slotOfKey(colon[1]!, section)
       buckets[slot].push(body)
     }
+    // A stage or a relation is a pair; the file may still carry a plain line
+    // under that heading. Those go back to `notes` rather than being guessed at,
+    // so nothing arriving from disk is ever silently dropped.
+    const stages: CharacterStage[] = []
+    const relations: CharacterRelation[] = []
+    for (const line of buckets.stages) {
+      const pair = splitPair(line)
+      if (pair === undefined) buckets.notes.push(line)
+      else stages.push({ label: pair.left, text: pair.right })
+    }
+    for (const line of buckets.relations) {
+      const pair = splitPair(line)
+      if (pair === undefined) buckets.notes.push(line)
+      else relations.push({ name: pair.left, kind: pair.right })
+    }
     const role: CharacterRole = protagonistNames.includes(name) ? 'protagonist' : 'supporting'
     planned.push({
       card: {
@@ -358,6 +421,9 @@ export function planCast(
         appearance: buckets.appearance.join('\n'),
         goal: buckets.goal.join('\n'),
         secret: buckets.secret.join('\n'),
+        ...(aliases.length > 0 ? { aliases } : {}),
+        ...(stages.length > 0 ? { stages } : {}),
+        ...(relations.length > 0 ? { relations } : {}),
         notes: buckets.notes.join('\n'),
         updatedAt: now.toISOString(),
       },

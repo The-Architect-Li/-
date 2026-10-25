@@ -99,8 +99,8 @@ describe('character page', () => {
     expect(page.title).toBe('沈砚')
     expect(page.subtitle).toBe('主角 · 找到妹妹')
     expect(page.chip).toBe('主角')
-    expect(page.fields.map((field) => field.label)).toEqual(['说话方式', '外貌', '目标', '秘密', '最近改动'])
-    expect(page.fields[0]?.value).toBe('短句，问句多')
+    expect(page.fields.map((field) => field.label)).toEqual(['性格', '外貌', '说话方式', '目标', '秘密', '当前状态', '最近改动'])
+    expect(page.fields.find((field) => field.label === '说话方式')?.value).toBe('短句，问句多')
     // Only live facts belong on the card: a superseded one is history.
     const facts = page.lists.find((list) => list.label === '账本里的事实')
     expect(facts?.items).toEqual(['身份＝船工（第1章）'])
@@ -181,7 +181,19 @@ describe('editable projection', () => {
     const snapshot = book({ characters: [card('沈砚', 'protagonist', { voice: '短句', goal: '找到妹妹' })] })
     const page = buildEntry(snapshot, 'character', '沈砚', [], ROOT)
     expect(page?.breadcrumb).toEqual(['人物设计', '主角'])
-    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['role', 'voice', 'appearance', 'goal', 'secret', 'notes'])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual([
+      'role',
+      'aliases',
+      'personality',
+      'appearance',
+      'voice',
+      'goal',
+      'secret',
+      'status',
+      'stages',
+      'relations',
+      'notes',
+    ])
     expect(page?.edit.inputs.find((input) => input.key === 'voice')?.value).toBe('短句')
     // Role is a choice, not free text: the host supplies the options.
     expect(page?.edit.inputs.find((input) => input.key === 'role')?.options?.length).toBeGreaterThan(0)

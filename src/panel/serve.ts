@@ -53,6 +53,7 @@ import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
 import { chapterRanges } from '../domain/records.ts'
 import { MissingPlanError, updateCard } from '../domain/cards.ts'
+import { updateCharacter } from '../domain/characters.ts'
 import { assignVolume, readVolumes, shellPlan, splitVolumes, UNASSIGNED, type VolumeReport } from '../domain/volumes.ts'
 import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
@@ -1131,20 +1132,21 @@ export async function writeEntry(
       if (existing === undefined) {
         throw new PanelInputError(`找不到角色「${key}」。它可能刚被改名或删掉，刷新一下。`, 404)
       }
-      const card: CharacterCard = {
-        name: key,
-        role: edit.role ?? existing.role,
-        voice: edit.voice ?? existing.voice,
-        appearance: edit.appearance ?? existing.appearance,
-        goal: edit.goal ?? existing.goal,
-        secret: edit.secret ?? existing.secret,
-        // The stored card is replaced wholesale, so a field this edit does not
-        // mention has to be carried over here or it is deleted. `notes` is also
-        // the one field an empty string legitimately clears.
-        notes: edit.notes ?? existing.notes,
-        updatedAt: new Date().toISOString(),
-      }
-      await store.upsertCharacter(card)
+      // One merge function for every door (panel, tool, import), so a save that
+      // mentions only the voice cannot quietly delete the relationship map.
+      await updateCharacter(store, key, {
+        role: edit.role,
+        voice: edit.voice,
+        appearance: edit.appearance,
+        goal: edit.goal,
+        secret: edit.secret,
+        personality: edit.personality,
+        status: edit.status,
+        aliases: edit.aliases,
+        stages: edit.stages,
+        relations: edit.relations,
+        notes: edit.notes,
+      })
     } else if (kind === 'world') {
       const edit = readWorldPatch(key, patch)
       const existing = (await store.world()).find((entry) => entry.name === key)

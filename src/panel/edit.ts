@@ -6,7 +6,7 @@
  * are deliberately generous but finite: a paste of two megabytes into a voice
  * field is a mistake, not a style.
  */
-import { CHARACTER_ROLES, type CharacterRole } from '../domain/types.ts'
+import { CHARACTER_ROLES, type CharacterRelation, type CharacterRole, type CharacterStage } from '../domain/types.ts'
 import { PanelInputError } from './dirs.ts'
 
 /** Longest a free-text canon field may be. */
@@ -26,13 +26,18 @@ export const MAX_CHAPTER_CHARS = 200_000
 /** Longest a chapter title or one-line summary may be. */
 export const MAX_TITLE_CHARS = 120
 
-/**
- * Longest a chapter card's recap may be.
+/** Longest a chapter card's recap may be.
  *
  * A card says what happened in a paragraph or two, not in the chapter's length;
  * this is the ceiling that keeps a pasted chapter from becoming a card.
  */
 export const MAX_STORY_CHARS = 4000
+
+/** Longest one stage of a character's life may be. */
+export const MAX_STAGE_CHARS = 2000
+
+/** Longest one relation line may be, both halves counted together. */
+export const MAX_RELATION_CHARS = 400
 
 function readText(body: Record<string, unknown>, key: string, limit: number, label: string): string | undefined {
   const value = body[key]
@@ -43,6 +48,71 @@ function readText(body: Record<string, unknown>, key: string, limit: number, lab
   return trimmed
 }
 
+/**
+ * Read a list typed into one box.
+ *
+ * Aliases are written the way a person writes them — 「王总、上势老板, 老王」— so
+ * every separator a Chinese keyboard produces is accepted, plus one per line.
+ *
+ * @param body - the submitted fields.
+ * @param key - which field.
+ * @param limit - longest single item.
+ * @param label - how to name it in an error.
+ * @returns the list, or `undefined` when the field was not submitted.
+ */
+function readList(
+  body: Record<string, unknown>,
+  key: string,
+  limit: number,
+  label: string,
+): string[] | undefined {
+  const raw = readText(body, key, limit * 50, label)
+  if (raw === undefined) return undefined
+  const items = raw
+    .split(/[\n、，,/／;；]+/)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  for (const item of items) {
+    if (item.length > limit) throw new PanelInputError(`${label} 有一项太长了（上限 ${limit} 字）：${item.slice(0, 20)}…`)
+  }
+  return items
+}
+
+/**
+ * Read lines that each carry two halves, separated by a colon.
+ *
+ * `工地上：扛水泥，被人叫小名` for a stage, `刘紫灵：母女` for a relation. The
+ * colon is required: a line without one is a typo the writer wants to hear
+ * about, not a value to guess at.
+ *
+ * @param body - the submitted fields.
+ * @param key - which field.
+ * @param limit - longest single line.
+ * @param label - how to name it in an error.
+ * @param shape - the example shown when a line has no colon.
+ * @returns pairs, or `undefined` when the field was not submitted.
+ */
+function readPairs(
+  body: Record<string, unknown>,
+  key: string,
+  limit: number,
+  label: string,
+  shape: string,
+): { left: string; right: string }[] | undefined {
+  const raw = readText(body, key, limit * 100, label)
+  if (raw === undefined) return undefined
+  const pairs: { left: string; right: string }[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim().replace(/^[-*·]\s*/, '')
+    if (trimmed === '') continue
+    if (trimmed.length > limit) throw new PanelInputError(`${label} 有一行太长了（上限 ${limit} 字）。`)
+    const colon = /^([^：:]{1,40})[：:]\s*(.+)$/.exec(trimmed)
+    if (colon === null) throw new PanelInputError(`${label} 每一行都要写成「${shape}」：${trimmed.slice(0, 20)}`)
+    pairs.push({ left: colon[1]!.trim(), right: colon[2]!.trim() })
+  }
+  return pairs
+}
+
 /** A validated character-card patch: every field optional, omit to keep. */
 export interface CharacterPatch {
   name: string
@@ -51,6 +121,11 @@ export interface CharacterPatch {
   appearance?: string | undefined
   goal?: string | undefined
   secret?: string | undefined
+  personality?: string | undefined
+  status?: string | undefined
+  aliases?: string[] | undefined
+  stages?: CharacterStage[] | undefined
+  relations?: CharacterRelation[] | undefined
   notes?: string | undefined
 }
 
@@ -64,7 +139,7 @@ export interface CharacterPatch {
  * @param key - the character's current name, from the route.
  * @param body - the submitted fields.
  * @returns the patch to apply.
- * @throws {PanelInputError} when a field is the wrong type or too long.
+ * @throws {PanelInputError} when a field is the wrong type, the wrong shape or too long.
  */
 export function readCharacterPatch(key: string, body: Record<string, unknown>): CharacterPatch {
   const patch: CharacterPatch = { name: key }
@@ -79,6 +154,13 @@ export function readCharacterPatch(key: string, body: Record<string, unknown>): 
   patch.appearance = readText(body, 'appearance', MAX_FIELD_CHARS, '外形')
   patch.goal = readText(body, 'goal', MAX_FIELD_CHARS, '目标')
   patch.secret = readText(body, 'secret', MAX_FIELD_CHARS, '秘密')
+  patch.personality = readText(body, 'personality', MAX_FIELD_CHARS, '性格')
+  patch.status = readText(body, 'status', MAX_FIELD_CHARS, '当前状态')
+  patch.aliases = readList(body, 'aliases', MAX_TITLE_CHARS, '别称')
+  const stages = readPairs(body, 'stages', MAX_STAGE_CHARS, '经历的阶段', '阶段：发生了什么')
+  if (stages !== undefined) patch.stages = stages.map((pair) => ({ label: pair.left, text: pair.right }))
+  const relations = readPairs(body, 'relations', MAX_RELATION_CHARS, '关系', '对方：关系')
+  if (relations !== undefined) patch.relations = relations.map((pair) => ({ name: pair.left, kind: pair.right }))
   patch.notes = readText(body, 'notes', MAX_NOTES_CHARS, '其他材料')
   return patch
 }

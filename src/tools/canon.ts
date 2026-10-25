@@ -1,13 +1,57 @@
 /** `novel_canon`: character cards, world entries and place cards. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { CharacterCard, CharacterRole, PlaceCard, PlaceState } from '../domain/types.ts'
+import { updateCharacter } from '../domain/characters.ts'
+import type { CharacterRelation, CharacterRole, CharacterStage, PlaceCard, PlaceState } from '../domain/types.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ToolDeps } from './deps.ts'
 
 function asRole(value: string | undefined): CharacterRole {
   if (value && (CHARACTER_ROLES as readonly string[]).includes(value)) return value as CharacterRole
   return 'supporting'
+}
+
+/**
+ * Read one `左：右` line into its halves.
+ *
+ * The colon is the contract: 「刘紫灵：母女」 states something, 「刘紫灵」 alone does
+ * not, and guessing which half is missing would put a name in the wrong field.
+ *
+ * @param line - one entry from the array argument.
+ * @param shape - the example quoted back when the line is malformed.
+ * @param field - which argument, for the error message.
+ * @returns the two halves, trimmed.
+ */
+function pairOf(line: string, shape: string, field: string): { left: string; right: string } {
+  const match = /^([^：:]{1,60})[：:]\s*(.+)$/.exec(line.trim())
+  if (match === null) throw new Error(`${field} 每一条都要写成「${shape}」，收到的是：${line}`)
+  return { left: match[1]!.trim(), right: match[2]!.trim() }
+}
+
+/**
+ * Turn the tool's `阶段：发生了什么` lines into stages.
+ *
+ * @param lines - the array argument as given.
+ * @returns stages in the order given.
+ */
+function asStages(lines: readonly string[]): CharacterStage[] {
+  return lines.map((line) => {
+    const pair = pairOf(line, '阶段：发生了什么', 'stages')
+    return { label: pair.left, text: pair.right }
+  })
+}
+
+/**
+ * Turn the tool's `对方：关系` lines into relations.
+ *
+ * @param lines - the array argument as given.
+ * @returns relations in the order given.
+ */
+function asRelations(lines: readonly string[]): CharacterRelation[] {
+  return lines.map((line) => {
+    const pair = pairOf(line, '对方：关系', 'relations')
+    return { name: pair.left, kind: pair.right }
+  })
 }
 
 /**
@@ -65,11 +109,27 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       secret: { type: 'string', description: '不愿被人知道的事' },
       notes: {
         type: 'string',
-        description: '关系网、成长线这类归不到上面几个字段的材料；不填则保留原样',
+        description: '归不到具体字段的材料（给自己看的提示、名字怎么写）；不填则保留原样',
+      },
+      personality: { type: 'string', description: '性格：脾气、习惯、被逼到墙边时会怎么做' },
+      status: { type: 'string', description: '当前状态：到目前这一章为止，这个人处在什么境地' },
+      stages: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '经历的阶段，按时间顺序，每条形如「阶段：发生了什么」，例如「工地上：扛水泥，被人叫小名」',
+      },
+      relations: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '关系，每条形如「对方：关系」，例如「刘紫灵：母女，但彼此不认」；只写这张卡这一侧，另一侧由面板自动反查',
       },
       kind: { type: 'string', description: '世界观条目类型，或地点的类别（室内/街区/机构/城市）' },
       detail: { type: 'string', description: '世界观条目的内容；对地点是它现在长什么样' },
-      aliases: { type: 'array', items: { type: 'string' }, description: '地点的其他叫法，避免同一个地方被当成两个' },
+      aliases: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '角色：别称（网名、绰号、别人当面叫的称呼）；地点：其他叫法，避免同一个地方被当成两个',
+      },
       chapter: { type: 'number', description: '这条地点状态出现在第几章；设定阶段用 0' },
       note: { type: 'string', description: '地点为什么变了，例如「搬走后重新装修」' },
     },
@@ -95,23 +155,24 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       if (args.action === 'upsert_character') {
         const name = args.name?.trim()
         if (!name) throw new Error('upsert_character 需要 name。')
-        // A card written here replaces the old one wholesale, so anything this
-        // call does not mention has to be carried over by hand — the imported
-        // `notes` (relationship web, growth lines) would otherwise vanish the
-        // first time the model touched the card.
-        const previous = (await store.characters()).find((item) => item.name === name)
-        const notes = args.notes === undefined ? previous?.notes : args.notes.trim()
-        const card: CharacterCard = {
-          name,
-          role: asRole(args.role),
-          voice: args.voice?.trim() ?? '',
-          appearance: args.appearance?.trim() ?? '',
-          goal: args.goal?.trim() ?? '',
-          secret: args.secret?.trim() ?? '',
-          ...(notes === undefined || notes === '' ? {} : { notes }),
-          updatedAt: new Date().toISOString(),
-        }
-        const list = await store.upsertCharacter(card)
+        // A card is a whole object, so anything this call does not mention has
+        // to be carried over by hand. `updateCharacter` is that one place: the
+        // panel writes through it too, and undefined means "keep the old value"
+        // for every field — including the ones only an import ever filled.
+        const card = await updateCharacter(store, name, {
+          role: args.role === undefined ? undefined : asRole(args.role),
+          voice: args.voice,
+          appearance: args.appearance,
+          goal: args.goal,
+          secret: args.secret,
+          personality: args.personality,
+          status: args.status,
+          aliases: args.aliases,
+          stages: args.stages === undefined ? undefined : asStages(args.stages),
+          relations: args.relations === undefined ? undefined : asRelations(args.relations),
+          notes: args.notes,
+        })
+        const list = await store.characters()
         const warnings = card.voice.trim() === ''
           ? ['\n注意：voice 为空。没有说话方式的角色，写出来会和别人一个腔调，建议补上。']
           : []

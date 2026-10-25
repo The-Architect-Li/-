@@ -6,9 +6,50 @@
  * gets a revision, cards through `upsertCharacter` so names collide correctly.
  * That rule lives here once.
  */
-import { PHASES, type Phase } from './types.ts'
+import { PHASES, type CharacterCard, type Phase } from './types.ts'
 import type { ImportPlan } from './import-scan.ts'
 import type { ProjectStore } from './store.ts'
+
+/**
+ * Fill a card in, without overwriting anything already written.
+ *
+ * The second import of the same folder must be safe: by then the writer has
+ * probably typed a status or a relation that the 人物/*.md file never had, and a
+ * whole-card replace would take those away. So an imported value only lands
+ * where the stored one is empty — the same rule the premise follows, for the
+ * same reason.
+ *
+ * @param previous - the card on disk, when there is one.
+ * @param incoming - the card the plan wants to write.
+ * @returns the card to store.
+ */
+function topUpCard(previous: CharacterCard | undefined, incoming: CharacterCard): CharacterCard {
+  if (previous === undefined) return incoming
+  const pick = (field: 'voice' | 'appearance' | 'goal' | 'secret' | 'personality' | 'status' | 'notes', next: string | undefined): string | undefined => {
+    const stored = previous[field]
+    if (stored !== undefined && stored.trim() !== '') return stored
+    return next
+  }
+  const card: CharacterCard = {
+    ...previous,
+    role: previous.role === 'supporting' && incoming.role !== 'supporting' ? incoming.role : previous.role,
+    voice: pick('voice', incoming.voice) ?? '',
+    appearance: pick('appearance', incoming.appearance) ?? '',
+    goal: pick('goal', incoming.goal) ?? '',
+    secret: pick('secret', incoming.secret) ?? '',
+    updatedAt: new Date().toISOString(),
+  }
+  const personality = pick('personality', incoming.personality)
+  if (personality !== undefined) card.personality = personality
+  const status = pick('status', incoming.status)
+  if (status !== undefined) card.status = status
+  const notes = pick('notes', incoming.notes)
+  if (notes !== undefined) card.notes = notes
+  if ((previous.aliases ?? []).length === 0 && (incoming.aliases ?? []).length > 0) card.aliases = incoming.aliases
+  if ((previous.stages ?? []).length === 0 && (incoming.stages ?? []).length > 0) card.stages = incoming.stages
+  if ((previous.relations ?? []).length === 0 && (incoming.relations ?? []).length > 0) card.relations = incoming.relations
+  return card
+}
 
 /** What one apply wrote. */
 export interface AppliedImport {
@@ -47,7 +88,8 @@ export async function applyImport(
   }
   for (const volume of plan.volumes) await store.upsertVolume(volume)
   for (const chapterPlan of plan.plans) await store.upsertPlan(chapterPlan)
-  for (const { card } of plan.cast) await store.upsertCharacter(card)
+  const cards = new Map((await store.characters()).map((card) => [card.name, card]))
+  for (const { card } of plan.cast) await store.upsertCharacter(topUpCard(cards.get(card.name), card))
 
   let written = 0
   let skipped = 0
