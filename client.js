@@ -1180,6 +1180,17 @@ window.__ModuleLoader__.load({
 }
 .iw-row-sel:focus-visible { box-shadow: inset 2px 0 0 var(--iw-accent), 0 0 0 2px var(--iw-accent-soft); }
 
+/* Windows ------------------------------------------------------------------ */
+/* A drawer that was cut down to a scroll box should look cut, not broken: the
+   last visible rows fade out, so "there is more below" is visible without a
+   second scrollbar. */
+.iw-window {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  scrollbar-width: thin;
+}
+.iw-window:focus-within { -webkit-mask-image: none; mask-image: none; }
+
 /* Shelf links -------------------------------------------------------------- */
 .iw-link { cursor: pointer; color: var(--iw-fg-3); }
 .iw-link:hover { color: var(--iw-fg); background-color: var(--iw-surface-hover); }
