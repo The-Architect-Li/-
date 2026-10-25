@@ -306,11 +306,14 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   `action: "assign"`（`chapters[]` + `volume: number | null`）或 `"split"`（`perVolume`），
   其它 action 与越界参数一律 400，`RangeError` 也映射成 400。写路由由此变六扇门。
 - `client.js`：`VirtualRows`（常量 `ROW_H = 30`、`WINDOW_H = 320`、`OVERSCAN = 4`、
-  `VIRTUAL_AT = 40`）只挂窗口内的行，`Row` 在「子节点全是叶子且超过 40」时用它；
-  `WindowList` 是给弹窗的同类窗口；`VolumesDialog` 有手动（逐章勾选 + 归到哪一卷）与
-  自动（每卷几章）两种模式。
-- 测试：`test/volumes.test.ts`（12 例，纯函数 + 真 HTTP）、`test/client-window.test.ts`
-  （3 例：300 章只挂十几行、5 章仍走普通 map、弹窗文案与 `aria-label`）。
+  `VIRTUAL_AT = 40`）只挂窗口内的行；`Section` 先用 `flattenRows` 把抽屉拍平成「可见行」，
+  超过 40 行就整抽屉走窗口（v0.17.1：以前按「一个父行的叶子数」判断，分好卷的书每卷
+  十几二十章永远不触发，六个卷全展开仍是九十多行）；`Row` 的 `flat` 表示子行已由窗口另画，
+  不再重复递归。`WindowList` 是给弹窗的同类窗口；`VolumesDialog` 有手动（逐章勾选 +
+  归到哪一卷）与自动（每卷几章）两种模式。
+- 测试：`test/volumes.test.ts`（13 例，纯函数 + 真 HTTP）、`test/client-window.test.ts`
+  （5 例：整抽屉超 40 行只挂十几行、按可见行而不是顶层行计、5 章仍走普通 map、折叠的卷
+  只算一行、弹窗文案与 `aria-label`）。
 
 两条铁律：**卷号只存 `plan.volume`**（三个入口写同一处）；**重新划分是搬章节，不是删章节**。
 
