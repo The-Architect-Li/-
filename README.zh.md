@@ -101,7 +101,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 你：novel_ledger action="record" subject="沈砚" predicate="左眼颜色" value="黑" chapter=1 quote="他的左眼黑得像井"
 ```
 
-## 十个工具
+## 十一个工具
 
 | 工具 | 作用 | 会拒绝你的情况 |
 |---|---|---|
@@ -115,6 +115,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
 | `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
 | `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
+| `novel_import` | scan 只读盘点已有稿件（正文/人物/大纲），apply 才写入；已存在的章默认不覆盖 | 目录不存在、不是绝对路径、同名章没给 overwrite |
 
 ## 小说工坊流水线（v0.2）
 
@@ -139,6 +140,18 @@ v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派�
 
 **写完能交出去。** `novel_export action="text"` 整本 txt、`action="markdown"` 按卷分文件、`action="canon"` 设定集（人物 / 世界观 / 分卷 / 章纲 / 仍然成立的事实表），默认写进 `<项目>/exports/`。
 
+**已经写了的能拿进来（v0.12）。** 稿子放在 `正文/`、`人物/`、`大纲/全书大纲.md` 这种形状里，`novel_import action="scan" dir="C:\你的稿子"` 先看一眼会写多少章、多少字、几卷几条章纲，`action="apply"` 才落盘。`scan` 不写任何文件，也不要求书先存在：
+
+```text
+novel_import action="scan"  dir="C:\Users\you\Documents\小说\待定v2"
+novel_import action="apply" dir="C:\Users\you\Documents\小说\待定v2"
+novel_import action="apply" dir="…" overwrite=true     # 已有的章也重写（默认只补新章）
+```
+
+认的三种形状：`正文/第N章-标题-v1.md`（章号认「第N章」与全角数字，同一章有两份取更长的那份）、`人物/姓名.md`（`## 外在底色` → 外形、`## 隐性欲望` → 目标、`## 心理阈值` → 秘密，其余小节原样进卡上的 `notes`）、`大纲/全书大纲.md`（`> 一句话立意` 成前提、`> 主角：王上` 决定谁进「主角」、`## 卷一·翻身（第1–11章）` 成分卷、`- 第1章 裂缝：一句话` 直接当章纲节拍）。
+
+**导入不替你编说话方式。** 人物稿里没写「说话方式」那一节，卡上的 `voice` 就留空，扫描报告里点名缺哪几张：「说话方式还空着：王上、薛梦静 等（6 张卡）……补齐才能推进到「大纲」阶段，闸门会拦」。宁可留白让人自己填，也不按名字编一口腔调——那正是这个插件要防的事。
+
 **按角色配模型：** 写手用 GLM、审核用 DeepSeek，随你。`novel_roles set` 把选择存进**这本书**的 `project.json`，不动全局；没设的角色继承当前会话模型。模型密钥永远留在 DSH 设置里，插件只记 provider/model 名字——它不知道你的 key。
 
 每个角色还能单独钉 `reasoningEffort`（推理档位）。取值由供应商适配器决定，插件只透传不校验：
@@ -153,7 +166,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -208,10 +221,13 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   `connectWorkspace()` 拿到会话、把一个会话钉到这本书、再 `openSession()` 跳过去。于是侧边栏工作区
   里多了这个文件夹，而你已经坐在那个目录下的新聊天里。这个工作区里的会话都看这本书，别的文件夹看别的
   ——「会话互通、跨工作区不互通」是工作区本来就有的语义，面板只是把你的选择落进去。
+- **建之前先看一眼文件夹里有什么**（v0.12）：选完目录会顺手扫（`GET /scan`，只读）。有稿件时弹窗里多一行
+  勾选框「建好之后把这些稿件导进来（85 章正文、6 张角色卡、6 卷大纲）」，默认勾上；建完立刻导入，
+  落点提示写「导进来 85 章、35.1 万字、6 张卡」。没勾就只建书。
 - **不含糊。** 目录里已经有书就报「已经有《…》」并给「打开这本书」，不覆盖；相对路径一律 400，绝不让宿主进程的 cwd 替用户猜。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
-- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 9 个工具，只是没有面板。
+- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 11 个工具，只是没有面板。
 
 宿主侧接口：
 

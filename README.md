@@ -107,6 +107,25 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
+| `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
+
+### Bringing an existing manuscript in (v0.12)
+
+- **Look before writing.** `novel_import action="scan" dir="C:\your\manuscript"` reads `正文/`,
+  `人物/`, and `大纲/全书大纲.md` and reports how many chapters, characters, volumes, and contracts
+  it found. Nothing is written, and the scan works before the book exists.
+  `action="apply"` writes it. Importing twice is safe: existing chapters are skipped unless you pass
+  `overwrite=true`.
+- **It reads the shape you already use.** `正文/第N章-标题-v1.md` (full-width digits, a `-v1`
+  suffix, and the longer of two files claiming one chapter), `人物/姓名.md` (`## 外在底色` → look,
+  `## 隐性欲望` → goal, `## 心理阈值` → secret, everything else kept verbatim in the card's
+  `notes`), and `大纲/全书大纲.md` (`> 一句话立意` becomes the premise, `> 主角：王上` decides who
+  is the lead, `## 卷一·翻身（第1–11章）` becomes a volume, and `- 第1章 裂缝：一句话` becomes a
+  contract beat).
+- **It will not invent a voice.** A character file with no "how they talk" section leaves `voice`
+  empty, and the report names the cards you still owe: "说话方式还空着：王上、薛梦静 等（6 张卡）".
+  The phase gate holds until they are filled. Leaving a blank for the author beats having a model
+  guess a register from a name — which is the thing this plugin exists to prevent.
 
 ### Review notes, versions, switching books, export (v0.10)
 
@@ -133,7 +152,9 @@ v0.5 turns it into a drawer tree, and gives it the one write it needs: creating 
 book without going back to the conversation. v0.7 folds every drawer on open and
 makes each row open its own page. v0.8 makes those pages editable — and gives the
 chapter page a preview/edit split. v0.9 puts a shelf in front of it: 小说工坊 is
-the workbench, and a book is something you pick inside it.
+the workbench, and a book is something you pick inside it. v0.11 makes "New" one
+click, from the folder chooser to a fresh conversation in that workspace; v0.12
+lets it bring an existing manuscript along.
 
 ```text
 ▤ 小说工坊                        ＋ New   Refresh
@@ -206,6 +227,11 @@ Pick one and you get that book's tree:
   (`POST /api/inkwell/pin`), and navigates to it (`openSession`). You end up in a
   fresh conversation under that folder, with the workspace in the sidebar; that
   workspace sees this book, other folders see theirs.
+- **It looks inside the folder first** (v0.12). Choosing a directory triggers a
+  read-only scan (`GET /scan`). When there is a manuscript in it, the card grows
+  one checkbox — "导进来（85 章正文、6 张角色卡、6 卷大纲）", ticked by default —
+  and creating the book imports it on the spot, reporting "导进来 85 章、35.1 万字".
+  Unticked, you get an empty book as before.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
@@ -216,7 +242,7 @@ Pick one and you get that book's tree:
   resolves the book from the session's pin, else its `cwd`, so switching sessions
   switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
-  profile has no web server and still gets all ten tools.
+  profile has no web server and still gets all eleven tools.
 
 The host routes, polled by the browser half:
 

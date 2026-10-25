@@ -1,17 +1,17 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.11.0。
+> 最后更新：2026-10-25，对应 release v0.12.0。
 
 ## 一句话
 
-dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）、抽屉里点开即看的人物／设定／章节详情页（v0.7）、可随手编辑的二级页面（v0.8）、先看书再进书的那层书库（v0.9）、会回应的鼠标悬停与键盘操作（v0.9.2）和把审稿意见、章节版本、换书与导出都落到磁盘上的那一层（v0.10），以及「点一下新建就落在自己的新工作区里」的那一步（v0.11）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
+dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替你写**，而是管住写的那双手：阶段闸门、事实账本、章纲合同、确定性扫描、预算内上下文包，外加一套指挥官流水线（v0.2）、按会话解析的项目根（v0.3）、右侧栏的小说工坊面板（v0.4）、面板里的抽屉树 + 选目录建书（v0.5）、面板里的智能体团队与模型选择（v0.6）、抽屉里点开即看的人物／设定／章节详情页（v0.7）、可随手编辑的二级页面（v0.8）、先看书再进书的那层书库（v0.9）、会回应的鼠标悬停与键盘操作（v0.9.2）和把审稿意见、章节版本、换书与导出都落到磁盘上的那一层（v0.10），以及「点一下新建就落在自己的新工作区里」的那一步（v0.11），和把已经写了的稿子扫一遍导进来的那一层（v0.12）。原则是**代码强制 > 提示词自律**——靠模型自觉守的规则，写到 40 万字一定失守。
 
 ## 仓库现状
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -39,7 +39,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 ### v0.3 多工作区 + 推理档位 + 真的能装
 
 - **项目根按会话解析**：`src/domain/scope.ts` 的 `resolveSessionRoot(exec, config, baseStore)` 取代了挂载期的一次性 `resolve`。`exec.agent.session.header.cwd` 是权威答案；绝对 `root` 仍钉死一本书；读不到 cwd 退回共享 store；`perWorkspace: false` 完整回到 v0.2。
-- **`ToolDeps` 不再持有 store**，改为 `storeFor(exec)`。九个工具与门禁用同一份解析结果，杜绝「在这本批准、往那本写」。
+- **`ToolDeps` 不再持有 store**，改为 `storeFor(exec)`。十一个工具与门禁用同一份解析结果，杜绝「在这本批准、往那本写」。
 - **推理档位**：角色路由四字段 `provider/model/maxTokens/reasoningEffort`，原样塞进 `agentOptions`。`ReasoningEffortId` 是 branded string，取值由供应商适配器决定，插件不校验。
 - **三态字段覆盖**：`src/domain/fields.ts` 的 `mergeField` / `mentioned` / `concrete`。工具层用空串（`maxTokens` 用 `0`）表达「本书显式不设」，落盘为 `null`，压住全局默认且不连累同角色其它字段。
 - **可安装**：`package.json` 补 `prepare: npm run build`，`files` 只发 `lib/` 的老问题不再致命；新增 `scripts/verify-install.mjs` + `npm run verify`，挂载**构建产物**断言 9 工具 + 1 门禁都在。
@@ -136,6 +136,49 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **`perWorkspace` 默认改为 `true`**：一本书跟一个工作区走，跨工作区不串。想回到「全进程一本书」显式写 `perWorkspace: false`。
 - **验证**：303 个用例（23 个文件；新增 `test/pin.test.ts` 7 例，其中 `makes the panel read the pinned book for that session` 是上面那条 bug 的回归）。真机（隔离 profile，端口 19415）：`POST /init` → `POST /pin` → `GET /snapshot?session=probe-session` 不带 root 也返回那本书；无头写 403、相对 root 400；组合 bundle 480,500 字节，含 `CreateDialog` / `openBookWorkspace` / `api/inkwell/pin` / `iw-dialog` / `hostCanPick` / `创建并开始写`。另核对了 shell 预载的 65 个客户端模块里有 `@deepseek-ai/dsh-client-ui-workspace/client.js` 与 `@deepseek-ai/dsh-api-workspace-controller/client.js`，即 `workspaces` / `uiWorkspace` 两个服务在页面里确实存在。
 - **没验到的**：浏览器那半（真实点击 → 原生选择框 → 切工作区）在无头环境点不了，要用户在自己的 Desktop 应用里重启插件后实测。
+
+### v0.12 把已经写了的稿子拿进来
+
+用户把插件装进自己的 Desktop 应用、点通了「新建」之后问「你觉得接下来应该怎么做」，然后在一串选项里
+选了「导入正文 + 人物 + 大纲」（m07205）。他手上那本别的工具写的书在
+`C:\Users\china\Documents\小说\待定v2`：86 个 `正文/第N章-标题-v1.md`、6 个 `人物/姓名.md`
+（`## 外在底色` / `## 隐性欲望` / `## 心理阈值` / `## 关系网`）、`大纲/全书大纲.md`（`> 一句话立意` /
+`> 主角：王上（24→32岁，…）` / `## 卷一·翻身（第1–11章…）` + `**核心**：…` / `- 第1章 裂缝：一句话`）、
+`账本/facts.json`、`设定/语言基因.json`。**不动 `novel.json` 与 `账本/facts.json`** —— 账本要的是
+「这句设定出自第几章的哪句话」，事后补不算数。
+
+- **`src/domain/import-scan.ts`（纯函数，不碰磁盘）**：`chapterNumberOf` / `chapterTitleOf`（认全角数字、
+  认 `-v1` 后缀）、`planChapters`（按号排序、同号取更长的、剥掉与文件名重复的 `# 第N章` 标题、没写章号的
+  进 `ignored`）、`planCast`（按小节关键字分派到 `voice` / `appearance` / `goal` / `secret`，认不出的原样
+  进 `card.notes`）、`planOutline`（前提 / 主角 / 分卷 / 章纲）、`planImport`（把三者拼成一份可写的计划）。
+- **`src/domain/manuscript.ts`**：真正读盘的 `readManuscript(dir)`（`正文/` 或 `chapters/`、`人物/` 或
+  `canon/`、`大纲/全书大纲.md`，都没有时退一层读该目录本身）+ `summarize` + `describeScan`（人话报告）
+  + `wordsText`。
+- **`src/domain/import-apply.ts`**：`applyImport` 用 `store.writeChapter`（带 `baseRevision`）/
+  `upsertCharacter` / `upsertVolume` / `upsertPlan` / `writeProject` 落盘，返回 `written` / `skipped` /
+  `words` / `cast` / `volumes` / `plans`。
+- **`src/tools/import.ts`**：第 11 个工具 `novel_import`，`action ∈ {scan, apply}`，参数
+  `dir`（绝对路径）/ `overwrite`。`scan` 不需要书先存在（`src/gate.ts` 放行），`apply` 要。
+- **面板**：`GET /api/inkwell/scan?dir=` 与 `POST /api/inkwell/import?root=`；`CreateDialog` 选完目录
+  顺手扫一遍，有稿就多一个默认勾上的「建好之后把这些稿件导进来（N 章正文、M 张角色卡、K 卷大纲）」，
+  建完即导。客户端 `apiScan` / `apiImport` / `importNote` / `scanNote` 负责文案。
+- **两个真 bug（都是拿用户那份真稿子跑出来的，测试里没有）**：
+  1. `> 主角：王上（24→32岁，由写字楼底层小职员爬到「上势」老板）` —— 先按 `、，,，/|` 切再剥括号，
+     括号里的全角逗号把名字切成「王上（24→32岁」和「由写字楼…老板）」，一个都不等 `王上`，
+     于是**所有角色都落成 supporting**。改成先剥括号再切（`src/domain/import-scan.ts` 的
+     `planOutline`），并加了回归用例 `reads a lead whose bracket holds a comma`。
+  2. 人物稿里没有「说话方式」那一节 —— 6 张卡的 `voice` 全空，而 `src/domain/phase.ts` 的闸门要求
+     `every(item => item.voice.trim() !== '')` 才能推进到 outline。补了 `ScanSummary.voiceless` 与报告
+     里那句「说话方式还空着：…（N 张卡）……补齐才能推进到「大纲」阶段，闸门会拦」。**故意不替用户编
+     voice**：按名字猜一口腔调正是这个插件要防的事。
+- **真机验证**（隔离 profile `inkwell-verify`，端口 19422，`package.json` 依赖改成
+  `file:E:/dshplugin` 以便永远跑工作副本）：对用户真稿子 `scan` 得 85 章 / 351,401 字 / 6 卡 / 6 卷 /
+  83 条章纲 / 冲突 3 章（那本书自己已有 1–3 章），`apply` 用 919ms 写入 85 章，回读
+  `chapters/index.json` 得 85 条（`{number:1,title:"裂缝",words:2230,summary:"窗外，天边泛起一线灰白…",revision:1}`），
+  `canon/characters.json` 里 `王上=protagonist`、其余 supporting，`notes` 收着关系网。再导一次
+  `written:0, skipped:2`（幂等）。
+- **验证**：323 个用例（25 文件），`npm run check` 全绿；`verify` 报 `tools registered : 11`
+  与 `client bundle : ./client.js 101760 bytes`。
 
 ## 怎么本地跑
 
@@ -266,22 +309,24 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.12 候选，按性价比排序）
+## 下一步（v0.13 候选，按性价比排序）
 
-0. **把 v0.11 的浏览器那半真点一遍**：建书 → 工作区出现 → 新会话切过去，这条链路无头环境点不了，是唯一没验到的环节。顺带确认 `connectWorkspace` 复用的是同一个空白会话（同一文件夹建第二本书会落进同一个会话，见 CHANGELOG 的已知边界）。
-1. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，四者都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
-2. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
-3. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
-4. **面板里的搜索**：抽屉树截断在 25 行，94 章的书要靠折叠去找。给树加一个「搜角色／搜章节」输入框，仍然是纯函数投影。
-5. **docx / epub 导出**：`src/domain/export.ts` 已经是纯函数、只把文本拼成文件，接一个 OOXML 或 EPUB 打包器是纯增量；难点在样式表而不是数据。
+0. **让用户在他的 Desktop 应用里点一次「新建 + 导入」**：选目录 → 勾选框 → 建书 → 导入，这条链路
+   无头环境里只验到 HTTP 层（`/scan` / `/init` / `/import` 都通过），原生选择框之后的真实点击还得他来点。
+1. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，五者都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
+2. **导入时补 voice 的入口**：v0.12 故意留空并点名，下一步可以给面板一个「补齐说话方式」的批量页，把这 N 张卡一次填完，而不是逐个点进去编辑。
+3. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
+4. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
+5. **面板里的搜索**：抽屉树截断在 25 行，94 章的书要靠折叠去找。给树加一个「搜角色／搜章节」输入框，仍然是纯函数投影。
+6. **docx / epub 导出**：`src/domain/export.ts` 已经是纯函数、只把文本拼成文件，接一个 OOXML 或 EPUB 打包器是纯增量；难点在样式表而不是数据。
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 303 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 323 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.11 列表的哪一项。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.13 列表的哪一项。
 
 ## 项目记忆
 
