@@ -104,21 +104,33 @@ function stringsOf(node: unknown): string[] {
 }
 
 describe('a long chapter run', () => {
-  it('mounts a window of rows, not the whole volume', async () => {
+  /** A 正文 drawer with `count` chapters spread over volumes of `perVolume`. */
+  function drawer(count: number, perVolume: number): Record<string, unknown> {
+    const rows: Record<string, unknown>[] = []
+    let made = 0
+    for (let volume = 1; made < count; volume += 1) {
+      const children = [] as Record<string, unknown>[]
+      for (let index = 0; index < perVolume && made < count; index += 1) {
+        made += 1
+        children.push({
+          id: `text.chapter.${made}`,
+          label: `第${made}章 测试`,
+          kind: 'chapter',
+          key: String(made),
+          chip: '已完成',
+        })
+      }
+      rows.push({ id: `text.volume.${volume}`, label: `第${volume}卷`, count: children.length, children })
+    }
+    return { id: 'text', label: '正文', count, rows }
+  }
+
+  it('mounts a window of rows when the whole drawer is long', async () => {
     const exports = await loadClient()
-    const tree = exports.tree as { Row: (props: Record<string, unknown>) => unknown }
-    const chapters = Array.from({ length: 300 }, (_, index) => ({
-      id: `text.chapter.${index + 1}`,
-      label: `第${index + 1}章 测试`,
-      kind: 'chapter',
-      key: String(index + 1),
-      chip: '已完成',
-    }))
-    const volume = { id: 'text.volume.1', label: '第1卷', count: 300, children: chapters }
+    const tree = exports.tree as { Section: (props: Record<string, unknown>) => unknown }
     const rendered = deep(
-      tree.Row({
-        row: volume,
-        depth: 1,
+      tree.Section({
+        section: drawer(300, 30),
         collapsed: new Set(),
         onToggle: () => undefined,
         selected: null,
@@ -131,26 +143,59 @@ describe('a long chapter run', () => {
     expect(labels).toContain('第1章 测试')
   })
 
-  it('keeps a short run as plain rows', async () => {
+  it('windows by visible lines, not by rows at the top', async () => {
+    // Ten volumes of ten chapters is ten top-level rows — a per-run window would
+    // never fire here, yet the drawer is a hundred lines long.
     const exports = await loadClient()
-    const tree = exports.tree as { Row: (props: Record<string, unknown>) => unknown }
-    const chapters = Array.from({ length: 5 }, (_, index) => ({
-      id: `text.chapter.${index + 1}`,
-      label: `第${index + 1}章 测试`,
-      kind: 'chapter',
-      key: String(index + 1),
-    }))
+    const tree = exports.tree as { Section: (props: Record<string, unknown>) => unknown }
     const rendered = deep(
-      tree.Row({
-        row: { id: 'text.volume.2', label: '第2卷', count: 5, children: chapters },
-        depth: 1,
+      tree.Section({
+        section: drawer(100, 10),
         collapsed: new Set(),
         onToggle: () => undefined,
         selected: null,
         onRowClick: () => undefined,
       }),
     )
-    expect(stringsOf(rendered)).toContain('第5章 测试')
+    const labels = stringsOf(rendered).filter((text) => text.endsWith('章 测试'))
+    expect(labels.length).toBeLessThan(40)
+    expect(labels.length).toBeGreaterThan(5)
+  })
+
+  it('keeps a short drawer as plain rows', async () => {
+    const exports = await loadClient()
+    const tree = exports.tree as { Section: (props: Record<string, unknown>) => unknown }
+    const rendered = deep(
+      tree.Section({
+        section: drawer(5, 5),
+        collapsed: new Set(),
+        onToggle: () => undefined,
+        selected: null,
+        onRowClick: () => undefined,
+      }),
+    )
+    const labels = stringsOf(rendered)
+    expect(labels).toContain('第5章 测试')
+    expect(labels).toContain('第1卷')
+  })
+
+  it('counts only what is open: a folded volume contributes one line', async () => {
+    const exports = await loadClient()
+    const tree = exports.tree as { Section: (props: Record<string, unknown>) => unknown }
+    const section = drawer(300, 30)
+    const folded = (section.rows as { id: string }[]).map((row) => row.id)
+    const rendered = deep(
+      tree.Section({
+        section,
+        collapsed: new Set(folded),
+        onToggle: () => undefined,
+        selected: null,
+        onRowClick: () => undefined,
+      }),
+    )
+    const labels = stringsOf(rendered).filter((text) => text.endsWith('章 测试'))
+    expect(labels).toEqual([])
+    expect(stringsOf(rendered)).toContain('第1卷')
   })
 })
 

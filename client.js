@@ -1293,6 +1293,28 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Every row a drawer would show, in display order, with its depth.
+     *
+     * The tree is drawn from this flat list rather than by recursion: a drawer
+     * with a hundred visible rows then mounts one windowed list, not a hundred
+     * nested elements that all have to be built to be found.
+     *
+     * @param rows - the drawer's top-level rows.
+     * @param collapsed - ids the reader has folded shut.
+     * @param depth - the depth of `rows` (1 for a drawer's own rows).
+     * @param out - accumulator, so the walk does not build intermediate arrays.
+     * @returns the visible entries, parents before their children.
+     */
+    function flattenRows(rows, collapsed, depth = 1, out = []) {
+      for (const row of rows) {
+        out.push({ row, depth })
+        const hasChildren = Array.isArray(row.children) && row.children.length > 0
+        if (hasChildren && !collapsed.has(row.id)) flattenRows(row.children, collapsed, depth + 1, out)
+      }
+      return out
+    }
+
+    /**
      * A scroll box that only mounts the rows you can see.
      *
      * A book of 300 chapters is 300 rows, and rendering all of them makes the
@@ -1300,13 +1322,13 @@ window.__ModuleLoader__.load({
      * Rows are a fixed 30px here, so the arithmetic is exact: the inner div is
      * as tall as the whole list, and the window slides over it.
      *
-     * @param props - the rows, their depth, and the tree's callbacks.
+     * @param props - the flattened entries and the tree's callbacks.
      * @returns the scroll box.
      */
     function VirtualRows(props) {
-      const { rows, depth, collapsed, onToggle, selected, onRowClick } = props
+      const { entries, collapsed, onToggle, selected, onRowClick, label } = props
       const [top, setTop] = useState(0)
-      const total = rows.length
+      const total = entries.length
       const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
       const end = Math.min(total, first + Math.ceil(WINDOW_H / ROW_H) + OVERSCAN * 2)
       const mounted = []
@@ -1315,10 +1337,18 @@ window.__ModuleLoader__.load({
           h(
             'div',
             {
-              key: rows[index].id,
+              key: entries[index].row.id,
               style: { position: 'absolute', top: 0, left: 0, right: 0, height: `${ROW_H}px`, transform: `translateY(${index * ROW_H}px)` },
             },
-            h(Row, { row: rows[index], depth, collapsed, onToggle, selected, onRowClick }),
+            h(Row, {
+              row: entries[index].row,
+              depth: entries[index].depth,
+              collapsed,
+              onToggle,
+              selected,
+              onRowClick,
+              flat: true,
+            }),
           ),
         )
       }
@@ -1326,6 +1356,7 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: 'iw-window',
+          'aria-label': label,
           style: { maxHeight: `${WINDOW_H}px`, overflowY: 'auto', position: 'relative' },
           onScroll: (event) => setTop(event.currentTarget.scrollTop),
         },
@@ -1336,11 +1367,13 @@ window.__ModuleLoader__.load({
     /**
      * One tree row, recursive through its children.
      *
-     * @param props - the row, its depth, collapse state and selection.
+     * @param props - the row, its depth, collapse state and selection. `flat`
+     *   means the caller already drew the children separately (windowed list),
+     *   so this row contributes its own line and nothing below it.
      * @returns the row element, plus its children when expanded.
      */
     function Row(props) {
-      const { row, depth, collapsed, onToggle, selected, onRowClick } = props
+      const { row, depth, collapsed, onToggle, selected, onRowClick, flat } = props
       const hasChildren = Array.isArray(row.children) && row.children.length > 0
       const open = hasChildren && !collapsed.has(row.id)
       const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
@@ -1381,14 +1414,7 @@ window.__ModuleLoader__.load({
         row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
         typeof row.count === 'number' ? h('span', { style: S.count }, num(row.count)) : null,
       )
-      if (!hasChildren || !open) return [head]
-      // A long flat run (a volume's chapters, the chapter cards) is windowed so
-      // the drawer does not turn into a 300-row scroll. Rows that themselves
-      // have children stay on the plain path: their height is not fixed.
-      const flat = row.children.every((child) => !Array.isArray(child.children) || child.children.length === 0)
-      if (flat && row.children.length > VIRTUAL_AT) {
-        return [head, h(VirtualRows, { key: 'window', rows: row.children, depth: depth + 1, collapsed, onToggle, selected, onRowClick })]
-      }
+      if (!hasChildren || !open || flat === true) return [head]
       const children = row.children.map((child) =>
         h(Row, {
           key: child.id,
@@ -1437,17 +1463,33 @@ window.__ModuleLoader__.load({
         open
           ? section.rows.length === 0
             ? h('div', { style: { ...S.aside, padding: '2px 8px 4px 30px' } }, '还没有内容')
-            : section.rows.map((row) =>
-                h(Row, {
-                  key: row.id,
-                  row,
-                  depth: 1,
+            : (() => {
+                // Flatten first, then decide: the cost of a drawer is the number
+                // of lines it shows, not the number of rows at its top level.
+                const entries = flattenRows(section.rows, collapsed)
+                if (entries.length <= VIRTUAL_AT) {
+                  return section.rows.map((row) =>
+                    h(Row, {
+                      key: row.id,
+                      row,
+                      depth: 1,
+                      collapsed,
+                      onToggle,
+                      selected,
+                      onRowClick,
+                    }),
+                  )
+                }
+                return h(VirtualRows, {
+                  key: 'window',
+                  label: section.label,
+                  entries,
                   collapsed,
                   onToggle,
                   selected,
                   onRowClick,
-                }),
-              )
+                })
+              })()
           : null,
       )
     }
