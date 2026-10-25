@@ -111,9 +111,9 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_chapter` | write / propose / commit / restore 回退 / read / list / review 审稿结案 | write 漏角色不保存；版本对不上要你重读；waived 不写理由 |
 | `novel_ledger` | 记事实、查事实、全量体检 | 与已有设定冲突且未指名替换 |
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
-| `novel_check` | 确定性体检（零 token），contract / scan / ledger / timeline / records / cards / relations | 不会拒绝，只报告 |
+| `novel_check` | 确定性体检（零 token），contract / scan / ledger / timeline / records / cards / stale / relations | 不会拒绝，只报告 |
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
-| `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
+| `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核/状态维护员）；审稿结果带 `shifts` | 阶段不对、章纲未批准、审核时无草稿 |
 | `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
 | `novel_import` | scan 只读盘点已有稿件（正文/人物/大纲），apply 才写入；已存在的章默认不覆盖 | 目录不存在、不是绝对路径、同名章没给 overwrite |
 | `novel_story` | 故事点：add 开一段 / close 收尾 / at 查某章属于哪段 / list 全列 | 上一段没收尾就 add；结束章比开始章还早 |
@@ -419,6 +419,27 @@ novel_canon action="shift" name="沈砚" chapter="40" \
 - 像是有意的转变 → `character/shift`，只算建议，并把问题写成一句话问作者：「他原来是 X，这一章成了 Y（原文）。这是有意为之吗？」，同时给出该填的四个参数。
 
 上下文包也跟着改：出场角色那一行现在有 `现在：…` 与 `转折：第N章…`。写第 86 章的人看到的是他此刻的性格，不是开篇的性格——这是「跨章一致」里最容易做错、也最容易被读者记住的一部分。
+
+## 问一句，记一笔；记录会过期（v0.28）
+
+v0.27 记下了转变，但入口还是「你自己打四个参数」。人不会为了记一笔转变去翻上一次审稿报告、再把名字、章号、原来、现在、原因抄一遍。所以 v0.28 把「问」和「记」接上了：
+
+`novel_dispatch` 跑完一轮角色一致性审核后，除了 findings，还多返回一个 `shifts`，报告末尾直接摆着一行填好的调用：
+
+```
+novel_canon action="shift" name="沈砚" chapter="40" \
+  from="认死理，不肯把话圆" to="开始替人圆谎" cause="他把阿蘅送走以后"
+```
+
+你回答「是」，把那一行发出去，历史就记上了；回答「不是」，就不发，按 `character/drift` 去改正文。审核员填不满四个字段时不会硬凑——半填的转变比没有更坏，它会写进卡里一段查不到出处的历史。
+
+另一半是**记录会过期**。章卡从 v0.20 起就标「你改了正文，这条记录是旧的了」，但地点状态和人物阶段是同一类东西：它们是**对正文的读法**，不是正文本身。正文一改，读法就旧了。现在三样都盖版本号：
+
+```
+novel_check action="stale"
+```
+
+一次报全「这条记录写在第 N 版正文上，现在是第 M 版」。角色页与地点页上也会多出一行「记录过期」，不用等你想起去查。没改过的章永远不会误报——没盖过版本号的记录按第 1 版算。
 
 ## 角色卡是一份档案（v0.19）
 

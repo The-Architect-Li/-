@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.26.0。
+> 最后更新：2026-10-25，对应 release v0.28.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）、`v0.22.0`（时间线是一条线：起点钉住、年点算出来、事件成气泡）、`v0.22.1`（总审核也拿到前文窗口）、`v0.23.0`（时间线三条路：手钉、边写边认、导入时解析）、`v0.24.0`（上下文包装上关系与地点，关系按卡名归一）、`v0.25.0`（时间线一次给一批章节打日期）、`v0.26.0`（回忆用算术核对，新增状态维护员）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）、`v0.22.0`（时间线是一条线：起点钉住、年点算出来、事件成气泡）、`v0.22.1`（总审核也拿到前文窗口）、`v0.23.0`（时间线三条路：手钉、边写边认、导入时解析）、`v0.24.0`（上下文包装上关系与地点，关系按卡名归一）、`v0.25.0`（时间线一次给一批章节打日期）、`v0.26.0`（回忆用算术核对，新增状态维护员）、`v0.27.0`（角色会变：转变是一条记录，卡只写现在）、`v0.28.0`（审核员把转变的调用填好递过来；记录过期扩到地点与阶段）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -429,6 +429,19 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
 
+### v0.28 问一句，记一笔；记录会过期
+
+v0.27 记下了转变，入口却还是「你自己打四个参数」。这一版把「问」和「记」接成一条线，并把「记录过期」从章卡扩到地点状态与人物阶段。
+
+- **审核员带回复用的调用**（`src/roles.ts`）：`ReviewerFinding` 新增可选 `shift?: { name, chapter, from, to, cause }`；`REVIEWER_CONTRACT` 加三条——问「他是不是真的变了」时才带 `shift` 对象、四个字段用作者自己的话填、`cause` 填不出来就别写 shift 改报 `character/drift`。解析用 `readShift(value, code)`：四个字符串非空 + `chapter >= 1` + `code === 'character/shift'`，**缺一个就丢掉整条 shift**（半填的转变比没有更坏，它会往卡里写一段查不到出处的历史）。`parseReviewerOutput` 里 `...(shift === undefined ? {} : { shift })`。
+- **派发把调用递出来**（`src/tools/dispatch.ts`）：output schema 加 `shifts`（array of `{name,chapter,from,to,cause}`）；`shiftsOf(items)` 收集、`shiftHint(shifts)` 渲染——「这一轮有 N 处「他是不是变了」。回答是（有意为之），就把下面那行原样发出去，参数已经填好了：」+ 每条一行 `novel_canon action="shift" name="…" chapter="…" from="…" to="…" cause="…"` + 「回答不是（这条是写崩了），就别发，按 character/drift 改这一章。」。chief 与 reviewer 两个返回都带 `shifts` 与 `shiftHint`。
+- **版本号**（`src/domain/types.ts`）：`PlaceState` 与 `CharacterStage` 各加可选 `revision?: number`——记录是「对某一版正文的读法」，存着它才能说「这条是旧的了」。
+- **盖章**（`src/domain/characters.ts`、`src/tools/canon.ts`）：`recordTurn` 先 `store.chapter(chapter)` 再写 `revision`；`foldState(previous, chapter, detail, note, revision)` 增加第五参，同 detail 复用上一段与新推一段**两条路径都盖章**（复用不盖章的话，重新确认过的记录仍然显示过期）。`upsert_place` 里 `const written = chapter > 0 ? await store.chapter(chapter) : undefined`，`written?.revision ?? (chapter > 0 ? 1 : undefined)`——第 0 章是设定，没有正文可对，不盖章。
+- **域**（新建 `src/domain/staleness.ts`）：`StaleRecord { kind: 'card'|'place'|'stage', subject, chapter, recorded, current, label }`、`Staleness { records, chapters }`、`staleRecords(snapshot)`。没盖过版本号的按第 1 版算，所以没改过的章永远不会误报；三样一起报。
+- **工具**（`src/tools/check.ts`）：新增 `action='stale'`（报条数与三类分项、每条的 `label`、以及「这些记录对得上某个版本的正文，不是对得上现在这一版」）；`action='all'` 里新增 `records/stale` info（只数地点/阶段，章卡仍由 `cards/stale` 报）。
+- **面板**（`src/panel/entry.ts`）：角色页与地点页各加一个「记录过期」列表（`staleRecords` 过滤 subject），每条带改法。
+- **测试**：新建 `test/staleness.test.ts` 5 例（没改写不报、三类一起报、未盖章按 1 版算、改写后未盖章会报、没写过的章不报）、`test/staleness-tools.test.ts` 4 例（真 harness 走 `novel_canon upsert_place`/`shift` + `novel_chapter write` 改版）、`test/staleness-panel.test.ts` 3 例（角色页/地点页的「记录过期」）、`test/shift-chain.test.ts` 6 例（解析完整/半填/挂错码/无章号、契约文案）、`test/review-context.test.ts` +1（派发报告里出现整行 `novel_canon action="shift"` 且 `shifts` 有值）。全量 **561 用例 / 50 文件**。
+
 ### v0.27 性格是现在时，转变是过去时
 
 角色卡只有现在时，这一次补上「他以前不是这样」。
@@ -618,7 +631,7 @@ v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了�
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 535 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 561 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -744,12 +757,11 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.24 候选，按性价比排序）
+## 下一步（v0.29 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里看一眼时间线**：v0.22 的线在预览里逐屏看过（`preview:timeline`），
-   但「钉一个 2020-10 的起点，看每年怎么长出来」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19／v0.20／v0.21 那几条链路。
-1. **把关系网接进上下文包**：关系现在是边表，但 `src/domain/briefing.ts` 还只按出场人物列卡，不列「这个人和谁是什么关系」「他走到哪一段了」。接法：取本章出场人物相关的边（`relationsOf`），对方也在本章时写「沈砚 与 阿鸢：彼此试探」，并取 `stages` 最后一段当作「他现在在哪」。
-2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）。
+0. **让用户在他的 Desktop 应用里看一眼这几条新链路**：v0.27 的 `novel_canon action="shift"`、v0.28 的「审稿报告末尾那行 shift」与「记录过期」，都只有他自己点一次才算验过。同批还有 v0.16／v0.17／v0.22／v0.25 那几条。
+1. **把「问一句」也接到面板上**：v0.28 让审核报告末尾直接摆着一行 `novel_canon action="shift"`，但那一行仍然要你自己发。下一步可以在审核结果页给每条 `character/shift` 一个「是有意为之」按钮，点一下就等于发那行——写入口还是 `recordTurn`。
+2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）——注意 v0.28 起地点状态带 `revision`，导入时要按「没有正文」处理（不盖章）。
 3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
 4. **导入时补 voice 的入口**：v0.12 故意留空并点名，下一步可以给面板一个「补齐说话方式」的批量页，把这 N 张卡一次填完，而不是逐个点进去编辑。
 5. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
@@ -759,7 +771,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 492 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 561 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。

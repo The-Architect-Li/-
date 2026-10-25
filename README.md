@@ -103,9 +103,9 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
-| `novel_check` | repetition, rhythm, tone, contract, timeline, records, stale cards, relations | never; it reports instead |
+| `novel_check` | repetition, rhythm, tone, contract, timeline, records, stale cards, stale records, relations | never; it reports instead |
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
-| `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
+| `novel_dispatch` | spawn a role subagent (writer/logic/character/chief/keeper); a review returns `shifts` too | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
 | `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
@@ -129,6 +129,30 @@ forward. The character reviewer now reports two different things: `character/dri
 when nothing set the change up, and `character/shift` — a question, not a verdict —
 when it looks deliberate. The chapter pack gains `现在：…` and `转折：第N章…`, so
 whoever writes chapter 86 meets the character as they are, not as they started.
+
+### Ask once, record once; records age (v0.28)
+
+v0.27 made a turn recordable, but the door was still "retype four arguments".
+Nobody transcribes a review report to log a change, so v0.28 joins the question to
+the record: `novel_dispatch` returns a `shifts` array and ends its report with the
+call already spelled out.
+
+Say yes and send that line; say no, do not send it, and fix the chapter as
+`character/drift`. A half-filled turn is dropped rather than guessed — a stage
+with no cause is a history nobody can check.
+
+The other half: **records age**. A chapter card has carried its revision since
+v0.20, but a place's state and a character's stage are the same kind of thing — a
+reading of prose, not prose. Rewrite the chapter and all three are out of date:
+
+```
+novel_check action="stale"
+```
+
+It reports "this record was read off revision N, the chapter is at M" for cards,
+place states and stages at once, and the character and place pages show the same
+line in the panel. A chapter nobody rewrote never reports anything: an unstamped
+record counts as revision 1.
 
 ### Places, story points, and the clock (v0.14)
 
