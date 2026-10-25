@@ -495,6 +495,10 @@ export function planImport(
     beats: [chapter.line],
     hooks: [],
     approved: true,
+    // The outline's one-liner is what the chapter was supposed to be about, so
+    // it seeds the card: an imported book arrives with every card half-written
+    // instead of empty, and the writer edits from there.
+    ...(chapter.line === '' ? {} : { summary: chapter.line }),
   }))
   return {
     premise: outline.premise,

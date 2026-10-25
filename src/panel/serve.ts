@@ -52,7 +52,8 @@ import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
 import { chapterRanges } from '../domain/records.ts'
-import { assignVolume, readVolumes, splitVolumes, type VolumeReport } from '../domain/volumes.ts'
+import { MissingPlanError, updateCard } from '../domain/cards.ts'
+import { assignVolume, readVolumes, shellPlan, splitVolumes, UNASSIGNED, type VolumeReport } from '../domain/volumes.ts'
 import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
@@ -1188,6 +1189,22 @@ export async function writeEntry(
       })
     } else {
       const edit = readChapterPatch(key, patch)
+      // An imported chapter can arrive with a body but no outline — the book's
+      // outline stopped short of it, and every write door then refuses the
+      // chapter, including the panel's own. Give it the empty shell the volume
+      // picker would: no beats, no cast, nothing approved, nothing to violate.
+      // This has to happen before the gate, which is what asks for the outline.
+      const known = (await store.plans()).some((item) => item.number === edit.number)
+      if (!known) {
+        const written = await store.chapter(edit.number)
+        const shell = shellPlan(edit.number, UNASSIGNED, written)
+        // A chapter that already has prose was written before it had an
+        // outline — an import, or a manuscript written elsewhere. The shell
+        // carries no beats, so there is nothing left to approve; leaving it
+        // unapproved would only lock the page that shows the chapter. A chapter
+        // with no prose keeps the honest "not approved" and the gate applies.
+        await store.upsertPlan(written === undefined ? shell : { ...shell, approved: true })
+      }
       // Same refusal the model gets in the conversation, before anything is written.
       const reason = await gateToolCall(
         'novel_chapter',
@@ -1223,6 +1240,26 @@ export async function writeEntry(
           )
         }
         throw error
+      }
+      // The card travels with the prose: a chapter page edits both in one
+      // submit, and a recap typed next to the text it describes is the whole
+      // point of the card. Only fields the page actually sent are touched.
+      if (edit.story !== undefined || edit.scene !== undefined || edit.events !== undefined) {
+        const patch = {
+          ...(edit.story === undefined ? {} : { summary: edit.story }),
+          ...(edit.scene === undefined ? {} : { scene: edit.scene }),
+          ...(edit.events === undefined ? {} : { events: edit.events }),
+        }
+        try {
+          await updateCard(store, edit.number, patch)
+        } catch (error) {
+          if (!(error instanceof MissingPlanError)) throw error
+          // An imported chapter can arrive without an outline. Give it the same
+          // empty shell the volume picker would, then write the card.
+          const written = await store.chapter(edit.number)
+          await store.upsertPlan(shellPlan(edit.number, UNASSIGNED, written))
+          await updateCard(store, edit.number, patch)
+        }
       }
     }
 

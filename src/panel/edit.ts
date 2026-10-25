@@ -26,6 +26,14 @@ export const MAX_CHAPTER_CHARS = 200_000
 /** Longest a chapter title or one-line summary may be. */
 export const MAX_TITLE_CHARS = 120
 
+/**
+ * Longest a chapter card's recap may be.
+ *
+ * A card says what happened in a paragraph or two, not in the chapter's length;
+ * this is the ceiling that keeps a pasted chapter from becoming a card.
+ */
+export const MAX_STORY_CHARS = 4000
+
 function readText(body: Record<string, unknown>, key: string, limit: number, label: string): string | undefined {
   const value = body[key]
   if (value === undefined) return undefined
@@ -156,6 +164,12 @@ export interface ChapterPatch {
   text: string
   title?: string | undefined
   summary?: string | undefined
+  /** The card's recap: what happened in this chapter. */
+  story?: string | undefined
+  /** Where the chapter happens. */
+  scene?: string | undefined
+  /** What happened, one line each. */
+  events?: string[] | undefined
   /**
    * The revision the editor was looking at, when it said.
    *
@@ -193,6 +207,39 @@ export function readChapterPatch(key: string, body: Record<string, unknown>): Ch
     text,
     title: readText(body, 'title', MAX_TITLE_CHARS, '标题'),
     summary: readText(body, 'summary', MAX_FIELD_CHARS, '摘要'),
+    story: readText(body, 'story', MAX_STORY_CHARS, '故事梗概'),
+    scene: readText(body, 'scene', MAX_TITLE_CHARS, '场景'),
+    events: readLines(body, 'events', MAX_EVENT_CHARS, '关键事件'),
     revision,
   }
+}
+
+/** Longest one line of a card's event list may be. */
+const MAX_EVENT_CHARS = 400
+
+/**
+ * Read a list typed as lines.
+ *
+ * The panel offers one textarea for "one thing per line" rather than a widget
+ * that adds rows: it is the shape writers already keep their beats in.
+ *
+ * @param body - the submitted fields.
+ * @param key - which field.
+ * @param limit - longest one line may be.
+ * @param label - what to call it in an error.
+ * @returns the lines, or undefined when the field was not sent.
+ * @throws {PanelInputError} when the value is not text or a line is too long.
+ */
+function readLines(body: Record<string, unknown>, key: string, limit: number, label: string): string[] | undefined {
+  const value = body[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') throw new PanelInputError(`${label} 必须是字符串（一行一件）。`)
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*·]\s*/, '').trim())
+    .filter((line) => line !== '')
+    .map((line) => {
+      if (line.length > limit) throw new PanelInputError(`${label} 有一行太长了（上限 ${limit} 字）：${line.slice(0, 20)}…`)
+      return line
+    })
 }

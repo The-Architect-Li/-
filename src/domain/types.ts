@@ -210,6 +210,18 @@ export interface ChapterPlan {
   /** Intended chapter-end hook. */
   hooks: string[]
   approved: boolean
+  /**
+   * What the chapter is about, in a paragraph a reader could use as a recap.
+   *
+   * Deliberately not {@link ChapterMeta.summary}: that one is the last paragraph
+   * lifted out of the prose as standing backdrop for later chapters. This one is
+   * written for the card, and it says what happened.
+   */
+  summary?: string
+  /** What happened, in order. One line each, the way a reader would retell it. */
+  events?: string[]
+  /** Where it happens. A place name when it matches one in the book. */
+  scene?: string
 }
 
 /** One asserted fact about the story world, tied to the chapter that asserts it. */

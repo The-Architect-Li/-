@@ -1,6 +1,7 @@
 /** `novel_outline`: volumes, chapter contracts, and their approval. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { updateCard, type CardPatch } from '../domain/cards.ts'
 import type { ChapterPlan } from '../domain/types.ts'
 import type { ToolDeps } from './deps.ts'
 
@@ -21,18 +22,20 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_outline',
     description:
-      '分卷与章纲。add_volume 建分卷；add_chapter 写章纲（number/pov/characters/beats/hooks，beats 是这一章必须发生的 2–5 件事）；approve_volume 与 approve_chapter 批准后才算数，未批准的章纲不允许写正文；list 列出全部。',
+      '分卷与章纲。add_volume 建分卷；add_chapter 写章纲（number/pov/characters/beats/hooks，beats 是这一章必须发生的 2–5 件事）；card 补这一章的章卡（summary 故事梗概、events 关键事件、scene 场景、hooks 钩子、characters 出场人物），只改你给的字段，别的留着；approve_volume 与 approve_chapter 批准后才算数，未批准的章纲不允许写正文；list 列出全部。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['add_volume', 'approve_volume', 'add_chapter', 'approve_chapter', 'list'],
+        enum: ['add_volume', 'approve_volume', 'add_chapter', 'approve_chapter', 'card', 'list'],
         description: '操作类型',
       },
       number: { type: 'number', description: '分卷号或章号，从 1 开始' },
       volume: { type: 'number', description: '该章属于第几卷，默认 1' },
       title: { type: 'string', description: '分卷标题或章节标题' },
-      summary: { type: 'string', description: '分卷梗概' },
+      summary: { type: 'string', description: '分卷梗概；card 动作里是这一章的故事梗概，传空字符串清掉' },
+      events: { type: 'array', items: { type: 'string' }, description: 'card 动作用：关键事件，按发生顺序，一行一件' },
+      scene: { type: 'string', description: 'card 动作用：这一章发生在哪里，尽量与地点卡同名；传空字符串清掉' },
       pov: { type: 'string', description: '本章视角人物' },
       characters: { type: 'array', items: { type: 'string' }, description: '本章出场人物，必须与角色卡同名' },
       beats: { type: 'array', items: { type: 'string' }, description: '本章必须发生的节拍，2–5 条，每条一句具体的事' },
@@ -116,6 +119,11 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
           hooks,
           // Any edit invalidates the approval: the contract must be re-read after it changes.
           approved: false,
+          // The card is not part of the contract, so an outline edit carries it
+          // over untouched instead of dropping it on the floor.
+          ...(existing?.summary === undefined ? {} : { summary: existing.summary }),
+          ...(existing?.events === undefined ? {} : { events: existing.events }),
+          ...(existing?.scene === undefined ? {} : { scene: existing.scene }),
         }
         await store.upsertPlan(plan)
         const plans = await store.plans()
@@ -141,6 +149,44 @@ export function registerOutlineTool(ctx: Context, deps: ToolDeps): void {
           volumes: [],
           chapters: plans.map((item) => `第${item.number}章 ${item.title}${item.approved ? '（已批准）' : ''}`),
           report: `第${number}章章纲已批准，可以写了。先取 novel_briefing，再 novel_chapter action="write"。`,
+        }
+      }
+
+      if (args.action === 'card') {
+        const number = requireNumber(args.number, 'number')
+        const events = (args.events ?? []).map((item) => item.trim()).filter(Boolean)
+        const characters = args.characters === undefined ? undefined : args.characters.map((item) => item.trim()).filter(Boolean)
+        const hooks = args.hooks === undefined ? undefined : args.hooks.map((item) => item.trim()).filter(Boolean)
+        if (characters !== undefined) {
+          const canonNames = new Set(snapshot.characters.map((item) => item.name))
+          const unknown = characters.filter((name) => !canonNames.has(name))
+          if (unknown.length > 0) {
+            throw new Error(`章卡里写了角色卡上没有的人：${unknown.join('、')}。先用 novel_canon 建卡，或者改掉名字。`)
+          }
+        }
+        const patch: CardPatch = {}
+        if (args.summary !== undefined) patch.summary = args.summary.trim()
+        if (args.scene !== undefined) patch.scene = args.scene.trim()
+        if (args.pov !== undefined) patch.pov = args.pov.trim()
+        if (args.title !== undefined) patch.title = args.title.trim()
+        if (args.events !== undefined) patch.events = events
+        if (characters !== undefined) patch.characters = characters
+        if (hooks !== undefined) patch.hooks = hooks
+        if (Object.keys(patch).length === 0) {
+          throw new Error('card 至少要给一个字段：summary / events / scene / hooks / characters / pov / title。')
+        }
+        const card = await updateCard(store, number, patch)
+        return {
+          action: args.action,
+          volumes: [],
+          chapters: [`第${card.number}章 ${card.title}`],
+          report: [
+            `第${number}章《${card.title}》的章卡已更新。`,
+            `故事梗概：${card.summary ?? '（未写）'}`,
+            `场景：${card.scene ?? '（未写）'}`,
+            `关键事件 ${card.events?.length ?? 0} 条｜出场人物：${card.characters.join('、') || '未填'}｜钩子 ${card.hooks.length} 条`,
+            '这只是记录，不改变章纲合同，也不需要重新批准。',
+          ].join('\n'),
         }
       }
 

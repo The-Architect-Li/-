@@ -16,6 +16,7 @@
  */
 import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
+import { presentInText } from '../domain/cards.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
@@ -256,6 +257,9 @@ function chapterPage(
   // advance, but the thing you wrote is what you renamed. Before that, the
   // outline is the only name there is.
   const title = chapter?.title || plan?.title || ''
+  // A promised character who never walks on, and a walk-on nobody planned, are
+  // different facts; the card keeps the promise and this keeps the page.
+  const named = presentInText(body ?? '', snapshot.characters.map((item) => item.name))
   return {
     kind: 'chapter',
     title: `第${number}章 ${title}`.trim(),
@@ -268,11 +272,15 @@ function chapterPage(
       { label: '状态', value: chip },
       { label: '分卷', value: volume ? `第${volume.number}卷 ${volume.title}` : '（未分卷）' },
       { label: '视点', value: plan?.pov || '（未定）' },
+      { label: '场景', value: plan?.scene || '（未写）' },
       { label: '章纲', value: plan === undefined ? '（没有章纲）' : plan.approved ? '已批准' : '待批准' },
       { label: '字数', value: written ? `${chapter.words} 字` : rounds.length > 0 ? `${rounds.at(-1)?.words ?? 0} 字（草稿）` : '0 字' },
+      ...(plan?.summary ? [{ label: '故事梗概', value: plan.summary }] : []),
     ],
     lists: [
-      ...(plan?.characters.length ? [{ label: '出场人物', items: plan.characters }] : []),
+      ...(plan?.events?.length ? [{ label: '关键事件', items: plan.events }] : []),
+      ...(plan?.characters.length ? [{ label: '出场人物（章纲）', items: plan.characters }] : []),
+      ...(named.length > 0 ? [{ label: '正文里出现了', items: named }] : []),
       ...(plan?.beats.length ? [{ label: '必写节拍', items: plan.beats }] : []),
       ...(plan?.hooks.length ? [{ label: '章末钩子', items: plan.hooks }] : []),
       ...(findings.length > 0 ? [{ label: '最新一稿的自动发现', items: findings }] : []),
@@ -281,7 +289,12 @@ function chapterPage(
         : []),
     ],
     edit: {
-      inputs: [{ key: 'title', label: '标题', value: title }],
+      inputs: [
+        { key: 'title', label: '标题', value: title },
+        { key: 'scene', label: '场景', value: plan?.scene ?? '' },
+        { key: 'story', label: '故事梗概', value: plan?.summary ?? '', multiline: true },
+        { key: 'events', label: '关键事件（一行一件）', value: (plan?.events ?? []).join('\n'), multiline: true },
+      ],
       body: { key: 'text', label: '正文', value: body ?? '' },
       ...(chapter === undefined ? {} : { revision: chapter.revision }),
     },

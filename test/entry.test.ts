@@ -156,7 +156,7 @@ describe('chapter page', () => {
     expect(page?.chip).toBe('已完成')
     expect(page?.subtitle).toBe('第1卷 雾里的货单 · 2140 字')
     expect(page?.fields.find((field) => field.label === '字数')?.value).toBe('2140 字')
-    expect(page?.lists.map((list) => list.label)).toEqual(['出场人物', '必写节拍', '章末钩子'])
+    expect(page?.lists.map((list) => list.label)).toEqual(['出场人物（章纲）', '必写节拍', '章末钩子'])
   })
 
   it('counts drafts when nothing is committed yet', () => {
