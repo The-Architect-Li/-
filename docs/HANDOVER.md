@@ -186,12 +186,39 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **验证**：334 个用例（27 文件），`npm run check` 全绿；`verify` 报 `tools registered : 11`
   与 `client bundle : ./client.js 101760 bytes`。
 
+### v0.13 面板重做外观：先把样式看见，再谈好看
+
+用户用了两天后的原话是「我觉得UI界面太丑了 能不能搞好看一点 有点设计感 然后要易读啊」（m08359）。
+之前面板只有内联样式：`fontSize` 全写死在组件里（正文 12px、注脚 10.5px）、`opacity` 当灰阶、
+没有 `:hover`——因为内联样式写不了伪类，所以整块面板没有任何手感想。
+
+- **诊断先落到证据上**：`client.js` 用的是手写 `__ModuleLoader__` 外壳（`window.__ModuleLoader__.load({ id, factory })`，
+  不是 `define`），所以没法用现成工具渲染。新建 `scripts/preview-panel.mjs`：正则抽出 `const CSS`、用括号配平抽出
+  `const S`，用桩 `React`（`useState` 返回初值、effect 不跑）加载真实组件，把真实的 `Section`/`Row` 与真实的
+  `S` 值渲染成 `preview/*.html`，再用无头 Edge 截图看。**这一步是本轮的关键**：不看见就没法判断，
+  而且改完还能再看一次。
+- **令牌层**：`--iw-fg` / `--iw-fg-2`（80%）/ `--iw-fg-3`（62%）、`--iw-line` / `--iw-line-strong`、
+  `--iw-surface*`、`--iw-bar`、`--iw-field`、`--iw-accent`（浅色 `#33628f`，深色 `#8ab4e8`）全部由
+  `CanvasText`/`Canvas` 混出；`@media (prefers-color-scheme: dark)` 只覆盖颜色，不动排版。
+- **字号与行高**：正文 13px/1.6、行 29px、抽屉头 13.5px/600、书名 14px/650、详情标题 15.5px/600、
+  正文页衬线 14.5px/1.95 + 首行缩进 2em、计数 `tabular-nums`。最小的注脚从 10.5px 提到 11.5px 并改用
+  `--iw-fg-3`，不再用 `opacity` 造灰。
+- **详情页分块**：`.entryBlock` 与 `.entryListHead` 加 `borderTop: 1px solid var(--iw-line)` + 10px 上边距，
+  角色卡从「一整列灰字」变成「标签—值」的块。
+- **选中态的重做**：原来是 `border-color: accent-line` 的一圈描边，看着像第二个边框；改成淡底
+  `--iw-accent-soft` + `inset 2px 0 0 var(--iw-accent)` 左侧竖条，描边设成 `transparent`。
+- **书卡**：新增 `bookPath`（等宽、11px、`direction: rtl` 以便从左截断），梗概行升到 12px/`--iw-fg-2`；
+  `pill` 从「描边胶囊」改成「淡底无边框」，因为它是标签不是按钮。
+- **叶子行的字形**：新增 `glyphLeaf`（12px、`opacity: 0.55`），父亲节点用 `glyph`（`--iw-fg-2`），
+  七行 `地点 · 雾港N` 不再一排同样显眼的圆点。
+- **`npm run preview`**：上面那个脚本进了 `scripts/`，`preview/` 已加进 `.gitignore`。
+
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 303 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 334 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -230,7 +257,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 303 个用例全过（vitest，23 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**面板把会话钉到一本书**（`test/pin.test.ts`：403／400／404／405，以及「同一个 session 不带 root 也读到那本书」）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
+- ✅ 334 个用例全过（vitest，27 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**面板把会话钉到一本书**（`test/pin.test.ts`：403／400／404／405，以及「同一个 session 不带 root 也读到那本书」）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，10 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
   - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
@@ -242,6 +269,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 - ✅ `/entry` 真机验证：`kind=character&key=沈砚` 返回 200 与完整字段；不存在的名字 404；缺 key 400；非 GET 405
 - ✅ **面板写入门真机验证**（v0.8，隔离 profile + 演示书）：`POST /entry` 把沈砚的目标改成「把妹妹带回岸上」后读回一致（改的是磁盘上的 `canon/characters.json`）；无 `x-dsh-plugin` 头 403；写未批准的第四章 409 并回传门禁原话；组合客户端 bundle 451,534 字节里含「预览正文／改正文／保存中／breadcrumb／api/inkwell/entry」
 - ✅ **书库真机验证**（v0.9，同一 profile）：`GET /api/inkwell/books` → `雾港（drafting · 3 章 · 6380 字 · current）`；`POST /books` 无头 403、非 GET 405；面板建的「第二本」当场进书架（当前会话那本仍排第一）；组合 bundle 459,223 字节含 `function Library`／`已有的书`／`api/inkwell/books`／`回到书库`／`上次`
+- ✅ **外观在预览里逐屏看过**（v0.13）：`npm run preview` 生成的 `preview/{shelf,tree,detail,prose,dialog}.html` 用 360px 宽无头截图核对（浅色与深色各一次），判定依据是「13px 正文/29px 行/发丝线分块/选中淡底+左竖条」都真的出现了。**这是预览，不是应用内截图**：宿主主题色、真实滚动条、以及 Shell 自身的间距仍以用户实际看到的为准。
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）
 
@@ -315,7 +343,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.13 候选，按性价比排序）
+## 下一步（v0.14 候选，按性价比排序）
 
 0. **让用户在他的 Desktop 应用里点一次「新建 + 导入」**：选目录 → 勾选框 → 建书 → 导入，这条链路
    无头环境里只验到 HTTP 层（`/scan` / `/init` / `/import` 都通过），原生选择框之后的真实点击还得他来点。
@@ -328,11 +356,11 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 323 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 334 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.13 列表的哪一项。
+5. 决定先做上面 v0.14 列表的哪一项。
 
 ## 项目记忆
 
