@@ -315,6 +315,30 @@ const deleteDialog = `<div ${attr(S.root)}>
   </div></div>
 </div>`
 
+const volumesDialog = `<div ${attr(S.root)}>
+  ${headBar('待定', button('分卷') + button('设置'))}
+  <div class="iw-backdrop"><div class="iw-dialog" aria-label="正文分卷">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span ${attr(S.bookIcon)}>▤</span>
+      <span style="font-size:13px;font-weight:650">正文分卷</span>
+    </div>
+    <div class="iw-dialogpath">85 章 · 6 卷 · 未分卷 2 章</div>
+    <div style="display:flex;gap:6px">${button('手动分配', true)}${button('自动划分')}</div>
+    <div style="border:1px solid var(--iw-line);border-radius:9px;overflow:hidden">
+      <div style="${style({ ...S.row, paddingLeft: '10px', minHeight: '27px' })}"><span style="${style(S.label)}">第1章 裂缝</span><span style="flex:1 1 auto"></span><span ${attr(S.pill)}>第1卷</span></div>
+      <div style="${style({ ...S.row, paddingLeft: '10px', minHeight: '27px', backgroundColor: 'var(--iw-surface-hover)' })}"><input type="checkbox" checked style="margin-right:8px"><span style="${style(S.label)}">第2章 金童玉女</span><span style="flex:1 1 auto"></span><span ${attr(S.pill)}>第1卷</span></div>
+      <div style="${style({ ...S.row, paddingLeft: '10px', minHeight: '27px', backgroundColor: 'var(--iw-surface-hover)' })}"><input type="checkbox" checked style="margin-right:8px"><span style="${style(S.label)}">第3章 码头上的人</span><span style="flex:1 1 auto"></span><span ${attr(S.pill)}>第1卷</span></div>
+      <div style="${style({ ...S.row, paddingLeft: '10px', minHeight: '27px', backgroundColor: 'var(--iw-surface-hover)' })}"><input type="checkbox" checked style="margin-right:8px"><span style="${style(S.label)}">第12章 上势</span><span style="flex:1 1 auto"></span><span ${attr(S.pill)}>第2卷</span></div>
+      <div style="${style({ ...S.row, paddingLeft: '10px', minHeight: '27px' })}"><input type="checkbox" style="margin-right:8px"><span style="${style(S.label)}">第84章 归零</span><span style="flex:1 1 auto"></span><span ${attr(S.pill)}>未分卷</span></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select style="flex:1 1 auto;height:28px;border-radius:7px;border:1px solid var(--iw-line-strong);background:var(--iw-field);color:inherit;font-size:12px"><option>移到第 2 卷</option><option>移到第 1 卷</option><option>未分卷</option></select>
+      ${button('应用', true)}
+    </div>
+    <div ${attr(S.footer)}>手动：勾选章节，再选归到哪一卷（或未分卷）。自动：每卷几章，按顺序切。两种都不删章节，也不会清掉已有的卷。</div>
+  </div></div>
+</div>`
+
 const views = [
   ['shelf', '书库', shelf],
   ['tree', '目录', tree],
@@ -324,6 +348,7 @@ const views = [
   ['import', '导入弹窗', importDialog],
   ['export', '导出弹窗', exportDialog],
   ['delete', '删除弹窗', deleteDialog],
+  ['volumes', '分卷弹窗', volumesDialog],
 ]
 
 const page = (body, dark, extra = '') => `<!doctype html>
