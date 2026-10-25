@@ -468,7 +468,7 @@ export async function scanFolder(
     // A scan is read-only and useful with no book at all; a bad `root` only
     // means we cannot say which chapters would be skipped.
   }
-  const summary = summarize(folder, plan, existing, sources.used)
+  const summary = summarize(folder, plan, existing, sources.used, sources.capped)
   return {
     status: 200,
     body: { ok: true, data: { ...summary, bookRoot: bookRoot ?? null, report: describeScan(summary, bookRoot) } },

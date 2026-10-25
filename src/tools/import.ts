@@ -80,7 +80,7 @@ export function registerImportTool(ctx: Context, deps: ToolDeps): void {
       const plan = planImport(sources)
       const exists = await store.exists()
       const existing = exists ? await existingChapters(store) : new Set<number>()
-      const summary = summarize(dir, plan, existing, sources.used)
+      const summary = summarize(dir, plan, existing, sources.used, sources.capped)
       const words = plan.chapters.reduce((sum, chapter) => sum + chapter.words, 0)
 
       if (args.action === 'scan') {

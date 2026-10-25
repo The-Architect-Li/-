@@ -27,6 +27,8 @@ export interface Sources {
   outline?: string | undefined
   /** Directories the files actually came from, for the report. */
   used: string[]
+  /** Whether a folder held more files than the walk was willing to read. */
+  capped: boolean
 }
 
 /**
@@ -84,11 +86,13 @@ export async function readSources(dir: string): Promise<Sources> {
   const used: string[] = []
   const chapters: SourceFile[] = []
   const cast: SourceFile[] = []
+  let capped = false
   for (const name of PROSE_DIRS) {
     const folder = join(dir, name)
     if (!(await isDirectory(folder))) continue
     const found = await readTextFiles(folder)
     chapters.push(...found.files)
+    capped ||= found.capped
     used.push(name)
     break
   }
@@ -97,6 +101,7 @@ export async function readSources(dir: string): Promise<Sources> {
     if (!(await isDirectory(folder))) continue
     const found = await readTextFiles(folder, 0)
     cast.push(...found.files)
+    capped ||= found.capped
     used.push(name)
     break
   }
@@ -106,6 +111,7 @@ export async function readSources(dir: string): Promise<Sources> {
     // number — the picker's job is to look, not to be sure.
     const found = await readTextFiles(dir, 0)
     chapters.push(...found.files)
+    capped ||= found.capped
     used.push('.')
   }
   let outline: string | undefined
@@ -118,7 +124,7 @@ export async function readSources(dir: string): Promise<Sources> {
       // Try the next name.
     }
   }
-  return { chapters, cast, outline, used }
+  return { chapters, cast, outline, used, capped }
 }
 
 /** `12.5 万字` — a number a person can read at a glance. */
@@ -141,6 +147,8 @@ export interface ScanSummary {
   voiceless: string[]
   ignored: string[]
   used: string[]
+  /** Whether some folder held more files than the walk read. */
+  capped: boolean
 }
 
 /**
@@ -150,6 +158,7 @@ export interface ScanSummary {
  * @param plan - the plan built from it.
  * @param existing - chapter numbers already in the book.
  * @param used - directories that supplied the files.
+ * @param capped - whether a folder held more files than the walk read.
  * @returns the numbers the panel and the report both show.
  */
 export function summarize(
@@ -157,6 +166,7 @@ export function summarize(
   plan: ImportPlan,
   existing: ReadonlySet<number>,
   used: readonly string[],
+  capped = false,
 ): ScanSummary {
   return {
     dir,
@@ -174,6 +184,7 @@ export function summarize(
       .map((entry) => entry.card.name),
     ignored: [...plan.ignored],
     used: [...used],
+    capped,
   }
 }
 
@@ -222,6 +233,9 @@ export function describeScan(summary: ScanSummary, root: string | undefined): st
     lines.push(
       `没写章号、跳过：${summary.ignored.length} 个（${summary.ignored.slice(0, 3).join('、')}${summary.ignored.length > 3 ? ' …' : ''}）`,
     )
+  }
+  if (summary.capped) {
+    lines.push(`文件夹里的文件太多，只读了前 ${MAX_FILES} 个；后面那些没进这份计划。`)
   }
   lines.push('apply 就照这个写。')
   return lines.join('\n')
