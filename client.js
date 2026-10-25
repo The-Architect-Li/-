@@ -995,7 +995,19 @@ window.__ModuleLoader__.load({
       const rows = listing.entries.map((entry) =>
         h(
           'div',
-          { key: entry.path, style: S.row, onClick: () => go(entry.path) },
+          {
+            key: entry.path,
+            style: S.row,
+            className: 'iw-row',
+            role: 'button',
+            tabIndex: 0,
+            onClick: () => go(entry.path),
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              go(entry.path)
+            },
+          },
           h('span', { style: S.glyph }, '▸'),
           h('span', { style: S.label }, entry.name),
         ),
