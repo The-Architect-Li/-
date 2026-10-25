@@ -7,6 +7,7 @@ import { staleCards } from '../domain/cards.ts'
 import { chapterRanges, describeCoverage, recordCoverage } from '../domain/records.ts'
 import { checkRelations } from '../domain/relations.ts'
 import { scanChapter } from '../domain/scan.ts'
+import { staleRecords } from '../domain/staleness.ts'
 import type { Finding } from '../domain/types.ts'
 import { auditLedger } from './ledger.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
@@ -24,12 +25,12 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_check',
     description:
-      '确定性体检，零 token。contract 检查某章正文是否兑现章纲；scan 检查复读、句式、套路词、对话占比、章末钩子；ledger 检查设定冲突；timeline 检查时间线（锚点矛盾、回忆里的日期对不对、正文写死的日期在不在这一章的时间窗内、「这几个月」有没有变成「这几年」）；records 报出哪些章正文没有留下地点/故事点/时间线的记录（「实时更新」靠这条：记录是人写的，它只负责说出哪里漏了）；cards 报出哪些章卡盖的是旧正文的版本（正文改过、梗概没跟上）；all 全量跑一遍（不给 number 则检查所有已写章节）。这些结论是启发式的，用来定位问题，不替代人判断。',
+      '确定性体检，零 token。contract 检查某章正文是否兑现章纲；scan 检查复读、句式、套路词、对话占比、章末钩子；ledger 检查设定冲突；timeline 检查时间线（锚点矛盾、回忆里的日期对不对、正文写死的日期在不在这一章的时间窗内、「这几个月」有没有变成「这几年」）；records 报出哪些章正文没有留下地点/故事点/时间线的记录（「实时更新」靠这条：记录是人写的，它只负责说出哪里漏了）；cards 报出哪些章卡盖的是旧正文的版本（正文改过、梗概没跟上）；stale 把这件事扩到地点状态与人物阶段——凡是「从正文读出来的记录」，都对一遍它是第几版正文的读法；all 全量跑一遍（不给 number 则检查所有已写章节）。这些结论是启发式的，用来定位问题，不替代人判断。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'relations', 'all'],
+        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'stale', 'relations', 'all'],
         description: '检查类型',
       },
       number: { type: 'number', description: '章号；all 时可省略，省略则检查全书' },
@@ -166,6 +167,26 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
         }
       }
 
+      if (args.action === 'stale') {
+        const stale = staleRecords(snapshot)
+        if (stale.records.length === 0) {
+          return { errors: 0, warnings: 0, report: '章卡、地点状态、人物阶段都对得上现在的正文。' }
+        }
+        const byKind = { card: 0, place: 0, stage: 0 }
+        for (const record of stale.records) byKind[record.kind] += 1
+        return {
+          errors: 0,
+          warnings: 0,
+          report: [
+            `${stale.records.length} 条记录盖的是旧正文的版本（章卡 ${byKind.card}、地点 ${byKind.place}、人物阶段 ${byKind.stage}）：`,
+            ...stale.records.map((record) => `  ${record.label}`),
+            '',
+            '这些记录现在都对得上「某个版本」的正文，不是对得上「现在」这一版——写下一章时它们会被当成事实喂进去。',
+            '改法：读一遍改动后的那一章，用对应的工具重写一次（章卡 novel_outline action="card"、地点 novel_canon action="upsert_place"、阶段 novel_canon action="shift" / upsert_character 的 stages）。确认旧的仍然对，也就地重写一次把它盖成当前版本。',
+          ].join('\n'),
+        }
+      }
+
       if (args.action === 'all') {
         const coverage = recordCoverage(snapshot)
         if (coverage.silent.length > 0) {
@@ -183,6 +204,16 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
             severity: 'info',
             message: `${stale.length} 张章卡盖的是旧正文的版本（${chapterRanges(stale.map((item) => item.number))}）`,
             evidence: 'novel_check action="cards" 看具体哪几张、差了几版。',
+          })
+        }
+        const drifted = staleRecords(snapshot)
+        const nonCard = drifted.records.filter((record) => record.kind !== 'card')
+        if (nonCard.length > 0) {
+          findings.push({
+            code: 'records/stale',
+            severity: 'info',
+            message: `${nonCard.length} 条地点/阶段记录盖的是旧正文的版本（${chapterRanges(drifted.chapters)}）`,
+            evidence: 'novel_check action="stale" 看具体哪几条。',
           })
         }
       }

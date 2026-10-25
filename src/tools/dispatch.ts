@@ -114,6 +114,20 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
               },
             },
           },
+          shifts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string' },
+                chapter: { type: 'number' },
+                from: { type: 'string' },
+                to: { type: 'string' },
+                cause: { type: 'string' },
+              },
+            },
+          },
           report: { type: 'string' },
         },
       },
@@ -225,12 +239,14 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           role: roleId,
           number,
           findings,
+          shifts: shiftsOf(findings),
           report: [
             summarize(roleId, findings, routeText),
             window.report,
             `已记账：第${number}章第 ${stored.round} 轮审稿（${stored.items.length} 条）。`,
             reviewHint(number, stored.items),
-          ].join('\n'),
+            shiftHint(shiftsOf(findings)),
+          ].filter((line) => line !== '').join('\n'),
         }
       }
 
@@ -253,13 +269,15 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         role: roleId,
         number,
         findings,
+        shifts: shiftsOf(findings),
         report: [
           summarize(roleId, findings, routeText),
           neighbour.report,
           `${ROLES[roleId]?.label ?? roleId} 这一轮（第 ${stored.round} 轮）已记账，每条都有 id：`,
           ...stored.items.map((item) => `  ${item.id}　${item.severity}　${item.message}`),
           reviewHint(number, stored.items),
-        ].join('\n'),
+          shiftHint(shiftsOf(findings)),
+        ].filter((line) => line !== '').join('\n'),
       }
     },
   }))
@@ -321,4 +339,36 @@ function reviewHint(number: number, items: readonly { id: string }[]): string {
     `改动第${number}章后逐条结案：novel_chapter action="review" number=${number} id="${example}" state="fixed"（已改）/ "waived"（认了，写理由）。`,
     `看全部未结案：novel_chapter action="review" number=${number}。`,
   ].join('\n')
+}
+
+/** The turns a review round proposed, ready to hand to `novel_canon shift`. */
+function shiftsOf(items: readonly ReviewerFinding[]): NonNullable<ReviewerFinding['shift']>[] {
+  return items
+    .map((item) => item.shift)
+    .filter((shift): shift is NonNullable<ReviewerFinding['shift']> => shift !== undefined)
+}
+
+/**
+ * The line that turns a review question into a record.
+ *
+ * A reviewer can spot that a man is not who his card says he is, but only the
+ * author can say whether that is growth or a mistake. So the round ends with the
+ * two answers side by side and the call already spelled out: saying yes is one
+ * tool call, not transcribing four arguments out of a paragraph.
+ *
+ * @param shifts - the turns this round proposed.
+ * @returns the hint, or an empty string when nobody asked.
+ */
+function shiftHint(shifts: readonly NonNullable<ReviewerFinding['shift']>[]): string {
+  if (shifts.length === 0) return ''
+  const lines = [
+    `这一轮有 ${shifts.length} 处「他是不是变了」。回答是（有意为之），就把下面那行原样发出去，参数已经填好了：`,
+  ]
+  for (const shift of shifts) {
+    lines.push(
+      `  novel_canon action="shift" name="${shift.name}" chapter="${shift.chapter}" from="${shift.from}" to="${shift.to}" cause="${shift.cause}"`,
+    )
+  }
+  lines.push('回答不是（这条是写崩了），就别发，按 character/drift 改这一章。')
+  return lines.join('\n')
 }

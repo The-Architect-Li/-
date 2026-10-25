@@ -205,3 +205,54 @@ describe('stale chapter cards', () => {
     expect(again.report).not.toContain('卡写在第')
   })
 })
+
+describe('a review round that proposes a turn', () => {
+  let h: Awaited<ReturnType<typeof createHarness>>
+
+  /** The character reviewer answers with one finding that carries a whole turn. */
+  function answered(call: { request: { persona?: string } }): string {
+    if ((call.request.persona ?? '') === ROLES.writer.persona) return '沈砚把账本合上了。'
+    return JSON.stringify([
+      {
+        severity: 'warn',
+        code: 'character/shift',
+        message: '沈砚开始替人圆谎，这不是他的性格。',
+        evidence: '「阿蘅的事，我不知道。」',
+        shift: {
+          name: '沈砚',
+          chapter: 2,
+          from: '认死理，不肯把话说圆',
+          to: '开始替人圆谎',
+          cause: '他撞见阿蘅半夜从账房出来，手里有父亲的账本',
+        },
+      },
+    ])
+  }
+
+  beforeEach(async () => {
+    h = await createHarness({}, fakeSubagents(answered))
+  })
+  afterEach(async () => {
+    await h.cleanup()
+  })
+
+  it('hands the commander the call, arguments already filled', async () => {
+    await ready(h, 2)
+    await writeChapter(h, 1, '第一章：沈砚在码头等了一夜。')
+    const proposed = await h.call('novel_chapter', {
+      action: 'propose',
+      number: 2,
+      text: '第二章：沈砚把账本合上了，说不知道。',
+    })
+    expect(proposed.ok).toBe(true)
+
+    const result = valueOf<{ shifts: { name: string }[]; report: string }>(
+      await h.call('novel_dispatch', { action: 'character', number: 2 }),
+    )
+    expect(result.shifts).toHaveLength(1)
+    expect(result.shifts[0]?.name).toBe('沈砚')
+    expect(result.report).toContain('novel_canon action="shift"')
+    expect(result.report).toContain('name="沈砚"')
+    expect(result.report).toContain('参数已经填好了')
+  })
+})

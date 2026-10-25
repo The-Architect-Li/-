@@ -43,6 +43,7 @@ export function cleanStages(stages: readonly CharacterStage[]): CharacterStage[]
       text: stage.text.trim(),
       ...(typeof stage.chapter === 'number' && Number.isFinite(stage.chapter) ? { chapter: stage.chapter } : {}),
       ...(stage.cause === undefined || stage.cause.trim() === '' ? {} : { cause: stage.cause.trim() }),
+      ...(typeof stage.revision === 'number' && Number.isFinite(stage.revision) ? { revision: stage.revision } : {}),
     }))
     .filter((stage) => stage.label !== '' || stage.text !== '')
 }
@@ -198,11 +199,13 @@ export async function recordTurn(store: ProjectStore, turn: CharacterTurn): Prom
   // The same turn recorded twice should not become two turns: a re-run of the
   // same chapter is a correction, so the last word on that chapter wins.
   const kept = (previous.stages ?? []).filter((stage) => stage.chapter !== turn.chapter)
+  const written = await store.chapter(turn.chapter)
   const stage: CharacterStage = {
     label: `第${turn.chapter}章 · ${after}`,
     text: `原来是${before}。第${turn.chapter}章${cause}，之后${after}。`,
     chapter: turn.chapter,
     cause,
+    ...(written === undefined ? {} : { revision: written.revision ?? 1 }),
   }
   // Stages are told in book order; a turn found while writing chapter 12 does not
   // belong after a stage that starts at chapter 40.

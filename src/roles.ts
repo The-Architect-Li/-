@@ -41,6 +41,22 @@ export interface ReviewerFinding {
   code: string
   message: string
   evidence: string
+  /**
+   * A ready-made turn, when the finding is "is this a deliberate change?".
+   *
+   * The question and the record are the same sentence seen from two sides: the
+   * reviewer already holds the before, the after and the evidence. Making the
+   * author retype those into four arguments is where a good review quietly dies,
+   * so the finding carries the call itself and `novel_canon action="shift"`
+   * only has to say yes.
+   */
+  shift?: {
+    name: string
+    chapter: number
+    from: string
+    to: string
+    cause: string
+  }
 }
 
 const WRITER_CONTRACT = [
@@ -56,6 +72,9 @@ const REVIEWER_CONTRACT = [
   '输出契约：',
   '- 严格输出一个 JSON 数组，不要 ```json 围栏，不要任何解释或前后缀。',
   '- 每条形如 {"severity":"error|warn|info","code":"<短码>","message":"<一句话>","evidence":"<原文片段或第N章>"}。',
+  '- 如果这一条问的是「他是不是真的变了」，再加一个 shift 对象，把该记的东西一次填好：',
+  '  {"code":"character/shift", ..., "shift":{"name":"<角色卡上的名字>","chapter":<这一章的章号，数字>,"from":"<原来是什么样>","to":"<这一章成了什么样>","cause":"<是什么事让他变的>"}}。',
+  '  from / to / cause 用作者自己的话，不要用你的评价；cause 填不出来就别写 shift 对象，改报 character/drift。',
   '- 没有意见就输出 []。只读不改，不提改写建议，只报告问题。',
 ].join('\n')
 
@@ -453,6 +472,31 @@ export function parseKeeperOutput(output: string): { items: KeeperProposal[]; pa
   }
 }
 
+/**
+ * Read a finding's ready-made turn, if it has one worth recording.
+ *
+ * A half-filled shift is worse than none: `novel_canon action="shift"` refuses
+ * missing before/after/cause, so anything incomplete is dropped here and the
+ * finding survives as a plain question. That keeps the reviewer's answer honest
+ * — either it can name all four, or it is asking rather than proposing.
+ *
+ * @param value - the raw `shift` field from the model's JSON.
+ * @param code - the finding's code, used only to keep the two shapes apart.
+ * @returns the turn, or `undefined` when it is not one.
+ */
+function readShift(value: unknown, code: unknown): ReviewerFinding['shift'] {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const name = typeof record.name === 'string' ? record.name.trim() : ''
+  const from = typeof record.from === 'string' ? record.from.trim() : ''
+  const to = typeof record.to === 'string' ? record.to.trim() : ''
+  const cause = typeof record.cause === 'string' ? record.cause.trim() : ''
+  const chapter = typeof record.chapter === 'number' ? Math.trunc(record.chapter) : 0
+  if (name === '' || from === '' || to === '' || cause === '' || chapter < 1) return undefined
+  if (code !== 'character/shift') return undefined
+  return { name, chapter, from, to, cause }
+}
+
 /** Parse a reviewer's output into findings, degrading gracefully on garbage. */
 export function parseReviewerOutput(output: string): { items: ReviewerFinding[]; parsed: boolean } {
   const cleaned = output
@@ -469,11 +513,13 @@ export function parseReviewerOutput(output: string): { items: ReviewerFinding[];
       const record = entry as Record<string, unknown>
       const severity = record.severity
       if (severity !== 'error' && severity !== 'warn' && severity !== 'info') continue
+      const shift = readShift(record.shift, record.code)
       items.push({
         severity,
         code: typeof record.code === 'string' ? record.code : 'review/unnamed',
         message: typeof record.message === 'string' ? record.message : '',
         evidence: typeof record.evidence === 'string' ? record.evidence : '',
+        ...(shift === undefined ? {} : { shift }),
       })
     }
     return { items, parsed: true }

@@ -22,6 +22,7 @@ import { answersTo } from '../domain/characters.ts'
 import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { buildSpine, whenLabel } from '../domain/spine.ts'
+import { staleRecords } from '../domain/staleness.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
 
@@ -204,6 +205,12 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
     return stage.chapter === undefined ? head : `第${stage.chapter}章起 — ${head}`
   })
   const relations = relationsOf(snapshot.relations, snapshot.characters, name)
+  // A stage is a reading of a chapter, and chapters get rewritten. Saying so on
+  // the page is the difference between a record that ages visibly and one that
+  // quietly lies about a man who has not been that person for three revisions.
+  const staleStages = staleRecords(snapshot).records.filter(
+    (record) => record.kind === 'stage' && record.subject === card.name,
+  )
   const known = (other: string): boolean =>
     snapshot.characters.some((entry) => sameName(entry.name, other) || (entry.aliases ?? []).some((alias) => sameName(alias, other)))
   return {
@@ -226,6 +233,9 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
       { label: '最近改动', value: card.updatedAt },
     ],
     lists: [
+      ...(staleStages.length > 0
+        ? [{ label: '记录过期', items: staleStages.map((record) => `${record.label}——重看一遍那一章，把阶段重写一次。`) }]
+        : []),
       ...(stages.length > 0 ? [{ label: '经历的阶段', items: stages }] : []),
       // One list, both directions: since v0.21 a relation is one edge, so a line
       // written on the other person's page is the same record and is editable here.
@@ -350,7 +360,7 @@ function relationsPage(snapshot: Snapshot, root: string): EntryPayload {
         : []),
       ...(asymmetric.length > 0 ? [{ label: '单向（反过来另有说法）', items: asymmetric.map(line) }] : []),
       ...(edges.length === 0
-        ? [{ label: '还没有关系', items: ['在角色页的「关系」里写「对方：关系」，例如「刘紫灵：母亲」。'] }]
+        ? [{ label: '还没有关系', items: ['在角色页的「关系」里写「对方：关系」，例如「母亲，但十年没说话」。'] }]
         : []),
     ],
     edit: { inputs: [] },
@@ -471,6 +481,9 @@ function placePage(snapshot: Snapshot, name: string, root: string): EntryPayload
   // an import with only states filled in — the newest state wins when it exists,
   // so the page never shows chapter 1 while claiming to show "now".
   const current = states.at(-1)?.detail || place.detail
+  const staleStates = staleRecords(snapshot).records.filter(
+    (record) => record.kind === 'place' && record.subject === place.name,
+  )
   return {
     kind: 'place',
     title: place.name,
@@ -486,6 +499,9 @@ function placePage(snapshot: Snapshot, name: string, root: string): EntryPayload
       ...(place.notes ? [{ label: '备注', value: place.notes }] : []),
     ],
     lists: [
+      ...(staleStates.length > 0
+        ? [{ label: '记录过期', items: staleStates.map((record) => `${record.label}——重看一遍那一章，把这个地点的样子重写一次。`) }]
+        : []),
       ...(states.length > 0
         ? [{ label: '样子变过几次', items: states.map((state) => `第${state.chapter}章：${state.detail}${state.note ? `（${state.note}）` : ''}`) }]
         : []),

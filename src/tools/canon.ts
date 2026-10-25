@@ -68,14 +68,21 @@ function asRelations(lines: readonly string[]): CharacterRelation[] {
  * @param note - why it changed, when the text says.
  * @returns the states list, ordered by chapter.
  */
-function foldState(previous: PlaceCard | undefined, chapter: number, detail: string, note: string | undefined): PlaceState[] {
+function foldState(
+  previous: PlaceCard | undefined,
+  chapter: number,
+  detail: string,
+  note: string | undefined,
+  revision: number | undefined,
+): PlaceState[] {
   const states = [...(previous?.states ?? [])]
   const last = states.at(-1)
   if (last && last.detail === detail) {
-    if (note && note !== last.note) states[states.length - 1] = { ...last, note }
+    const stamped = revision === undefined ? last : { ...last, revision }
+    if ((note && note !== last.note) || stamped !== last) states[states.length - 1] = { ...stamped, ...(note ? { note } : {}) }
     return states
   }
-  states.push({ chapter, detail, ...(note ? { note } : {}) })
+  states.push({ chapter, detail, ...(note ? { note } : {}), ...(revision === undefined ? {} : { revision }) })
   return states.sort((a, b) => a.chapter - b.chapter)
 }
 
@@ -128,7 +135,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       relations: {
         type: 'array',
         items: { type: 'string' },
-        description: '关系，每条形如「对方：关系」，例如「刘紫灵：母女，但彼此不认」；关系是一张表里的一条边（两款都可以改），这里写的是从这张卡看过去的那一面',
+        description: '关系，每条形如「对方：关系」——冒号左边是另一个人的名字，右边是从这张卡看过去的那一面，例如「母女，但彼此不认」「师父，十年没再叫过他的名字」；关系是一张表里的一条边（两张卡都能改），这里写的是从这张卡看过去的那一面',
       },
       kind: { type: 'string', description: '世界观条目类型，或地点的类别（室内/街区/机构/城市）' },
       detail: { type: 'string', description: '世界观条目的内容；对地点是它现在长什么样' },
@@ -243,7 +250,10 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
         if (detail === '') throw new Error('upsert_place 需要 detail，写清这个地点现在长什么样。')
         const chapter = Math.max(0, Math.trunc(args.chapter ?? 0))
         const previous = (await store.places()).find((item) => item.name === name)
-        const states = foldState(previous, chapter, detail, args.note?.trim())
+        // Which version of that chapter this description was read off. Chapter 0
+        // is setup — there is no prose behind it, so nothing to be stale against.
+        const written = chapter > 0 ? await store.chapter(chapter) : undefined
+        const states = foldState(previous, chapter, detail, args.note?.trim(), written?.revision ?? (chapter > 0 ? 1 : undefined))
         const firstChapter = previous?.firstChapter === undefined ? chapter : Math.min(previous.firstChapter, chapter)
         const latestChapter = Math.max(previous?.latestChapter ?? 0, chapter)
         const aliases = args.aliases?.map((alias) => alias.trim()).filter((alias) => alias !== '')

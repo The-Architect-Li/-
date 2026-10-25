@@ -41,6 +41,11 @@ export interface CharacterStage {
   chapter?: number
   /** What turned him, in the author's words. Only a recorded turn has one. */
   cause?: string
+  /**
+   * The chapter revision this stage was read off, for the same reason places
+   * carry one: the prose it summarizes can be rewritten under it.
+   */
+  revision?: number
 }
 
 /**
@@ -180,6 +185,14 @@ export interface PlaceState {
   detail: string
   /** Why it changed, when the text says. */
   note?: string | undefined
+  /**
+   * The chapter revision this state was read off.
+   *
+   * A place's description is a reading of prose, and prose gets rewritten. Storing
+   * which version it came from is what lets the checker say 「这条记录是旧的了」
+   * instead of quietly serving a description of a room that no longer exists.
+   */
+  revision?: number | undefined
 }
 
 /**
