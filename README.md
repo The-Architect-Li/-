@@ -98,16 +98,35 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | Tool | Purpose | Refuses when |
 |---|---|---|
 | `novel_project` | init, status, premise, advance; books, open, close to switch books | premise too short, cast incomplete, no such book to open |
-| `novel_canon` | character cards, world entries | missing name or detail |
+| `novel_canon` | character cards, world entries, places with per-chapter history | missing name, detail or kind |
 | `novel_outline` | volumes, chapter contracts, approval | fewer than 2 beats, unknown character |
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
-| `novel_check` | repetition, rhythm, tone, contract | never; it reports instead |
+| `novel_check` | repetition, rhythm, tone, contract, timeline | never; it reports instead |
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
+| `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
+| `novel_timeline` | anchors, spans, "what day is chapter N", recalls | an unreadable date or duration; it refuses instead of guessing |
+
+### Places, story points, and the clock (v0.14)
+
+A long book does not fail because you cannot write; it fails because you cannot remember.
+Three records, one per kind of forgetfulness:
+
+- **A place has a history.** `novel_canon action="upsert_place" name="三号舱" kind="地点" state=[{chapter:1,detail:"an abandoned hold"},{chapter:30,detail:"half burnt"}]`.
+  Chapter 45 sees the chapter-30 version, not one averaged sentence. The panel shows
+  "现在的样子" — the latest chapter's version.
+- **A story point bounds an arc.** `novel_story action="add" number=1 name="翻身"`, then
+  `action="close" number=11`. Opening a second point while the first is open is refused:
+  otherwise a new chapter silently inherits the old arc's cast and places.
+- **The clock does arithmetic.** An anchor at chapter 1 on `2019-03`, a span from chapter 1 to 4
+  of "过了两三个月", and `action="at" chapter=4` answers "2019-04 to 2019-05".
+  A date or duration it cannot parse is an error with an example, never a guess.
+  `action="recall"` records "someone in chapter 40 says the cargo was in August", and
+  `novel_check action="timeline"` reports whether that month matches the clock.
 
 ### Bringing an existing manuscript in (v0.12)
 
@@ -242,7 +261,7 @@ Pick one and you get that book's tree:
   resolves the book from the session's pin, else its `cwd`, so switching sessions
   switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
-  profile has no web server and still gets all eleven tools.
+  profile has no web server and still gets all thirteen tools.
 
 The host routes, polled by the browser half:
 
@@ -314,7 +333,7 @@ The shelf lists books; it never deletes, renames or moves one.
 ```sh
 npm install        # the declared devDependencies resolve without flags
 npm run check      # typecheck + test + build + packaging smoke test
-npm run verify     # mount the built lib/ with a fake context, check all 10 tools register
+npm run verify     # mount the built lib/ with a fake context, check all 13 tools register
 ```
 
 Design notes: [docs/architecture.md](docs/architecture.md).

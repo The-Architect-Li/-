@@ -101,21 +101,23 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 你：novel_ledger action="record" subject="沈砚" predicate="左眼颜色" value="黑" chapter=1 quote="他的左眼黑得像井"
 ```
 
-## 十一个工具
+## 十三个工具
 
 | 工具 | 作用 | 会拒绝你的情况 |
 |---|---|---|
 | `novel_project` | 初始化、看状态、写前提、推进阶段；books 列书、open 换书、close 回来 | 前提太短、角色不够、章纲不全；open 找不到那本书 |
-| `novel_canon` | 角色卡与世界观 | 缺 name；世界观缺 detail |
+| `novel_canon` | 角色卡、世界观、地点（含按章变化的历史） | 缺 name；世界观缺 detail；地点缺 kind |
 | `novel_outline` | 分卷、章纲、批准 | 章纲少于 2 个节拍、引用不存在的角色 |
 | `novel_chapter` | write / propose / commit / restore 回退 / read / list / review 审稿结案 | write 漏角色不保存；版本对不上要你重读；waived 不写理由 |
 | `novel_ledger` | 记事实、查事实、全量体检 | 与已有设定冲突且未指名替换 |
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
-| `novel_check` | 确定性体检（零 token） | 不会拒绝，只报告 |
+| `novel_check` | 确定性体检（零 token），contract / scan / ledger / timeline | 不会拒绝，只报告 |
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
 | `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
 | `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
 | `novel_import` | scan 只读盘点已有稿件（正文/人物/大纲），apply 才写入；已存在的章默认不覆盖 | 目录不存在、不是绝对路径、同名章没给 overwrite |
+| `novel_story` | 故事点：add 开一段 / close 收尾 / at 查某章属于哪段 / list 全列 | 上一段没收尾就 add；结束章比开始章还早 |
+| `novel_timeline` | 时间线：anchor 钉日期 / span 记跨度 / at 问第 N 章哪天 / recall 记回忆 | 日期或时长解析不了、算不出来就报错，不猜 |
 
 ## 小说工坊流水线（v0.2）
 
@@ -166,7 +168,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -227,7 +229,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 - **不含糊。** 目录里已经有书就报「已经有《…》」并给「打开这本书」，不覆盖；相对路径一律 400，绝不让宿主进程的 cwd 替用户猜。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
-- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 11 个工具，只是没有面板。
+- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 13 个工具，只是没有面板。
 
 宿主侧接口：
 
@@ -274,9 +276,20 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 - **句式**：同一开头（两个字）出现 3 次以上；
 - **节奏**：句长离散度太低（长短句太均匀）；
 - **套路词**：可配置的词典，按千字密度计；
-- **对话占比、段落长度、章末钩子**。
+- **对话占比、段落长度、章末钩子**；
+- **时间线（v0.14）**：把 `novel_timeline` 记的日期与跨度推成每章的时间窗，比对「某人回忆某事说成 X 月」是否落在那个窗里，以及回忆里的事件有没有真记过。
 
 这些是**启发式**，用来定位问题，不替代人判断。它们的价值在于：同样的稿子跑两次结论一样，而且不花钱。
+
+## 地点、故事点、时间线（v0.14）
+
+长篇真正的敌人不是写不出来，是**记得住**。三样东西各挡一类错误：
+
+**地点有历史。** `novel_canon action="upsert_place" name="三号舱" kind="地点" state=[{chapter:1,detail:"废弃货舱"},{chapter:30,detail:"烧了一半"}]`——写第 45 章时看到的是第 30 章那一版，不是全书混成一句话。面板的地点页显示「现在的样子」，就是最后一章那版。
+
+**故事点分段。** `novel_story action="add" number=1 name="翻身"` 开一段，写到结束 `action="close" number=11` 收尾。上一段没收尾就要开新的会被拒绝——两段故事共用一个故事点，新章会自动继承旧故事点的人物与地点，这是最难事后发现的一类错。
+
+**时间线会算。** `action="anchor" chapter=1 when="2019-03"` 钉起点，`action="span" from=1 to=4 text="过了两三个月"` 记跨度，`action="at" chapter=4` 就能问出「2019 年 4–5 月」。日期或时长解析不了就当场报错并给例子，**不猜**。`action="recall" chapter=40 about="那船货" eventChapter=3 claimed="2019-08"` 记一个人在第 40 章回忆第 3 章的事，`novel_check action="timeline"` 会告诉你这个月份和时钟对不对得上。
 
 ## 配置
 
@@ -324,7 +337,7 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 npm run typecheck   # tsc --noEmit
 npm test            # vitest，303 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由、审稿落盘与章节版本冲突、换书、导出与面板钉书
 npm run build       # 产出 lib/
-npm run verify      # 冒烟：用假上下文挂载构建产物，确认 10 个工具都注册了、入口形状能被装载器接受
+npm run verify      # 冒烟：用假上下文挂载构建产物，确认 13 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部
 ```
 
