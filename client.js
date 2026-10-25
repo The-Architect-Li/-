@@ -60,6 +60,7 @@ window.__ModuleLoader__.load({
     const API_IMPORT_BOOK = '/api/inkwell/import-book'
     const API_EXPORT = '/api/inkwell/export'
     const API_DELETE_BOOK = '/api/inkwell/delete-book'
+    const API_VOLUMES = '/api/inkwell/volumes'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -154,6 +155,18 @@ window.__ModuleLoader__.load({
       warn: { color: 'color-mix(in srgb, #c9822f 82%, currentColor)' },
       muted: { opacity: 0.5 },
     }
+
+    /** Row height in the tree, in pixels: the unit the virtual window counts in. */
+    const ROW_H = 30
+
+    /** How tall a windowed run may get before it scrolls inside the drawer. */
+    const WINDOW_H = 320
+
+    /** Rows kept mounted above and below the visible window, so scrolling does not flash. */
+    const OVERSCAN = 4
+
+    /** Above this many flat children, a run becomes a window instead of a list. */
+    const VIRTUAL_AT = 40
 
     /**
      * List the books this machine has opened.
@@ -360,6 +373,42 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ root }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Read which chapters sit in which volume.
+     *
+     * @param root - absolute project root of the book.
+     * @returns `{ volumes, unassigned, report }`.
+     */
+    async function fetchVolumes(root) {
+      const query = root ? `?root=${encodeURIComponent(root)}` : ''
+      const response = await fetch(`${API_VOLUMES}${query}`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Move chapters into a volume, or cut the whole book into fixed-size ones.
+     *
+     * @param root - absolute project root of the book.
+     * @param body - `{ action: 'assign', chapters, volume }` or `{ action: 'split', perVolume }`.
+     * @returns the refreshed `{ volumes, unassigned, report }`.
+     */
+    async function writeVolumes(root, body) {
+      const response = await fetch(API_VOLUMES, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ root, ...body }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -1244,6 +1293,47 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * A scroll box that only mounts the rows you can see.
+     *
+     * A book of 300 chapters is 300 rows, and rendering all of them makes the
+     * panel feel like a document you drag through instead of a tree you work in.
+     * Rows are a fixed 30px here, so the arithmetic is exact: the inner div is
+     * as tall as the whole list, and the window slides over it.
+     *
+     * @param props - the rows, their depth, and the tree's callbacks.
+     * @returns the scroll box.
+     */
+    function VirtualRows(props) {
+      const { rows, depth, collapsed, onToggle, selected, onRowClick } = props
+      const [top, setTop] = useState(0)
+      const total = rows.length
+      const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
+      const end = Math.min(total, first + Math.ceil(WINDOW_H / ROW_H) + OVERSCAN * 2)
+      const mounted = []
+      for (let index = first; index < end; index += 1) {
+        mounted.push(
+          h(
+            'div',
+            {
+              key: rows[index].id,
+              style: { position: 'absolute', top: 0, left: 0, right: 0, height: `${ROW_H}px`, transform: `translateY(${index * ROW_H}px)` },
+            },
+            h(Row, { row: rows[index], depth, collapsed, onToggle, selected, onRowClick }),
+          ),
+        )
+      }
+      return h(
+        'div',
+        {
+          className: 'iw-window',
+          style: { maxHeight: `${WINDOW_H}px`, overflowY: 'auto', position: 'relative' },
+          onScroll: (event) => setTop(event.currentTarget.scrollTop),
+        },
+        h('div', { style: { height: `${total * ROW_H}px`, position: 'relative' } }, mounted),
+      )
+    }
+
+    /**
      * One tree row, recursive through its children.
      *
      * @param props - the row, its depth, collapse state and selection.
@@ -1292,6 +1382,13 @@ window.__ModuleLoader__.load({
         typeof row.count === 'number' ? h('span', { style: S.count }, num(row.count)) : null,
       )
       if (!hasChildren || !open) return [head]
+      // A long flat run (a volume's chapters, the chapter cards) is windowed so
+      // the drawer does not turn into a 300-row scroll. Rows that themselves
+      // have children stay on the plain path: their height is not fixed.
+      const flat = row.children.every((child) => !Array.isArray(child.children) || child.children.length === 0)
+      if (flat && row.children.length > VIRTUAL_AT) {
+        return [head, h(VirtualRows, { key: 'window', rows: row.children, depth: depth + 1, collapsed, onToggle, selected, onRowClick })]
+      }
       const children = row.children.map((child) =>
         h(Row, {
           key: child.id,
@@ -1956,6 +2053,261 @@ window.__ModuleLoader__.load({
             afterDelete
               ? '导出成功才会删除；导出失败就停在这里，书还在。'
               : '导出的文件进你刚选的文件夹，书本身不会变。同一个文件夹再导一次会覆盖同名文件。',
+          ),
+        ),
+      )
+    }
+
+    /**
+     * A windowed list of plain rows, for dialogs.
+     *
+     * The volume picker can face 300 chapters, and a dialog that renders them all
+     * is a dialog you cannot scroll to the bottom of. Same arithmetic as
+     * {@link VirtualRows}, minus the tree.
+     *
+     * @param props - the row count, a render function per index, and a height.
+     * @returns the scroll box.
+     */
+    function WindowList(props) {
+      const { count, height, render } = props
+      const [top, setTop] = useState(0)
+      const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
+      const end = Math.min(count, first + Math.ceil(height / ROW_H) + OVERSCAN * 2)
+      const mounted = []
+      for (let index = first; index < end; index += 1) {
+        mounted.push(
+          h(
+            'div',
+            {
+              key: String(index),
+              style: { position: 'absolute', top: 0, left: 0, right: 0, height: `${ROW_H}px`, transform: `translateY(${index * ROW_H}px)` },
+            },
+            render(index),
+          ),
+        )
+      }
+      return h(
+        'div',
+        {
+          className: 'iw-window',
+          style: { maxHeight: `${height}px`, overflowY: 'auto', position: 'relative', margin: '2px 0 4px' },
+          onScroll: (event) => setTop(event.currentTarget.scrollTop),
+        },
+        h('div', { style: { height: `${count * ROW_H}px`, position: 'relative' } }, mounted),
+      )
+    }
+
+    /**
+     * The volume dialog: which chapter is in which volume, and two ways to say it.
+     *
+     * 手动 is the writer's own judgement — tick chapters, name a volume. 自动 is
+     * arithmetic: every N chapters starts a new volume. Both write through the
+     * same route, and neither deletes a chapter or an outline: a chapter taken out
+     * of a volume becomes 未分卷, it does not disappear.
+     *
+     * @param props - the book, the session, and what to do when it lands.
+     * @returns the modal overlay.
+     */
+    function VolumesDialog(props) {
+      const { book, sessionId, onDone, onCancel } = props
+      const [mode, setMode] = useState('manual')
+      const [status, setStatus] = useState({ kind: 'loading' })
+      const [picked, setPicked] = useState(() => new Set())
+      const [target, setTarget] = useState('')
+      const [perVolume, setPerVolume] = useState('10')
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+
+      useEffect(() => {
+        let alive = true
+        fetchVolumes(book.root)
+          .then((data) => {
+            if (alive) setStatus({ kind: 'ready', data })
+          })
+          .catch((failure) => {
+            if (alive) setStatus({ kind: 'failed', message: String((failure && failure.message) || failure) })
+          })
+        return () => {
+          alive = false
+        }
+      }, [book.root])
+
+      const apply = (body) => {
+        setBusy(true)
+        setError('')
+        writeVolumes(book.root, body)
+          .then((data) => {
+            setBusy(false)
+            onDone(data)
+          })
+          .catch((failure) => {
+            setBusy(false)
+            setError(String((failure && failure.message) || failure))
+          })
+      }
+
+      const data = status.kind === 'ready' ? status.data : null
+      const volumeOf = new Map()
+      if (data !== null) {
+        for (const volume of data.volumes) {
+          for (const number of volume.chapters) volumeOf.set(number, volume.number)
+        }
+        for (const number of data.unassigned) volumeOf.set(number, 0)
+      }
+      const chapters = data === null ? [] : [...volumeOf.keys()].sort((a, b) => a - b)
+      const highest = data === null ? 0 : data.volumes.reduce((max, volume) => Math.max(max, volume.number), 0)
+      const targets = []
+      for (let number = 1; number <= highest; number += 1) targets.push(number)
+
+      const toggle = (number) => () => {
+        setPicked((previous) => {
+          const next = new Set(previous)
+          if (next.has(number)) next.delete(number)
+          else next.add(number)
+          return next
+        })
+      }
+
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '正文分卷' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '⋮⋮'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '正文分卷'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, book.title || book.root),
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: { ...S.iconButton, ...(mode === 'manual' ? { borderColor: 'var(--iw-accent-line)', color: 'var(--iw-accent)' } : {}) }, disabled: busy, onClick: () => setMode('manual') },
+              '手动分配',
+            ),
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: { ...S.iconButton, ...(mode === 'auto' ? { borderColor: 'var(--iw-accent-line)', color: 'var(--iw-accent)' } : {}) }, disabled: busy, onClick: () => setMode('auto') },
+              '自动划分',
+            ),
+            h('span', { style: S.spacer }),
+            h('span', { style: { ...S.aside, padding: 0 } }, `${num(chapters.length)} 章`),
+          ),
+          status.kind === 'loading' ? h('div', { style: S.aside }, '正在读分卷…') : null,
+          status.kind === 'failed' ? h('div', { style: S.error }, status.message) : null,
+          data !== null && chapters.length === 0 ? h('div', { style: S.note }, '这本书还没有章节。') : null,
+
+          data !== null && chapters.length > 0 && mode === 'manual'
+            ? h(WindowList, {
+                count: chapters.length,
+                height: 260,
+                render: (index) => {
+                  const number = chapters[index]
+                  const volume = volumeOf.get(number) || 0
+                  return h(
+                    'label',
+                    { style: { ...S.checkRow, minHeight: `${ROW_H - 2}px`, padding: '0 6px', margin: 0 } },
+                    h('input', { type: 'checkbox', checked: picked.has(number), onChange: toggle(number) }),
+                    h('span', { style: { ...S.label, flex: '0 0 auto' } }, `第${number}章`),
+                    h('span', { style: S.spacer }),
+                    h('span', { style: S.pill }, volume === 0 ? '未分卷' : `第${volume}卷`),
+                  )
+                },
+              })
+            : null,
+
+          data !== null && chapters.length > 0 && mode === 'manual'
+            ? h(
+                'div',
+                { style: S.actions },
+                h('span', { style: { ...S.aside, padding: 0 } }, `勾了 ${picked.size} 章`),
+                h('span', { style: S.spacer }),
+                h(
+                  'select',
+                  {
+                    style: S.select,
+                    value: target,
+                    disabled: busy,
+                    onChange: (event) => setTarget(event.target.value),
+                    'aria-label': '归到哪一卷',
+                  },
+                  h('option', { value: '' }, '归到…'),
+                  h('option', { value: '0' }, '未分卷'),
+                  ...targets.map((number) => h('option', { key: String(number), value: String(number) }, `第${number}卷`)),
+                  h('option', { value: String(highest + 1) }, `新建第${highest + 1}卷`),
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'iw-btn iw-primary',
+                    style: S.primaryButton,
+                    disabled: busy || picked.size === 0 || target === '',
+                    onClick: () =>
+                      apply({
+                        action: 'assign',
+                        chapters: [...picked].sort((a, b) => a - b),
+                        volume: target === '0' ? null : Number(target),
+                      }),
+                  },
+                  busy ? '正在移动…' : '应用',
+                ),
+              )
+            : null,
+
+          data !== null && chapters.length > 0 && mode === 'auto'
+            ? h(
+                'div',
+                { style: S.actions },
+                h('span', { style: { ...S.aside, padding: 0 } }, '每'),
+                h('input', {
+                  type: 'number',
+                  min: 1,
+                  style: { ...S.input, width: '72px', textAlign: 'center' },
+                  value: perVolume,
+                  disabled: busy,
+                  onChange: (event) => setPerVolume(event.target.value),
+                  'aria-label': '每卷几章',
+                }),
+                h('span', { style: { ...S.aside, padding: 0 } }, '章一卷'),
+                h('span', { style: S.spacer }),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'iw-btn iw-primary',
+                    style: S.primaryButton,
+                    disabled: busy || !(Number(perVolume) >= 1),
+                    onClick: () => apply({ action: 'split', perVolume: Number(perVolume) }),
+                  },
+                  busy ? '正在划分…' : '按这个划分',
+                ),
+              )
+            : null,
+
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '关闭'),
+          ),
+          h(
+            'div',
+            { style: S.footer },
+            mode === 'manual'
+              ? '勾选章节，再选归到哪一卷；选「未分卷」就是把它们从卷里拿出来。不会删掉任何一章。'
+              : '按顺序每 N 章切一卷，多出来的零头算最后一卷。已经存在的卷不会被删，只会重新分配。',
           ),
         ),
       )
@@ -2739,6 +3091,7 @@ window.__ModuleLoader__.load({
       // keeps the book and the reason (`afterDelete`), because the same dialog
       // serves both doors.
       const [exportFor, setExportFor] = useState(null)
+      const [volumesFor, setVolumesFor] = useState(null)
       const [exportDir, setExportDir] = useState('')
       const [exporting, setExporting] = useState(false)
       const [exportError, setExportError] = useState('')
@@ -3028,6 +3381,23 @@ window.__ModuleLoader__.load({
         view === 'tree'
           ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => beginCreate('tree'), title: '选一个文件夹，在里面新建一本书' }, '＋ 新建')
           : null,
+        view === 'tree' && root !== ''
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: S.iconButton,
+                onClick: () =>
+                  setVolumesFor({
+                    root,
+                    title: state.status === 'ready' && state.data.title ? state.data.title : '',
+                  }),
+                title: '把章节分到卷里，或者按 N 章一卷自动划分',
+              },
+              '分卷',
+            )
+          : null,
         view === 'tree'
           ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
           : null,
@@ -3136,9 +3506,20 @@ window.__ModuleLoader__.load({
                   setExportError('')
                 },
               }),
-          deleteFor === null
+          volumesFor === null
             ? null
-            : h(DeleteDialog, {
+            : h(VolumesDialog, {
+                book: volumesFor,
+                sessionId,
+                onDone: (data) => {
+                  setVolumesFor(null)
+                  setNotice(data.report || '分卷改好了。')
+                  refresh()
+                },
+                onCancel: () => setVolumesFor(null),
+              }),
+          deleteFor === null
+            ? null            : h(DeleteDialog, {
                 book: deleteFor,
                 busy: deleting,
                 error: deleteError,
@@ -3416,7 +3797,7 @@ window.__ModuleLoader__.load({
     // question must not be answerable without the confirming checkbox, and the
     // export must not run before a folder has been chosen. Both are state the
     // stub React can render once and inspect.
-    exports.dialogs = { DeleteDialog, ExportDialog }
+    exports.dialogs = { DeleteDialog, ExportDialog, VolumesDialog }
 
     return module.exports
   },

@@ -51,6 +51,8 @@ import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
+import { chapterRanges } from '../domain/records.ts'
+import { assignVolume, readVolumes, splitVolumes, type VolumeReport } from '../domain/volumes.ts'
 import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
@@ -758,6 +760,132 @@ export async function importFolder(
 }
 
 /**
+ * One line per volume, plus the chapters in none: what the panel says after a
+ * split, in the shape a writer checks ("did my 84 and 85 land somewhere?").
+ *
+ * @param report - the volume report.
+ * @returns the human-readable summary.
+ */
+function describeVolumes(report: VolumeReport): string {
+  if (report.volumes.length === 0 && report.unassigned.length === 0) return '这本书还没有任何章节。'
+  const lines = report.volumes.map((volume) => {
+    const label = `第${volume.number}卷${volume.title === '' ? '' : ` ${volume.title}`}`
+    if (volume.chapters.length === 0) return `${label}：空的`
+    return `${label}：${chapterRanges(volume.chapters)}（${volume.chapters.length} 章）`
+  })
+  if (report.unassigned.length > 0) {
+    lines.push(`未分卷：${chapterRanges(report.unassigned)}（${report.unassigned.length} 章）`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Read the volume map of one book.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns status and body with the volumes and the chapters in none.
+ */
+export async function readVolumeMap(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) {
+      const empty: VolumeReport = { volumes: [], unassigned: [], created: [], changed: 0 }
+      return {
+        status: 200,
+        body: { ok: true, data: { ...empty, root: store.root, noBook: true, report: '这本书还没有项目文件。' } },
+      }
+    }
+    const report = await readVolumes(store)
+    return {
+      status: 200,
+      body: { ok: true, data: { ...report, root: store.root, noBook: false, report: describeVolumes(report) } },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = error instanceof PanelInputError ? error.status : 500
+    return { status, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * Change which chapters sit in which volume.
+ *
+ * Two actions, one route: `assign` moves the chapters the writer ticked,
+ * `split` cuts the whole book into fixed-size volumes. Both only ever assign —
+ * no chapter is deleted and no volume outline is thrown away, because a volume
+ * can carry a summary nobody else has.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ action: 'assign', chapters, volume }` or `{ action: 'split', perVolume }`.
+ * @param sessionId - the calling session, when known.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns status and the refreshed map.
+ */
+export async function writeVolumeMap(
+  deps: PanelDeps,
+  body: Record<string, unknown>,
+  sessionId: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    // The body may name the book. The sheet can show a book this session is not
+    // pinned to, and "move these chapters" must land in the book being looked at.
+    const named = typeof body.root === 'string' ? body.root.trim() : ''
+    const store = storeFor(deps, sessionId, named === '' ? root : named)
+    if (!(await store.exists())) {
+      throw new PanelInputError(`这里还没有书：${store.root}。先建书，再分卷。`, 409)
+    }
+    const action = typeof body.action === 'string' ? body.action : 'assign'
+    let report: VolumeReport
+    let said: string
+    if (action === 'split') {
+      const perVolume = Number(body.perVolume)
+      if (!Number.isInteger(perVolume) || perVolume < 1) {
+        throw new PanelInputError(`每卷几章要是正整数，收到 ${String(body.perVolume)}。`)
+      }
+      report = await splitVolumes(store, perVolume)
+      said = `按每 ${perVolume} 章一卷切成了 ${report.volumes.length} 卷，动了 ${report.changed} 章。`
+    } else if (action === 'assign') {
+      const chapters = Array.isArray(body.chapters) ? body.chapters.map((value) => Number(value)) : []
+      if (chapters.length === 0) throw new PanelInputError('没有选中任何章节。')
+      const raw = body.volume
+      const volume = raw === null || raw === undefined ? null : Number(raw)
+      if (volume !== null && (!Number.isInteger(volume) || volume < 1)) {
+        throw new PanelInputError(`卷号要是正整数，或者 null 表示未分卷，收到 ${String(raw)}。`)
+      }
+      report = await assignVolume(store, chapters, volume)
+      const moved = chapterRanges([...new Set(chapters.map(Number))].filter((n) => Number.isInteger(n)).sort((a, b) => a - b))
+      said =
+        volume === null
+          ? `把 ${moved} 从卷里拿出来了（现在算未分卷），动了 ${report.changed} 章。`
+          : `把 ${moved} 归入第${volume}卷，动了 ${report.changed} 章。`
+      if (report.created.length > 0) said += `新建了第${report.created.join('、')}卷。`
+    } else {
+      throw new PanelInputError(`不认识的 action：${action}。要么 assign，要么 split。`)
+    }
+    return {
+      status: 200,
+      body: { ok: true, data: { ...report, root: store.root, noBook: false, report: `${said}\n${describeVolumes(report)}` } },
+    }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    if (error instanceof RangeError) {
+      return { status: 400, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
  * The agent-team payload: who is on the team, and what they may run on.
  *
  * `noBook` is not an error: a panel with no book still shows the team, so the
@@ -1278,6 +1406,17 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await removeBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/volumes') {
+        const sessionId = url.searchParams.get('session') ?? undefined
+        const root = url.searchParams.get('root') ?? undefined
+        if (isRead) {
+          send(res, await readVolumeMap(deps, sessionId, root))
+          return
+        }
+        send(res, await writeVolumeMap(deps, await readJson(req), sessionId, root))
         return
       }
 
