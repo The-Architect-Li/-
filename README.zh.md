@@ -101,19 +101,20 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 你：novel_ledger action="record" subject="沈砚" predicate="左眼颜色" value="黑" chapter=1 quote="他的左眼黑得像井"
 ```
 
-## 九个工具
+## 十个工具
 
 | 工具 | 作用 | 会拒绝你的情况 |
 |---|---|---|
-| `novel_project` | 初始化、看状态、写前提、推进阶段 | 前提太短、角色不够、章纲不全 |
+| `novel_project` | 初始化、看状态、写前提、推进阶段；books 列书、open 换书、close 回来 | 前提太短、角色不够、章纲不全；open 找不到那本书 |
 | `novel_canon` | 角色卡与世界观 | 缺 name；世界观缺 detail |
 | `novel_outline` | 分卷、章纲、批准 | 章纲少于 2 个节拍、引用不存在的角色 |
-| `novel_chapter` | write 直接写 / propose 落草稿 / commit 定稿 / read 读 / list 列 | write 漏角色不保存；propose/commit 需已批准章纲 |
+| `novel_chapter` | write / propose / commit / restore 回退 / read / list / review 审稿结案 | write 漏角色不保存；版本对不上要你重读；waived 不写理由 |
 | `novel_ledger` | 记事实、查事实、全量体检 | 与已有设定冲突且未指名替换 |
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
 | `novel_check` | 确定性体检（零 token） | 不会拒绝，只报告 |
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
 | `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核） | 阶段不对、章纲未批准、审核时无草稿 |
+| `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
 
 ## 小说工坊流水线（v0.2）
 
@@ -123,11 +124,20 @@ v0.2 把"直写"升级成指挥官流水线：主会话就是指挥官，它派�
 你 ⇄ 指挥官（主会话）充分沟通
         ├─ novel_dispatch writer    → 出初稿
         ├─ novel_chapter propose    → 落草稿 + 跑确定性体检（不挡）
-        ├─ novel_dispatch logic     → 逻辑审核（带证据）
+        ├─ novel_dispatch logic     → 逻辑审核（意见落进 reviews/，每条有 id）
         ├─ novel_dispatch character → 角色一致性审核
         ├─ novel_dispatch chief     → 总审核裁决分歧
+        ├─ novel_chapter review     → 逐条结案：fixed 已改 / waived 认了（写理由）
         └─ 你点头 → novel_chapter commit → 才算一章
 ```
+
+**审稿意见不再只活在聊天里。** 每一轮审核都写进 `<项目>/reviews/<章号>.json`：谁提的、哪个模型、审的是第几轮草稿、每条意见的 id 与状态。`novel_chapter action="review" number=1` 是不带 id 的看板，`✓` 已改、`—` 不改、空格未结。
+
+**两处同时改一章不会再互相覆盖。** 每次落盘 `revision` 加一；`write` / `restore` 要求带上你读到的那一版，对不上就拒绝并告诉你是第几版对第几版（确实要覆盖传 `force=true`）。面板编辑页同样带版本号，冲突返回 409。草稿轮次可以用 `restore` 回退。
+
+**对话里也能换书。** `novel_project action="books"` 看这台机器上记得的书，`action="open" root="E:\书\雾港"`（或 `book="雾港"`）把当前会话钉到那本书，`action="close"` 回会话自己的工作目录。钉选按会话记住，后续工具调用照旧生效。
+
+**写完能交出去。** `novel_export action="text"` 整本 txt、`action="markdown"` 按卷分文件、`action="canon"` 设定集（人物 / 世界观 / 分卷 / 章纲 / 仍然成立的事实表），默认写进 `<项目>/exports/`。
 
 **按角色配模型：** 写手用 GLM、审核用 DeepSeek，随你。`novel_roles set` 把选择存进**这本书**的 `project.json`，不动全局；没设的角色继承当前会话模型。模型密钥永远留在 DSH 设置里，插件只记 provider/model 名字——它不知道你的 key。
 
@@ -278,17 +288,19 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 ## 已知边界
 
 - 节拍覆盖率用二元字组估算，是提醒不是判决；它宁可漏报也不误杀。
-- 同一本书同一章并发写会互相覆盖（章纲与账本仍是单写者模型）。
+- 章节版本是「一文件一版本」，不是字段级合并：两人同时改同一章的不同段落，仍会有一方收到冲突（409 或工具拒绝），改完重贴即可。
 - 账本只防「同一属性给出不同值」，不防逻辑矛盾（比如一个人同时出现在两地）。
 - 面板建书要一个「容器目录」：书建在 `<所选目录>/.novel` 下。若插件的 `root` 被配成绝对路径，面板拒绝建书并提示改用工具——那时全书只有一个位置，面板不该替它猜。
+- 导出没有 docx / pdf；要 Word 就把 markdown 或 txt 转过去。
+- 换书记在会话上：同一个会话只能看一本，两个会话可以各看各的。
 
 ## 开发
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，259 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由
+npm test            # vitest，295 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由、审稿落盘与章节版本冲突、换书与导出
 npm run build       # 产出 lib/
-npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
+npm run verify      # 冒烟：用假上下文挂载构建产物，确认 10 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部
 ```
 

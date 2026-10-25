@@ -97,15 +97,31 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 
 | Tool | Purpose | Refuses when |
 |---|---|---|
-| `novel_project` | init, status, premise, advance | premise too short, cast incomplete |
+| `novel_project` | init, status, premise, advance; books, open, close to switch books | premise too short, cast incomplete, no such book to open |
 | `novel_canon` | character cards, world entries | missing name or detail |
 | `novel_outline` | volumes, chapter contracts, approval | fewer than 2 beats, unknown character |
-| `novel_chapter` | write, propose, commit, read, list | wrong phase, unapproved contract, missing cast |
+| `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
 | `novel_check` | repetition, rhythm, tone, contract | never; it reports instead |
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
+| `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
+
+### Review notes, versions, switching books, export (v0.10)
+
+- **Review notes persist.** Every reviewer round lands in `<project>/reviews/<n>.json`: who said
+  it, on which model, against which draft round, and an id per note. Answer them one by one with
+  `novel_chapter action="review" number=1 id="001-r1-1" state="fixed" note="…"`; a `waived` note
+  must carry the reason. Without an id the same action prints the board.
+- **Chapters are versioned.** Each save bumps `revision`. `write` and `restore` want the revision
+  you read; a stale one is refused with both numbers. `force=true` overwrites on purpose. The
+  panel sends the revision it opened, so a second editor gets a 409 instead of losing their words.
+- **Books switch inside a conversation.** `novel_project action="books"` lists them,
+  `action="open" root="…"` (or `book="雾港"`) pins this session to one, `action="close"` returns.
+  The pin lives in `<DSH_HOME>/inkwell/sessions.json`, so it survives turn by turn.
+- **Books leave the room.** `novel_export action="text" | "markdown" | "canon"` writes into
+  `<project>/exports/` by default; `out` takes any absolute path.
 
 ## The workshop panel
 
@@ -264,7 +280,7 @@ The shelf lists books; it never deletes, renames or moves one.
 ```sh
 npm install        # the declared devDependencies resolve without flags
 npm run check      # typecheck + test + build + packaging smoke test
-npm run verify     # mount the built lib/ with a fake context, check all 9 tools register
+npm run verify     # mount the built lib/ with a fake context, check all 10 tools register
 ```
 
 Design notes: [docs/architecture.md](docs/architecture.md).

@@ -3,6 +3,55 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.10.0] - 2026-10-25
+
+用得久了才会暴露的四件事：审稿意见会消失，两处同时改一章会互相覆盖，对话里换不了书，写完交不出去。
+
+### 新增
+
+- **审稿意见落盘**（`<项目>/reviews/<章号>.json`）。`novel_dispatch` 的 `logic` / `character` /
+  `chief` 每一轮的意见都记下来：谁提的、用的哪个模型、审的是第几轮草稿、每条的 id。
+  写手逐条结案：`novel_chapter action="review" number=1 id="001-r1-1" state="fixed" note="改成傍晚了"`；
+  决定不改用 `state="waived"`，**必须**在 `note` 里写清楚为什么 —— 半年后你会想知道。
+  `action="review"` 不带 id 就是看板，按轮次分组，`✓` 已改 / `—` 不改 / 空格未结。
+- **章节版本号（乐观锁）**。每次落盘 `chapters/NNN.json` 的 `revision` 加一。`write` / `restore`
+  默认要求带上你读到的那一版 `revision`；对不上就拒绝，并告诉你是第几版对第几版。确实要无条件
+  覆盖传 `force=true`。面板编辑页同样带版本号，冲突时返回 409 并提示刷新 —— 不再出现「晚保存的
+  那一份悄悄吃掉早保存的那一份」。
+- **回退到某一轮草稿**：`novel_chapter action="restore" number=1 round=2`。草稿本来就在
+  `drafts/` 里躺着，现在有了入口，回退也走同一套版本检查，本身也算一次新版本。
+- **对话里换书**：`novel_project action="books"` 列出这台机器上记得的书、哪一本是本会话正在看的；
+  `action="open" root="<项目目录或其上级>"`（或 `book="书名片段"`）把本会话钉到那本书上；
+  `action="close"` 回到会话自己的工作目录。钉选按会话保存（`<DSH_HOME>/inkwell/sessions.json`），
+  下一个工具调用照旧生效，不必每句话都重复。`books` / `open` / `close` 不受阶段闸门限制 ——
+  这组工具就是给「指错地方了」的人用的。
+- **导出**：`novel_export action="text"` 整本 txt、`action="markdown"` 按卷分文件（没分卷的进
+  `未分卷.md`）、`action="canon"` 设定集（人物、世界观、分卷、章纲、仍然成立的事实表）。
+  `out` 可给绝对路径，默认写进 `<项目>/exports/`。只导已落盘的正文；`propose` 的草稿在 `drafts/`
+  里，不算。
+- 面板章节页显示未结审稿条数与每条的 id；编辑页保存时自动带上页面打开时的版本号。
+
+### 变更
+
+- `src/domain/library.ts` 改名为 `src/domain/shelf.ts`，`dshHome()` / `bookKey()` 提到
+  `src/domain/home.ts` —— 工具和面板现在都要读这份状态，它不再是面板私有的。
+- `ProjectStore.writeChapter(draft, { baseRevision })`：不传就无条件写（内部调用），传了就比对。
+- 章节 JSON 多一个 `revision` 字段；老的章节文件没有这个字段，读的时候按 1 处理，写的时候补齐。
+
+### 修复
+
+- **设定集导出把被推翻的事实当成「仍然成立」**。原来按 `supersedes === null` 过滤，筛的恰好是
+  「没有推翻别人」的那些 —— 即被替换的旧事实，反而丢掉了新的。现在按「有没有被后来的条目
+  supersedes」判断。
+- 空书导出 txt 会写出一个只有书名的文件；现在直接说「还没有可导出的正文」。
+
+### 已知边界
+
+- 导出没有 docx / pdf。要 Word 就用 markdown 或 txt 转。
+- 版本号是「一文件一版本」，不是字段级合并：两人改同一章的不同段落仍然会有一方收到 409。
+- 换书记在会话上，不在书上：同一个会话只能看一本，两个会话可以各看各的。
+
+
 ## [0.9.2] - 2026-10-25
 
 面板长着眼睛也能看见的东西：鼠标移上去会亮，键盘按得动，输入框点进去有个圈。
@@ -427,6 +476,8 @@ Enter 与 Space 都触发且 Space 两次 `preventDefault`、抽屉头带 `iw-op
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.10.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.10.0
+[0.9.2]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.2
 [0.9.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.1
 [0.9.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.0
 [0.8.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.8.0

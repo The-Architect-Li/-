@@ -221,14 +221,33 @@ cannot get property "tools" without inject
 
 而单测完全看不见——它们直接调 `apply(ctx, config)`，跳过了装载器。现在有两道闸：`test/plugin-shape.test.ts` 断言模块形状，`scripts/verify-install.mjs` 对构建产物再断一次。教训写在这里：**入口导出的形状是契约的一部分**，不是风格问题。
 
+## 三件写在书里的东西（v0.10）
+
+**审稿意见是文件，不是聊天记录。** 每一轮 `novel_dispatch` 都把意见追加进 `<项目>/reviews/<三位章号>.json`：
+
+```json
+{ "version": 1,
+  "rounds": [ { "round": 1, "role": "logic", "model": "deepseek/deepseek-flash",
+                "at": "2026-10-25T09:12:00.000Z",
+                "items": [ { "id": "001-r1-1", "severity": "error",
+                             "code": "logic/time", "message": "…", "evidence": "…",
+                             "state": "open", "note": "", "at": "…" } ] } ] }
+```
+
+`id` 是「章号三位-轮次-序号」，因为它会被人在对话里打出来（`novel_chapter action="review" number=1 id="001-r1-1" state="fixed"`）。`state` 三态：`open` 未结、`fixed` 已改、`waived` 决定不改——`waived` 必须带 `note`，否则半年后没人记得为什么留着它。**为什么不开成一条全局日志**：审稿意见的生命周期跟着章走，删章就该跟着消失，而不是留下孤儿。
+
+**章节有版本号。** 每次落盘 `revision + 1`，写的时候要报出你读到的那一版（`writeChapter(draft, { baseRevision })`）。对不上就抛 `ChapterConflictError`，带着磁盘上的当前版本号回去让调用方重读。这是标准的乐观锁，**但它保护的是整章而不是字段**：两个人改同一章的不同段落，第二个人仍会被拒。字段级合并要一个 CRDT 或者行级 diff，对一个每章 2000–4000 字的仓库来说是过度设计——稿子是一个人的作品，不是共享文档。
+
+**「哪本书」有三个答案，优先级也是三个。** 会话钉选（`<DSH_HOME>/inkwell/sessions.json`）> 会话 cwd 解析（`perWorkspace`）> 进程期 baseStore。钉选最具体：你说了「这个会话在看雾港」，那就别拿工作目录再猜一遍。这两个文件都在**状态目录**而不是项目目录里，因为它们描述的是一台机器上「你正在看什么」，不是这本书自己的事实——换台机器该重新选，而不是继承别人的窗口状态。这三个文件（`books.json`、`sessions.json`、两种 JSON）全部同步读写：`storeFor` 在每个工具体与门禁里被同步调用，它不能在知道是哪本书之前 await。
+
 ## 发售形状
 
 `files` 只发 `lib/` 和手写的 `client.js`，所以**服务端半边必须发生在安装时**：从 git 安装的包没有预构建产物，靠 `prepare` 脚本在 install 后跑 `tsc`。pnpm 默认拦构建脚本，这也是为什么 README 要求 `allowBuilds: { dsh-inkwell: true }`——少了这一条，装上去是一个没有 `lib/` 的空壳，而 `dsh` 只会在装载时报一个看不出原因的错。`client.js` 没有构建步骤，也**不能有**：它是一层 `__ModuleLoader__` 信封，任何打包器都会把这层信封改写成别的东西。
 
-`npm run verify`（`scripts/verify-install.mjs`）专治这类回归：它用假上下文挂载**构建产物**，断言 9 个工具、1 个门禁、1 条面板路由都出现了，还检查浏览器半边——`dsh.client` 声明、`exports["./client"]`、`client.js` 真在 `files` 里、文件里确实调了 `__ModuleLoader__.load`。测试跑的是 `src/`，这些打包错误它一个也看不见。
+`npm run verify`（`scripts/verify-install.mjs`）专治这类回归：它用假上下文挂载**构建产物**，断言 10 个工具、1 个门禁、1 条面板路由都出现了，还检查浏览器半边——`dsh.client` 声明、`exports["./client"]`、`client.js` 真在 `files` 里、文件里确实调了 `__ModuleLoader__.load`。测试跑的是 `src/`，这些打包错误它一个也看不见。
 
 ## 后续方向
 
-- **面板里能不能批准章纲**：v0.5 让面板建书（与 `init` 同一个函数），v0.6 开了「挑模型」（与 `novel_roles` 同一个字段），v0.8 开了「改已有条目」。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要写进 `plans`。可行做法是让面板的批准表单要求填一句理由，再走与 `novel_outline` 相同的 `approved` 写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
-- **章节级并发写**：同一章被两个会话同时写时目前后者覆盖；需要带版本号的乐观锁。
-- **审稿 DAG 落盘**：把 `novel_dispatch` 的 findings 存成结构化记录，支持跨会话追溯「这条意见谁提的、改了没有」。
+- **面板里能不能批准章纲**：v0.5 让面板建书（与 `init` 同一个函数），v0.6 开了「挑模型」（与 `novel_roles` 同一个字段），v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要写进 `plans`。可行做法是让面板的批准表单要求填一句理由，再走与 `novel_outline` 相同的 `approved` 写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
+- **有争议时串行审稿**：现在三位审核员各跑各的，意见并排落盘但没人读对方的。依赖图能让 chief 真正裁决分歧，并把「分歧」本身记成一条 review item。
+- **docx / epub 导出**：`src/domain/export.ts` 只是把文本拼成文件，接一个 OOXML 或 EPUB 打包器是纯增量。
