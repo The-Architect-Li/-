@@ -40,6 +40,12 @@ export interface CharacterCard {
   appearance: string
   goal: string
   secret: string
+  /**
+   * Material with no field of its own: a relationship map, a timeline, a note
+   * to self. Imported cards put what they could not classify here rather than
+   * dropping it, and the panel shows it under 其他.
+   */
+  notes?: string | undefined
   updatedAt: string
 }
 

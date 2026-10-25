@@ -19,6 +19,7 @@ import { registerChapterTool } from './tools/chapter.ts'
 import { registerCheckTool } from './tools/check.ts'
 import { registerDispatchTool } from './tools/dispatch.ts'
 import { registerExportTool } from './tools/export.ts'
+import { registerImportTool } from './tools/import.ts'
 import { registerLedgerTool } from './tools/ledger.ts'
 import { registerOutlineTool } from './tools/outline.ts'
 import { registerProjectTool } from './tools/project.ts'
@@ -65,6 +66,7 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerRolesTool(ctx, deps)
   registerDispatchTool(ctx, deps)
   registerExportTool(ctx, deps)
+  registerImportTool(ctx, deps)
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()
