@@ -447,6 +447,12 @@ window are named in the prompt ("the earlier N chapters are outside this review"
 **Where a recap comes from.** The card's story summary first; without a card, the tail of the prose,
 marked "taken from the end of the prose, not a written recap" so the reviewer knows which it is.
 
+**The chief gets this window too (v0.22.1).** Cross-chapter continuity is the chief's own job: whether
+a chapter fits the book matters more than how good it is alone. So the chief receives what the two
+reviewers receive — the chapter under review, the previous three in full, seven more as recaps — plus
+their findings to adjudicate. Where the earlier text is not in the window, its role description tells it
+to say it does not know instead of guessing.
+
 **Edit the prose and the card goes stale.** A card records the prose revision it was written from.
 Rewrite the prose afterwards and it shows up in three places: `novel_check action="cards"` names the
 chapter and both revisions, the chapter page shows a "card: stale" row, and the drawer row's chip
