@@ -254,12 +254,37 @@ const dialog = `<div ${attr(S.root)}>
   </div></div>
 </div>`
 
+const importDialog = `<div ${attr(S.root)}>
+  ${headBar('小说工坊', button('＋ 新建', true) + button('导入…'))}
+  <div class="iw-backdrop"><div class="iw-dialog">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span ${attr(S.bookIcon)}>⇩</span>
+      <span style="font-size:13px;font-weight:650">导入稿件</span>
+    </div>
+    <div class="iw-dialogpath">${escape(ROOT_PATH)}</div>
+    <div ${attr(S.note)}>这个文件夹里已经有 85 章正文（35.1 万字）、6 张角色卡、6 卷大纲。</div>
+    <div style="font-size:12px;line-height:1.5;color:var(--iw-fg-3);padding:0 10px">人物：6 张角色卡，章纲 83 条</div>
+    <div style="display:flex;gap:8px">${button('重选目录…')}</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <span ${attr(S.fieldLabel)}>书名</span>
+      <input class="iw-input" ${attr(S.input)} value="待定">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <span ${attr(S.fieldLabel)}>目标字数（可留空）</span>
+      <input class="iw-input" ${attr(S.input)} placeholder="例如：800000">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">${button('导入并开始写', true)}${button('取消')}</div>
+    <div ${attr(S.footer)}>会把稿件读成正文、章卡、人物与大纲这些记录，把这个文件夹注册成工作区，并新开一个聊天会话。</div>
+  </div></div>
+</div>`
+
 const views = [
   ['shelf', '书库', shelf],
   ['tree', '目录', tree],
   ['detail', '角色页', detail],
   ['prose', '正文页', prose],
   ['dialog', '建书弹窗', dialog],
+  ['import', '导入弹窗', importDialog],
 ]
 
 const page = (body, dark, extra = '') => `<!doctype html>
@@ -279,7 +304,7 @@ writeFileSync(`${out}sheet-light.html`, page(views.slice(0, 4).map(([, , view]) 
 writeFileSync(`${out}sheet-dark.html`, page(views.slice(0, 4).map(([, , view]) => `<div class="pane">${view}</div>`).join(''), true, extractDark(CSS)))
 
 for (const [id, , view] of views) {
-  const isolate = id === 'dialog' ? `.iw-backdrop { position: static; background: none; backdrop-filter: none; padding: 0; }` : ''
+  const isolate = id === 'dialog' || id === 'import' ? `.iw-backdrop { position: static; background: none; backdrop-filter: none; padding: 0; }` : ''
   writeFileSync(`${out}${id}.html`, page(`<div class="pane">${view}</div>`, false, isolate))
 }
 console.log(`wrote ${views.length + 2} preview pages to preview/`)

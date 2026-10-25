@@ -57,6 +57,7 @@ window.__ModuleLoader__.load({
     const API_PIN = '/api/inkwell/pin'
     const API_SCAN = '/api/inkwell/scan'
     const API_IMPORT = '/api/inkwell/import'
+    const API_IMPORT_BOOK = '/api/inkwell/import-book'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -287,6 +288,31 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ dir }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Turn a manuscript folder into a book in one call.
+     *
+     * The create flow and the import flow end in the same place, but a folder
+     * that already holds a novel does not need to be asked for a title it is
+     * about to echo — the route falls back to the folder's own name.
+     *
+     * @param dir - absolute path of the manuscript folder.
+     * @param title - the book's name, or empty to use the folder's.
+     * @param targetWords - the word target, or 0 for none.
+     * @returns the created book plus what the import wrote.
+     */
+    async function importBook(dir, title, targetWords) {
+      const response = await fetch(API_IMPORT_BOOK, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ dir, title, targetWords }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -1264,7 +1290,7 @@ window.__ModuleLoader__.load({
      * @returns the library element.
      */
     function Library(props) {
-      const { sessionId, lastRoot, onOpen, onNew, onSettings } = props
+      const { sessionId, lastRoot, onOpen, onNew, onImport, onSettings } = props
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
 
@@ -1321,6 +1347,7 @@ window.__ModuleLoader__.load({
           h('span', { style: S.bookTitle }, LABEL),
           h('span', { style: S.spacer }),
           h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onNew, title: '在某个目录里新建一本书' }, '＋ 新建'),
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onImport, title: '把一个已经有稿件的文件夹导进书库' }, '导入…'),
           h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setTick((n) => n + 1), title: '重新扫描书库' }, '刷新'),
         ),
         state.status === 'loading' ? h('div', { style: S.note }, '正在找这台机器上的书…') : null,
@@ -1522,6 +1549,139 @@ window.__ModuleLoader__.load({
             'div',
             { style: S.footer },
             '会在这个文件夹里建 .novel，把它注册成工作区，并新开一个聊天会话——那里的会话看这本书，别的文件夹看别的。',
+          ),
+        ),
+      )
+    }
+
+    /**
+     * The import dialog: one folder in, one written book out.
+     *
+     * It differs from the create dialog in what it promises. Creating a book is
+     * about to start something; importing one is about to move something, so the
+     * dialog leads with what was found and disables itself when the answer is
+     * "nothing", rather than offering a button that would fail.
+     *
+     * @param props - the chosen folder, busy/error state, and callbacks.
+     * @returns the modal overlay.
+     */
+    function ImportDialog(props) {
+      const { dir, busy, error, onImport, onCancel, onRepick, sessionId } = props
+      const [title, setTitle] = useState(() => baseNameOf(dir))
+      const [target, setTarget] = useState('')
+      const [scan, setScan] = useState({ status: 'loading' })
+
+      useEffect(() => {
+        let alive = true
+        setScan({ status: 'loading' })
+        scanFolder(dir, sessionId)
+          .then((data) => {
+            if (alive) setScan({ status: 'ready', data })
+          })
+          .catch((failure) => {
+            if (alive) setScan({ status: 'error', message: String((failure && failure.message) || failure) })
+          })
+        return () => {
+          alive = false
+        }
+      }, [dir, sessionId])
+
+      const found = scan.status === 'ready' ? scan.data : null
+      const empty = found !== null && found.chapters === 0 && found.volumes === 0
+      const submit = () => {
+        if (busy || empty) return
+        onImport(dir, title, Number(target) || 0)
+      }
+
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '导入稿件' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '⇩'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '导入稿件'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, dir),
+          h('div', { style: S.note }, describeScanLine(scan)),
+          found !== null && found.cast > 0
+            ? h(
+                'div',
+                { style: { fontSize: '12px', lineHeight: 1.5, color: 'var(--iw-fg-3)', padding: '0 10px' } },
+                `人物：${found.cast} 张角色卡${found.plans > 0 ? `，章纲 ${found.plans} 条` : ''}`,
+              )
+            : null,
+          empty
+            ? h('div', { style: S.note }, '换一个装稿件的文件夹：正文可以是一章一个文件，也可以是一整个 txt，只要里面写着「第一章」。')
+            : null,
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onRepick, title: '重新选择文件夹' },
+              '重选目录…',
+            ),
+          ),
+          h(
+            'div',
+            { style: S.field },
+            h('span', { style: S.fieldLabel }, '书名'),
+            h('input', {
+              className: 'iw-input',
+              style: S.input,
+              value: title,
+              placeholder: '默认用文件夹名',
+              autoFocus: true,
+              onChange: (event) => setTitle(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') submit()
+                if (event.key === 'Escape') onCancel()
+              },
+            }),
+          ),
+          h(
+            'div',
+            { style: S.field },
+            h('span', { style: S.fieldLabel }, '目标字数（可留空）'),
+            h('input', {
+              className: 'iw-input',
+              style: S.input,
+              value: target,
+              inputMode: 'numeric',
+              placeholder: '例如：800000',
+              onChange: (event) => setTarget(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') submit()
+                if (event.key === 'Escape') onCancel()
+              },
+            }),
+          ),
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, disabled: busy || empty, onClick: submit },
+              busy ? '正在导入…' : '导入并开始写',
+            ),
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '取消'),
+          ),
+          h(
+            'div',
+            { style: S.footer },
+            '会把稿件读成正文、章卡、人物与大纲这些记录，把这个文件夹注册成工作区，并新开一个聊天会话。',
           ),
         ),
       )
@@ -2294,6 +2454,10 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = useState(null)
       const [creating, setCreating] = useState(false)
       const [createError, setCreateError] = useState('')
+      // The import dialog, same shape as the create one: a folder, or null.
+      const [importDir, setImportDir] = useState(null)
+      const [importing, setImporting] = useState(false)
+      const [importError, setImportError] = useState('')
       // A caveat that belongs to the book, not to the dialog: the dialog closes
       // on success, so anything the writer still needs to know is said here.
       const [notice, setNotice] = useState('')
@@ -2399,6 +2563,56 @@ window.__ModuleLoader__.load({
         [],
       )
 
+      // 导入 is the same question asked the other way round: pick the folder the
+      // manuscript already lives in, then read it in one call. On a host with no
+      // chooser, the browser page's own "建好之后导进来" checkbox is the same
+      // outcome by two steps, so that is where it goes.
+      const beginImport = useCallback(
+        (from) => {
+          setReturnTo(from)
+          setImportError('')
+          if (!hostCanPick()) {
+            setView('new')
+            return
+          }
+          pickHostDirectory()
+            .then((picked) => {
+              if (picked === null) return
+              setImportError('')
+              setImportDir(picked)
+            })
+            .catch((failure) => setImportError(String((failure && failure.message) || failure)))
+        },
+        [],
+      )
+
+      // One call builds the book and fills it. The tab then moves to the book
+      // that just appeared, and the folder becomes a workspace with its own chat
+      // session — the same hand-off the create flow makes.
+      const submitImport = useCallback(
+        (dir, title, targetWords) => {
+          setImporting(true)
+          setImportError('')
+          importBook(dir, title, targetWords)
+            .then((imported) =>
+              openBookWorkspace(dir, imported.root)
+                .catch((failure) => ({ sessionId: null, workspaceId: null, note: String((failure && failure.message) || failure) }))
+                .then((opened) => ({ imported, opened })),
+            )
+            .then(({ imported, opened }) => {
+              setImporting(false)
+              setImportDir(null)
+              setNotice(importNote(imported, opened.note))
+              onCreated({ root: imported.root, title: imported.title })
+            })
+            .catch((failure) => {
+              setImporting(false)
+              setImportError(String((failure && failure.message) || failure))
+            })
+        },
+        [onCreated],
+      )
+
       // Create the book, then hand the same folder to the host: a workspace, a
       // chat session in it, that session pinned to this book, and the panel
       // pre-seeded to open it. One click, one place to keep writing.
@@ -2488,11 +2702,37 @@ window.__ModuleLoader__.load({
       // One dialog, whichever view is behind it. `display: contents` keeps the
       // wrapper out of the layout, and the overlay itself is position: fixed.
       const withDialog = (element) => {
-        if (draft === null) return element
+        const withImport =
+          importDir === null
+            ? element
+            : h(
+                'div',
+                { style: { display: 'contents' } },
+                element,
+                h(ImportDialog, {
+                  dir: importDir,
+                  sessionId,
+                  busy: importing,
+                  error: importError,
+                  onImport: submitImport,
+                  onCancel: () => {
+                    setImportDir(null)
+                    setImportError('')
+                  },
+                  onRepick: () => {
+                    pickHostDirectory()
+                      .then((picked) => {
+                        if (picked !== null) setImportDir(picked)
+                      })
+                      .catch((failure) => setImportError(String((failure && failure.message) || failure)))
+                  },
+                }),
+              )
+        if (draft === null) return withImport
         return h(
           'div',
           { style: { display: 'contents' } },
-          element,
+          withImport,
           h(CreateDialog, {
             dir: draft,
             sessionId,
@@ -2526,6 +2766,7 @@ window.__ModuleLoader__.load({
             lastRoot: root || '',
             onOpen: openBook,
             onNew: () => beginCreate('library'),
+            onImport: () => beginImport('library'),
             onSettings: () => setView('settings'),
           }),
         )
