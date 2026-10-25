@@ -44,6 +44,7 @@ const DUTY: Record<RoleId, string> = {
   logic: '只读：对照账本、章纲、时间线、地点找矛盾。',
   character: '只读：对照角色卡的 voice、性格、秘密，找脱离人设的言行。',
   chief: '汇总裁决：把两位审核员的意见分级并裁决分歧。',
+  keeper: '只提案：读完这一章，列出该记进账本/地点/阶段/日期/章卡的增量。',
 }
 
 /** Longest value one route field may carry. */

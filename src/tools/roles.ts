@@ -69,7 +69,7 @@ export function registerRolesTool(ctx: Context, deps: ToolDeps): void {
       },
       role: {
         type: 'string',
-        enum: ['writer', 'logic', 'character', 'chief'],
+        enum: ['writer', 'logic', 'character', 'chief', 'keeper'],
         description: 'set 时要改的角色',
       },
       provider: {

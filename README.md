@@ -522,6 +522,13 @@ The start can be pinned in the panel or with `novel_timeline action="start" when
 Undated chapters are not pretended onto the line — they get their own short list and a count of
 what is missing.
 
+### What can be arithmetic should not be a model call (v0.26)
+
+- `novel_timeline` recalls take either an absolute date (`2019-03`) or a distance ("半年前", "三个月前"). The distance is subtracted against the two chapters' windows: chapter 5 in July, chapter 9 in September, and "half a year ago" raises `timeline/recall-drift` with the day count. A memory of something that has not happened yet is an error (`timeline/recall-future`).
+- `novel_dispatch action="keeper"` runs a role that reads this chapter and the *state* only — no earlier prose — and answers with a list of proposals: facts to record, how a place changed, where a character stands, this chapter's date, what the card should say. Every entry must quote the prose. It proposes; the commander writes, or does not.
+
+The economics are the point: maintaining the state costs once per chapter, reading it is free. If maintaining it required re-reading the book, it would cost more than the reviewers it exists to replace.
+
 ### One date for a batch of chapters (v0.25)
 
 The timeline's edit state is not a form but a grid of chapter numbers: pick the chapters, type one date, save. Chapter 7 of a year that is otherwise whole gets its own date by picking chapter 7 alone and saving again — the anchor is replaced, not duplicated. A chapter that already has a date carries a dot on its chip.

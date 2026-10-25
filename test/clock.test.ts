@@ -166,6 +166,60 @@ describe('recalls', () => {
     )
     expect(resolution.findings.map((entry) => entry.code)).toContain('timeline/recall-unlinked')
   })
+
+  it('does the subtraction when a memory is told in distance, not in dates', () => {
+    // The author's own example: the thing happened in July, the chapter that
+    // remembers it is in September, and the prose says 半年前. Two to three
+    // months is not half a year, and that is arithmetic — no model needed.
+    const book = clock({
+      anchors: [
+        { id: 'a1', chapter: 5, when: '2019-07', label: '做了那件事' },
+        { id: 'a2', chapter: 9, when: '2019-09', label: '回想它' },
+      ],
+    })
+    const drifted = resolveTimeline(
+      { ...book, recalls: [{ id: 'r1', chapter: 9, about: '那件事', eventChapter: 5, claimed: '半年前', text: '半年前那件事。' }] },
+      9,
+    )
+    const finding = drifted.findings.find((entry) => entry.code === 'timeline/recall-drift')
+    expect(finding?.severity).toBe('warn')
+    expect(finding?.message).toContain('半年前')
+    expect(finding?.message).toContain('个月')
+
+    // The same memory told honestly stays quiet.
+    const honest = resolveTimeline(
+      { ...book, recalls: [{ id: 'r1', chapter: 9, about: '那件事', eventChapter: 5, claimed: '两个月前', text: '两个月前那件事。' }] },
+      9,
+    )
+    expect(honest.findings.map((entry) => entry.code)).not.toContain('timeline/recall-drift')
+  })
+
+  it('refuses a memory of something that has not happened yet', () => {
+    // Chapter 1 is January and the memory is of chapter 8, which is June: the
+    // span is what lets the clock move at all, and the recall is simply early.
+    const book = clock({
+      anchors: [
+        { id: 'a1', chapter: 1, when: '2019-01-05', label: '现在' },
+        { id: 'a2', chapter: 8, when: '2019-06-05', label: '后来的事' },
+      ],
+      spans: [{ id: 's1', fromChapter: 1, toChapter: 8, days: { min: 150, max: 152 }, text: '过了五个月' }],
+    })
+    const resolution = resolveTimeline(
+      { ...book, recalls: [{ id: 'r1', chapter: 1, about: '那件事', eventChapter: 8, claimed: '三个月前', text: '三个月前那件事。' }] },
+      8,
+    )
+    expect(resolution.findings.map((entry) => entry.code)).toContain('timeline/recall-future')
+  })
+
+  it('still calls an unreadable claim an error, and says what it would accept', () => {
+    const resolution = resolveTimeline(
+      { ...file, recalls: [{ id: 'r1', chapter: 20, about: '旧事', eventChapter: 1, claimed: '那年秋天', text: '那年秋天。' }] },
+      20,
+    )
+    const finding = resolution.findings.find((entry) => entry.code === 'timeline/bad-recall')
+    expect(finding?.severity).toBe('error')
+    expect(finding?.message).toContain('半年前')
+  })
 })
 
 describe('checkProseAgainstClock', () => {

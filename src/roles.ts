@@ -59,6 +59,23 @@ const REVIEWER_CONTRACT = [
   '- 没有意见就输出 []。只读不改，不提改写建议，只报告问题。',
 ].join('\n')
 
+/**
+ * What the keeper must answer in, and why it is a list rather than prose.
+ *
+ * Every entry maps to exactly one existing write door — ledger, place, stage,
+ * anchor, or chapter card. A proposal the commander cannot turn into a tool
+ * call without deciding anything is the only kind worth paying for; anything
+ * vaguer would come back as "update the setting" and be useless.
+ */
+const KEEPER_CONTRACT = [
+  '输出契约：',
+  '- 严格输出一个 JSON 数组，不要 ```json 围栏，不要解释。',
+  '- 每条形如 {"kind":"ledger|place|stage|anchor|card","subject":"<人/地点/世界>","key":"<属性>","value":"<值>","chapter":<章号>,"quote":"<原文片段>"}。',
+  '- kind 的含义：ledger=该记进账本的一条事实；place=这个地点在这一章变成了什么样；stage=这个人进入了哪个阶段；anchor=这一章的日期；card=章卡的故事梗概/关键事件/场景。',
+  '- 每一条都必须有你摘的原文片段作为依据；摘不出来就不要提。',
+  '- 没有该记的东西就输出 []。记多了比记漏了更坏。',
+].join('\n')
+
 /** The four studio roles. The commander is the main session, not listed here. */
 export const ROLES: Record<RoleId, RoleDef> = {
   writer: {
@@ -91,6 +108,14 @@ export const ROLES: Record<RoleId, RoleDef> = {
     persona:
       '你是总审核，也是这本书唯一一个必须把「这一章和前面对不对得上」当回事的人。长篇小说的一章不是独立散文：句子再漂亮，只要和前面的章节对不上，就是废的。给你待审的这一章、前面几章的正文与更早几章的梗概，你亲自读，判断它有没有和前文冲突（人死了又出现、伤换了一边、时间倒退、关系突变、上一章埋的钩子被无声吞掉）。同时汇总其他审核员的意见，裁决分歧，按 必改(error)/建议改(warn)/可忽略(info) 分级。前文没给你，就说不知道，不要猜。',
     outputContract: REVIEWER_CONTRACT,
+    timeoutMs: 120_000,
+  },
+  keeper: {
+    id: 'keeper',
+    label: '状态维护',
+    persona:
+      '你是状态维护员，不写正文、不改稿、不做文笔评价。你只做一件事：读完这一章，指出「书里的状态该往后走一格」的地方——账本要记的事实、地点这一章变成了什么样、人物走到了哪个阶段、这一章该有哪个日期、章卡该补什么。你只提案，不落盘：写入由指挥官拿着你的清单去调工具。你说不出原文依据的，就不要提。',
+    outputContract: KEEPER_CONTRACT,
     timeoutMs: 120_000,
   },
 }
@@ -323,6 +348,105 @@ export function buildChiefPrompt(
     role.outputContract,
   )
   return sections.join('\n')
+}
+
+/** One state update the keeper proposes; the commander turns it into a tool call. */
+export interface KeeperProposal {
+  kind: 'ledger' | 'place' | 'stage' | 'anchor' | 'card'
+  subject: string
+  key: string
+  value: string
+  chapter: number
+  quote: string
+}
+
+/**
+ * What the keeper is allowed to know, and it is deliberately less than a reviewer.
+ *
+ * The keeper reads the new chapter and the *state*, never the previous prose —
+ * that is the whole economic argument for having a state layer: if maintaining
+ * the state required re-reading the book, the timeline would cost as much as
+ * the reviewers it is meant to replace.
+ *
+ * @param draft - the chapter just written.
+ * @param snapshot - the book's state as it stands before this chapter is folded in.
+ * @param window - this chapter's computed time window, already formatted.
+ * @param directive - the commander's extra instruction.
+ * @returns the prompt for the keeper role.
+ */
+export function buildKeeperPrompt(
+  draft: ChapterDraft,
+  snapshot: Snapshot,
+  window: string,
+  directive: string,
+): string {
+  const role = ROLES.keeper
+  const facts = snapshot.ledger
+    .slice(-24)
+    .map((entry) => `- ${entry.subject}·${entry.predicate}：${entry.value}（第${entry.chapter}章）`)
+  const places = snapshot.places.map((place) => {
+    const last = [...place.states].sort((a, b) => a.chapter - b.chapter).at(-1)
+    return `- ${place.name}：${last ? `第${last.chapter}章 ${last.detail}` : '还没有状态记录'}`
+  })
+  const stages = snapshot.characters.map((card) => {
+    const last = (card.stages ?? []).at(-1)
+    return `- ${card.name}：${last ? `${last.label} —— ${last.text}` : '还没有阶段记录'}${card.status ? `（现状：${card.status}）` : ''}`
+  })
+
+  const sections = [
+    role.persona,
+    '',
+    `## 这一章（第${draft.number}章《${draft.title}》，${draft.words} 字）`,
+    draft.text,
+    '',
+    '## 这一章的时间',
+    window,
+  ]
+  if (facts.length > 0) sections.push('', '## 账本里最近记下的事实', ...facts)
+  if (places.length > 0) sections.push('', '## 地点现在还停在哪里', ...places)
+  if (stages.length > 0) sections.push('', '## 人物现在走到哪一步', ...stages)
+  sections.push(
+    '',
+    '## 指挥官的特别要求',
+    directive.trim() || '按这一章实际写出来的内容提增量：谁做了什么、哪儿变了、什么时候、这一章讲了什么。没变化的不要提。',
+    '',
+    role.outputContract,
+  )
+  return sections.join('\n')
+}
+
+/** Parse the keeper's output, dropping entries that could never become a tool call. */
+export function parseKeeperOutput(output: string): { items: KeeperProposal[]; parsed: boolean } {
+  const cleaned = output
+    .replace(/^[\s\S]*?(\[)/, '$1')
+    .replace(/(\])[\s\S]*$/, '$1')
+    .replace(/```json|```/g, '')
+    .trim()
+  try {
+    const value = JSON.parse(cleaned) as unknown
+    if (!Array.isArray(value)) return { items: [], parsed: false }
+    const items: KeeperProposal[] = []
+    for (const entry of value) {
+      if (typeof entry !== 'object' || entry === null) continue
+      const record = entry as Record<string, unknown>
+      const kind = record.kind
+      if (kind !== 'ledger' && kind !== 'place' && kind !== 'stage' && kind !== 'anchor' && kind !== 'card') continue
+      const subject = typeof record.subject === 'string' ? record.subject.trim() : ''
+      const value_ = typeof record.value === 'string' ? record.value.trim() : ''
+      if (subject === '' || value_ === '') continue
+      items.push({
+        kind,
+        subject,
+        key: typeof record.key === 'string' ? record.key.trim() : '',
+        value: value_,
+        chapter: typeof record.chapter === 'number' ? Math.max(1, Math.trunc(record.chapter)) : 0,
+        quote: typeof record.quote === 'string' ? record.quote.trim() : '',
+      })
+    }
+    return { items, parsed: true }
+  } catch {
+    return { items: [], parsed: false }
+  }
 }
 
 /** Parse a reviewer's output into findings, degrading gracefully on garbage. */

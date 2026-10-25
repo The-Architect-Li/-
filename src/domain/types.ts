@@ -429,7 +429,7 @@ export interface ReviewFile {
 
 
 /** Role identifiers for the studio dispatch flow. */
-export const ROLE_IDS = ['writer', 'logic', 'character', 'chief'] as const
+export const ROLE_IDS = ['writer', 'logic', 'character', 'chief', 'keeper'] as const
 
 /** One studio role. */
 export type RoleId = (typeof ROLE_IDS)[number]

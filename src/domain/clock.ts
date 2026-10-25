@@ -157,6 +157,44 @@ export function parseDuration(text: string): { min: number; max: number } | unde
 }
 
 /**
+ * Read a claimed distance, the way a character says it out loud.
+ *
+ * A memory is dated either absolutely ("2019 年 3 月") or by distance ("半年
+ * 前", "三个月前", "十几年前"). The distance form is what people actually
+ * write, and it is the form a reader can check by ear — which makes it worth
+ * arithmetic rather than a model's opinion.
+ *
+ * @param claimed - what the prose said.
+ * @returns a day range, or `undefined` when it is not a distance.
+ */
+function parseDistance(claimed: string): { min: number; max: number } | undefined {
+  const trimmed = claimed.trim().replace(/(?:以前|之前|前|过去)$/, '').replace(/^大约|^差不多|^近/, '')
+  if (trimmed === '') return undefined
+  return parseDuration(trimmed)
+}
+
+/** How many days of slack a recall's own vagueness buys it. */
+const RECALL_SLACK_DAYS = 45
+
+/** …plus a share of the claimed distance: "十几年" is allowed to be wrong by more days than "三天". */
+const RECALL_SLACK_RATIO = 0.35
+
+/**
+ * Say a day gap the way a person would, for a finding's message.
+ *
+ * @param gap - the interval, in days, between two chapter windows.
+ * @returns the gap in months when it is a year or less, years beyond that.
+ */
+function gapLabel(gap: { min: number; max: number }): string {
+  const say = (days: number): string => {
+    if (days < 45) return `${Math.max(0, Math.round(days))} 天`
+    if (days < 730) return `${Math.round(days / 30)} 个月`
+    return `${(days / 365).toFixed(1)} 年`
+  }
+  return gap.min === gap.max ? say(gap.min) : `${say(gap.min)}到${say(gap.max)}`
+}
+
+/**
  * Days since the epoch for one calendar date, in UTC.
  *
  * @param year - four-digit year.
@@ -336,20 +374,27 @@ export function resolveTimeline(
 
   const recalls = file.recalls ?? []
   for (const recall of recalls) {
-    const claimedWindow = (() => {
-      try {
-        return parseWhen(recall.claimed)
-      } catch {
-        findings.push({
-          code: 'timeline/bad-recall',
-          severity: 'error',
-          message: `第 ${recall.chapter} 章的回忆日期读不懂：${recall.claimed}`,
-          evidence: recall.text,
-        })
-        return undefined
-      }
-    })()
-    if (!claimedWindow) continue
+    // A memory can be dated two ways, and the second one is the common one:
+    // "那件事发生在 2019-03" or "半年前那件事". The distance form is arithmetic,
+    // not judgement — if the author says 半年前 and the anchors say two months,
+    // that is a subtraction, and no model should be paid to have an opinion
+    // about it.
+    let claimedWindow: Window | undefined
+    let claimedDays: { min: number; max: number } | undefined
+    try {
+      claimedWindow = parseWhen(recall.claimed)
+    } catch {
+      claimedDays = parseDistance(recall.claimed)
+    }
+    if (!claimedWindow && !claimedDays) {
+      findings.push({
+        code: 'timeline/bad-recall',
+        severity: 'error',
+        message: `第 ${recall.chapter} 章的回忆日期读不懂：${recall.claimed}（写成 2019-03 或「半年前」这种时长都能认）`,
+        evidence: recall.text,
+      })
+      continue
+    }
     if (recall.eventChapter === null) {
       findings.push({
         code: 'timeline/recall-unlinked',
@@ -369,12 +414,39 @@ export function resolveTimeline(
       })
       continue
     }
-    const overlaps = claimedWindow.latest >= actual.earliest && claimedWindow.earliest <= actual.latest
-    if (!overlaps) {
+    if (claimedWindow) {
+      const overlaps = claimedWindow.latest >= actual.earliest && claimedWindow.earliest <= actual.latest
+      if (!overlaps) {
+        findings.push({
+          code: 'timeline/recall-wrong-date',
+          severity: 'error',
+          message: `回忆里的日期对不上：说 ${recall.claimed}，但那件事发生在 ${describeWindow({ earliest: actual.earliest, latest: actual.latest })}`,
+          evidence: `第 ${recall.chapter} 章：「${recall.text}」`,
+        })
+      }
+      continue
+    }
+    if (!claimedDays) continue
+    const here = byChapter.get(recall.chapter)
+    if (!here) continue
+    // How long ago the remembered thing was, as an interval: the gap is widest
+    // when this chapter is late and the memory early.
+    const gap = { min: here.earliest - actual.latest, max: here.latest - actual.earliest }
+    if (gap.max < 0) {
       findings.push({
-        code: 'timeline/recall-wrong-date',
+        code: 'timeline/recall-future',
         severity: 'error',
-        message: `回忆里的日期对不上：说 ${recall.claimed}，但那件事发生在 ${describeWindow({ earliest: actual.earliest, latest: actual.latest })}`,
+        message: `第 ${recall.chapter} 章回忆第 ${recall.eventChapter} 章的事，但按时间线那是「之后」的事，还没发生`,
+        evidence: `第 ${recall.chapter} 章：「${recall.text}」`,
+      })
+      continue
+    }
+    const slack = Math.max(RECALL_SLACK_DAYS, Math.round((claimedDays.min + claimedDays.max) / 2 * RECALL_SLACK_RATIO))
+    if (claimedDays.max + slack < gap.min || claimedDays.min - slack > gap.max) {
+      findings.push({
+        code: 'timeline/recall-drift',
+        severity: 'warn',
+        message: `第 ${recall.chapter} 章说「${recall.claimed}」，但距第 ${recall.eventChapter} 章是 ${gapLabel(gap)}——差得太远，读者会算`,
         evidence: `第 ${recall.chapter} 章：「${recall.text}」`,
       })
     }

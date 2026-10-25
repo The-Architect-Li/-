@@ -204,10 +204,15 @@ export function registerTimelineTool(ctx: Context, deps: ToolDeps): void {
         const about = args.about?.trim()
         if (!about) throw new Error('recall 需要 about，写清回忆的是什么事。')
         const claimed = args.claimed?.trim() ?? ''
+        // A memory is dated absolutely ("2019-03") or by distance ("半年前"),
+        // and the second is how people actually write it. Both are checkable, so
+        // refusing one would only push the author into a worse sentence.
         try {
           parseWhen(claimed)
-        } catch (error) {
-          throw new Error((error as ClockFormatError).message)
+        } catch {
+          if (parseDuration(claimed.replace(/(?:以前|之前|前|过去)$/, '')) === undefined) {
+            throw new Error(`claimed 读不出日期：「${claimed}」。写成 2019-03，或者写成「半年前」「三个月前」这种时长。`)
+          }
         }
         const eventChapter = args.eventChapter === undefined ? null : Math.max(1, Math.trunc(args.eventChapter))
         const recall: TimelineRecall = {
