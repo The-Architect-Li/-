@@ -812,6 +812,86 @@ window.__ModuleLoader__.load({
         wordBreak: 'break-word',
         color: 'var(--iw-fg)',
       },
+      // The time rail. A dot per year, bubbles hanging off the line: the shape of
+      // a book's clock is something to see, not a list to read.
+      spine: {
+        position: 'relative',
+        padding: '10px 10px 0 12px',
+        margin: '10px 2px 0',
+        borderTop: '1px solid var(--iw-line)',
+      },
+      // The rail is a left border on each point, not one absolutely positioned
+      // line: every point continues the line by existing, so there is no height
+      // to get wrong when a year holds thirty chapters.
+      spinePoint: { position: 'relative', paddingLeft: '18px', marginLeft: '2px', borderLeft: '2px solid var(--iw-line-strong)' },
+      spineDot: {
+        position: 'absolute',
+        left: '-6px',
+        top: '6px',
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        border: '2px solid var(--iw-accent)',
+        backgroundColor: 'Canvas',
+        boxSizing: 'border-box',
+      },
+      spineDotStart: {
+        position: 'absolute',
+        left: '-6px',
+        top: '6px',
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        border: '2px solid var(--iw-accent)',
+        backgroundColor: 'var(--iw-accent)',
+        boxSizing: 'border-box',
+      },
+      spineHead: {
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: '7px',
+        cursor: 'pointer',
+        padding: '2px 0 4px',
+      },
+      spineWhen: {
+        fontSize: '12.5px',
+        fontWeight: 600,
+        letterSpacing: '0.02em',
+        fontVariantNumeric: 'tabular-nums',
+      },
+      spineCount: { fontSize: '11px', color: 'var(--iw-fg-3)' },
+      spineEvents: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '2px 0 12px' },
+      spineBubble: {
+        position: 'relative',
+        padding: '7px 10px 8px',
+        borderRadius: '12px 12px 12px 4px',
+        border: '1px solid var(--iw-line)',
+        backgroundColor: 'var(--iw-surface)',
+      },
+      spineBubbleAnchor: {
+        position: 'relative',
+        padding: '7px 10px 8px',
+        borderRadius: '12px 12px 4px 12px',
+        border: '1px solid var(--iw-accent-line, var(--iw-line))',
+        backgroundColor: 'var(--iw-accent-soft)',
+      },
+      spineMeta: {
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: '8px',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '0.01em',
+      },
+      spineText: {
+        fontSize: '12.5px',
+        lineHeight: '1.62',
+        color: 'var(--iw-fg-2)',
+        paddingTop: '3px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      },
       crumb: {
         display: 'flex',
         alignItems: 'center',
@@ -1190,6 +1270,28 @@ window.__ModuleLoader__.load({
   scrollbar-width: thin;
 }
 .iw-window:focus-within { -webkit-mask-image: none; mask-image: none; }
+
+/* The time rail ------------------------------------------------------------ */
+/* One line down the left, a dot per year, bubbles hanging off it. The line is
+   each point's own left border — a point continues the rail by existing, so
+   there is no absolute height to get wrong when one year holds thirty chapters. */
+.iw-spine-point:last-child { border-left-color: transparent; }
+.iw-spine-point:hover .iw-spine-dot,
+.iw-spine-point:hover .iw-spine-dot-start { box-shadow: 0 0 0 3px var(--iw-accent-soft); }
+.iw-spine-bubble::before,
+.iw-spine-bubble-anchor::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  border-left: 1px solid var(--iw-line);
+  border-bottom: 1px solid var(--iw-line);
+  transform: rotate(45deg);
+}
+.iw-spine-bubble-anchor::before { border-left-color: var(--iw-accent-line, var(--iw-line)); border-bottom-color: var(--iw-accent-line, var(--iw-line)); }
 
 /* Shelf links -------------------------------------------------------------- */
 .iw-link { cursor: pointer; color: var(--iw-fg-3); }
@@ -2801,6 +2903,101 @@ window.__ModuleLoader__.load({
      *   and a refresh hook for the tree behind the page.
      * @returns the page.
      */
+    /**
+     * The time rail: one point per year, bubbles for what happened in it.
+     *
+     * Collapsing is per point rather than global, because the questions people ask
+     * a timeline are "what happened in year three" and "show me everything" — two
+     * shapes of the same list, and the reader picks per year.
+     *
+     * @param props - `{ spine }`, the derived rail from the host.
+     * @returns the rail, or a note when the book has no dates at all.
+     */
+    function Spine(props) {
+      const spine = props.spine || {}
+      const points = Array.isArray(spine.points) ? spine.points : []
+      const loose = Array.isArray(spine.loose) ? spine.loose : []
+      const [collapsed, setCollapsed] = useState({})
+      if (points.length === 0 && loose.length === 0) {
+        return h('div', { style: S.note }, spine.report || '这本书还没有任何日期。')
+      }
+      const toggle = (index) => setCollapsed({ ...collapsed, [index]: !collapsed[index] })
+      const bubble = (event, index, bucket) =>
+        h(
+          'div',
+          {
+            key: `b${index}`,
+            className: event.kind === 'anchor' ? 'iw-spine-bubble iw-spine-bubble-anchor' : 'iw-spine-bubble',
+            style: event.kind === 'anchor' ? S.spineBubbleAnchor : S.spineBubble,
+          },
+          h(
+            'div',
+            { style: S.spineMeta },
+            h('span', { style: { color: 'var(--iw-fg-2)' } }, event.label),
+            // The bucket's own date is already on the point above; repeating it on
+            // every bubble is noise. Only a date that differs is worth a line.
+            event.when && event.when !== bucket ? h('span', {}, event.when) : null,
+          ),
+          event.text ? h('div', { style: S.spineText }, event.text) : null,
+          event.note
+            ? h('div', { style: { ...S.spineText, color: 'var(--iw-accent)', paddingTop: '2px' } }, `锚：${event.note}`)
+            : null,
+        )
+      return h(
+        'div',
+        { style: S.spine },
+        h('div', { style: { ...S.editHint, padding: '0 0 8px 20px' } }, spine.report || ''),
+        ...points.map((point, index) =>
+          h(
+            'div',
+            { key: `p${index}`, className: 'iw-spine-point', style: S.spinePoint },
+            h(
+              'div',
+              {
+                style: S.spineHead,
+                role: 'button',
+                tabIndex: 0,
+                'aria-expanded': collapsed[index] ? 'false' : 'true',
+                onClick: () => toggle(index),
+                onKeyDown: (event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  toggle(index)
+                },
+              },
+              h('span', { style: point.kind === 'start' ? S.spineDotStart : S.spineDot }),
+              h('span', { style: { ...S.spineWhen, color: 'var(--iw-accent)' } }, collapsed[index] ? '▸' : '▾'),
+              h('span', { style: S.spineWhen }, point.when),
+              h(
+                'span',
+                { style: S.spineCount },
+                point.events.length === 0 ? '这一年没有事件' : `${point.events.length} 件`,
+              ),
+            ),
+            collapsed[index]
+              ? null
+              : h('div', { style: S.spineEvents }, ...point.events.map((event, at) => bubble(event, at, point.when))),
+          ),
+        ),
+        loose.length > 0
+          ? h(
+              'div',
+              null,
+              h('div', { style: S.entryListHead }, `还没有日期的章节（${loose.length} 章）`),
+              // A book that has never been dated has every chapter in this list;
+              // showing all eighty-five is not information, it is the absence of
+              // it. Ten names say "the clock has not started" just as well.
+              ...loose.slice(0, 10).map((event, index) =>
+                h('div', { key: `lo${index}`, style: S.entryItem }, `· ${event.label}`),
+              ),
+              loose.length > 10
+                ? h('div', { style: S.editHint }, `还有 ${loose.length - 10} 章没有日期。等它们被锚点打上日期，就会挪到上面的年份里。`)
+                : null,
+            )
+          : null,
+      )
+    }
+
     function Detail(props) {
       const { sessionId, root, target, onBack, onChanged } = props
       const [state, setState] = useState({ status: 'loading' })
@@ -3028,6 +3225,7 @@ window.__ModuleLoader__.load({
         heading,
         notice,
         error ? h('div', { style: S.error }, error) : null,
+        data.spine ? h(Spine, { key: 'spine', spine: data.spine }) : null,
         ...editForm,
         proseToggle,
         editing && prose !== null && mode === 'edit' ? proseEditor : prosePreview,
@@ -3845,7 +4043,7 @@ window.__ModuleLoader__.load({
     // without hooks, so a stub React can call it and click the result — which is
     // how the panel's one real wiring bug (a row that only highlighted instead
     // of opening its page) stays visible to CI instead of to a reader's eye.
-    exports.tree = { Row, Section }
+    exports.tree = { Row, Section, Spine }
     // Same reason, for the two dialogs that can throw work away: the delete
     // question must not be answerable without the confirming checkbox, and the
     // export must not run before a folder has been chosen. Both are state the
