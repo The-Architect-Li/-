@@ -108,6 +108,12 @@ export interface ProjectFile {
   targetWords: number
   /** Per-book model overrides, keyed by role id. Global config fills the gaps. */
   roles?: ProjectRoles
+  /**
+   * Where the book's clock starts, written the way the author writes dates
+   * (`2020-10`). The timeline rail counts twelve months from here; without it the
+   * rail starts at the first anchor, which is the first date the prose admitted to.
+   */
+  bookStart?: string
   createdAt: string
   updatedAt: string
 }

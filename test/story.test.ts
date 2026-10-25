@@ -84,6 +84,25 @@ describe('novel_story', () => {
 })
 
 describe('novel_timeline', () => {
+  it('pins the book start, and the rail counts from there', async () => {
+    const host = await start()
+    const pinned = valueOf<{ report: string; at: string }>(
+      await host.call('novel_timeline', { action: 'start', when: '2020-10' }),
+    )
+    expect(pinned.at).toBe('2020-10')
+    expect(pinned.report).toContain('起点定在 2020-10')
+    const again = valueOf<{ report: string }>(await host.call('novel_timeline', { action: 'start', when: '' }))
+    expect(again.report).toContain('起点清掉了')
+  })
+
+  it('rejects a start it cannot parse instead of pinning a guess', async () => {
+    const host = await start()
+    const bad = await host.call('novel_timeline', { action: 'start', when: '很久以前' })
+    expect(bad.ok).toBe(false)
+    if (bad.ok) return
+    expect(bad.error).toContain('2019-01')
+  })
+
   it('turns an anchor plus a span into a date for a later chapter', async () => {
     const host = await start()
     valueOf(await host.call('novel_timeline', { action: 'anchor', chapter: 1, when: '2019-03', label: '开局' }))

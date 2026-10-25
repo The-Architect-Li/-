@@ -318,8 +318,12 @@ describe('timeline page', () => {
     })
     const page = buildEntry(snapshot, 'timeline', 'clock', [], ROOT)
     expect(page?.breadcrumb).toEqual(['剧情设计', '时间线'])
-    expect(page?.fields.find((field) => field.label === '起点')?.value).toBe('第1章是 2019-03（开局）')
-    expect(page?.lists.find((list) => list.label === '按章对照')?.items[0]).toBe('第1章：2019-03-01 ~ 2019-03-31')
+    // The rail replaces the per-chapter table: the start is the first point, and
+    // the anchor's own words live in the bubble for chapter 1.
+    expect(page?.spine?.points[0]?.when).toBe('2019-03')
+    expect(page?.spine?.points[0]?.kind).toBe('start')
+    expect(page?.spine?.points[0]?.events[0]?.label).toContain('第1章')
+    expect(page?.spine?.points[0]?.events[0]?.note).toBe('开局')
   })
 
   it('says so instead of guessing when the book never said when it is', () => {
@@ -328,8 +332,10 @@ describe('timeline page', () => {
     expect(page?.chip).toBeUndefined()
   })
 
-  it('is read-only: a date needs the sentence that asserted it', () => {
-    expect(buildEntry(book(), 'timeline', 'clock', [], ROOT)?.edit.inputs).toEqual([])
+  it('offers the start date, and nothing else: an anchor needs the sentence that asserted it', () => {
+    const page = buildEntry(book(), 'timeline', 'clock', [], ROOT)
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['start'])
+    expect(page?.edit.inputs[0]?.value).toBe('')
   })
 })
 

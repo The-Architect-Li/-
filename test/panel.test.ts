@@ -878,6 +878,40 @@ describe('panel entry route', () => {
     expect(stored[0]?.detail).toBe('整座港口只有一家还开着的秤房')
   })
 
+  it('pins the book start, and refuses to write an anchor from the panel', async () => {
+    const { base, root } = await serveBook()
+    const pinned = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { start: '2020-10' },
+    })
+    expect(pinned.status).toBe(200)
+    const body = (await pinned.json()) as { data: { spine: { points: Array<{ when: string }> }; edit: { inputs: Array<{ key: string; value: string }> } } }
+    expect(body.data.spine.points[0]?.when).toBe('2020-10')
+    expect(body.data.edit.inputs[0]?.value).toBe('2020-10')
+    expect((await new ProjectStore(root).readProject()).bookStart).toBe('2020-10')
+
+    // Anchors stay tool-only: the panel has no sentence to quote.
+    const anchor = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { chapter: 1, when: '2020-10' },
+    })
+    expect(anchor.status).toBe(409)
+    expect(((await anchor.json()) as { error: { message: string } }).error.message).toContain('novel_timeline')
+  })
+
+  it('accepts a start it can read and refuses one it cannot', async () => {
+    const { base, root } = await serveBook()
+    const bad = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'timeline',
+      key: 'clock',
+      fields: { start: '那年冬天' },
+    })
+    expect(bad.status).toBe(400)
+    expect((await new ProjectStore(root).readProject()).bookStart).toBeUndefined()
+  })
+
   it('writes a chapter body and re-derives its word count', async () => {
     const { base, root } = await serveBook()
     const text = '沈砚把货单折好塞回怀里，灯焰歪了一下。'

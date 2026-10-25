@@ -21,6 +21,7 @@ import { cardIsStale } from '../domain/review-window.ts'
 import { answersTo } from '../domain/characters.ts'
 import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
+import { buildSpine, whenLabel } from '../domain/spine.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
 
@@ -63,6 +64,43 @@ export interface EntryEdit {
   revision?: number
 }
 
+/** One bubble hanging off the time rail. */
+export interface EntrySpineEvent {
+  /** Chapter the bubble belongs to. */
+  chapter: number
+  kind: 'anchor' | 'chapter'
+  /** `2021-03`, as the rail writes dates. */
+  when: string
+  /** `第12章 换地方`. */
+  label: string
+  /** One line of what happened; may be empty. */
+  text: string
+  /** The anchor's own words, when the chapter was also dated on purpose. */
+  note?: string
+}
+
+/** One point on the rail, with the bubbles that fall between it and the next. */
+export interface EntrySpinePoint {
+  /** `2020-10`. */
+  when: string
+  kind: 'start' | 'year'
+  events: EntrySpineEvent[]
+}
+
+/**
+ * The clock drawn as a rail: points every twelve months, events between them.
+ *
+ * A timeline file can be perfectly consistent and still unreadable — ninety
+ * anchors do not show the shape of the story's time. This is that shape, and it
+ * is derived on every read, so it cannot disagree with the anchors behind it.
+ */
+export interface EntrySpine {
+  report: string
+  points: EntrySpinePoint[]
+  /** Chapters with no date yet: they exist, the clock has not reached them. */
+  loose: EntrySpineEvent[]
+}
+
 /** Everything the detail page draws. */
 export interface EntryPayload {
   kind: PanelEntryKind
@@ -76,6 +114,8 @@ export interface EntryPayload {
   breadcrumb: string[]
   fields: EntryField[]
   lists: EntryList[]
+  /** The rail, on the timeline page only. */
+  spine?: EntrySpine
   /** Inputs this page accepts. Always present: an empty list means read-only. */
   edit: EntryEdit
   /**
@@ -508,51 +548,69 @@ function timelinePage(snapshot: Snapshot, root: string): EntryPayload {
   const highest = Math.max(1, snapshot.chapters.length, ...snapshot.plans.map((plan) => plan.number))
   const resolution = resolveTimeline(snapshot.timeline, highest)
   const now = windowAt(resolution, highest)
-  const first = snapshot.timeline.anchors.slice().sort((a, b) => a.chapter - b.chapter)[0]
   const recalls = snapshot.timeline.recalls ?? []
-  const byChapter = Array.from({ length: Math.min(highest, 20) }, (_, index) => index + 1)
   const errors = resolution.findings.filter((finding) => finding.severity === 'error')
+  const spine = buildSpine(snapshot)
+  const pinned = snapshot.project.bookStart
+
+  const points: EntrySpinePoint[] = spine.nodes.map((node) => ({
+    when: node.label,
+    kind: node.kind,
+    events: spine.events
+      .filter((event) => event.node === spine.nodes.indexOf(node))
+      .map((event) => ({
+        chapter: event.chapter,
+        kind: event.kind,
+        when: whenLabel(event.at, false),
+        label: event.label,
+        text: event.text,
+        ...(event.note === undefined ? {} : { note: event.note }),
+      })),
+  }))
+  const loose: EntrySpineEvent[] = spine.loose.map((event) => ({
+    chapter: event.chapter,
+    kind: event.kind,
+    when: '',
+    label: event.label,
+    text: event.text,
+  }))
+
   return {
     kind: 'timeline',
     title: '时间线',
-    subtitle: `${snapshot.timeline.anchors.length} 个锚点 · ${snapshot.timeline.spans.length} 段跨度 · ${recalls.length} 次回忆`,
+    subtitle: `${spine.events.length} 个事件 · ${spine.nodes.length} 个年点 · ${recalls.length} 次回忆`,
     chip: now ? describeWindow(now) : undefined,
     breadcrumb: ['剧情设计', '时间线'],
     fields: [
-      { label: '起点', value: first ? `第${first.chapter}章是 ${first.when}${first.label ? `（${first.label}）` : ''}` : '（还没有锚点）' },
+      {
+        label: '起点',
+        value: pinned !== undefined && pinned !== ''
+          ? `${pinned}（钉住的起点，novel_timeline action="start" 可改）`
+          : spine.start === undefined
+            ? '（还没有锚点）'
+            : `${whenLabel(spine.start, false)}（取第一个锚点；要另定就用 novel_timeline action="start"）`,
+      },
       { label: '现在', value: now ? `写到第${highest}章时约 ${describeWindow(now)}` : '（算不出来，先记一个锚点）' },
       { label: '体检', value: errors.length > 0 ? `${errors.length} 个矛盾需要处理` : resolution.findings.length > 0 ? `${resolution.findings.length} 条提醒` : '没有矛盾' },
     ],
     lists: [
-      ...(snapshot.timeline.anchors.length > 0
-        ? [{
-            label: '锚点',
-            items: snapshot.timeline.anchors.slice().sort((a, b) => a.chapter - b.chapter)
-              .map((anchor) => `第${anchor.chapter}章：${anchor.when}${anchor.label ? `　${anchor.label}` : ''}`),
-          }]
-        : []),
-      ...(snapshot.timeline.spans.length > 0
-        ? [{
-            label: '跨度',
-            items: snapshot.timeline.spans.slice().sort((a, b) => a.toChapter - b.toChapter)
-              .map((span) => `第${span.fromChapter} → ${span.toChapter} 章：${span.days.min === span.days.max ? `${span.days.min}` : `${span.days.min}–${span.days.max}`} 天（${span.text}）`),
-          }]
-        : []),
       ...(recalls.length > 0
         ? [{
             label: '回忆',
             items: recalls.map((recall) => `第${recall.chapter}章回忆${recall.eventChapter === null ? '' : `第${recall.eventChapter}章的`}「${recall.about}」，说成 ${recall.claimed}`),
           }]
         : []),
-      {
-        label: '按章对照',
-        items: byChapter.map((chapter) => {
-          const window = windowAt(resolution, chapter)
-          return window ? `第${chapter}章：${describeWindow(window)}` : `第${chapter}章：（还没有锚点）`
-        }),
-      },
     ],
-    edit: { inputs: [] },
+    spine: { report: spine.report, points, loose },
+    edit: {
+      inputs: [
+        {
+          key: 'start',
+          label: '起点（例如 2020-10；留空就回到第一个锚点）',
+          value: pinned ?? '',
+        },
+      ],
+    },
     root,
   }
 }

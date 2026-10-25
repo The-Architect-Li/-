@@ -18,6 +18,8 @@ import {
   windowAt,
 } from '../domain/clock.ts'
 import type { TimelineAnchor, TimelineFile, TimelineRecall, TimelineSpan } from '../domain/types.ts'
+import { setBookStart } from '../domain/book-start.ts'
+import { buildSpine } from '../domain/spine.ts'
 import type { ToolDeps } from './deps.ts'
 
 /** Next free id for one list, keeping anchors/spans/recalls in separate namespaces. */
@@ -55,16 +57,16 @@ export function registerTimelineTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_timeline',
     description:
-      '故事时间线。anchor 记「第几章是什么时候」（2019、2019-03、2019-03-07 三种精度都行）；span 记「从第几章到第几章过了多久」（原文照抄，例如「过了两三个月」，会算成区间）；recall 记「第几章有人回忆第几章的事，说成什么日期」，用来核对回忆有没有记错月份或年份；at 查某一章的故事时间；check 体检；list 列出全部。正文里每出现一次时间推进就记一次，别事后补。',
+      '故事时间线。anchor 记「第几章是什么时候」（2019、2019-03、2019-03-07 三种精度都行）；span 记「从第几章到第几章过了多久」（原文照抄，例如「过了两三个月」，会算成区间）；recall 记「第几章有人回忆第几章的事，说成什么日期」，用来核对回忆有没有记错月份或年份；at 查某一章的故事时间；check 体检；list 列出全部；start 给全书钉一个起点（时间轴从那一天开始，每十二个月一个点），不钉就退回到第一个锚点。正文里每出现一次时间推进就记一次，别事后补。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['anchor', 'span', 'recall', 'at', 'check', 'list'],
-        description: 'anchor 时间锚点 / span 时间跨度 / recall 回忆 / at 查某章时间 / check 体检 / list 列表',
+        enum: ['anchor', 'span', 'recall', 'at', 'check', 'list', 'start'],
+        description: 'anchor 时间锚点 / span 时间跨度 / recall 回忆 / at 查某章时间 / check 体检 / list 列表 / start 全书起点',
       },
       chapter: { type: 'number', description: 'anchor、recall 发生的章号；at 是查询章号' },
-      when: { type: 'string', description: 'anchor 用：2019 / 2019-03 / 2019-03-07' },
+      when: { type: 'string', description: 'anchor 用：2019 / 2019-03 / 2019-03-07；start 用：全书起点，同样的格式，传空字符串清掉' },
       label: { type: 'string', description: 'anchor 用：这个时间点发生了什么，一句话' },
       from: { type: 'number', description: 'span 用：从第几章开始算' },
       to: { type: 'number', description: 'span 用：到第几章时已经过去了这么久' },
@@ -191,6 +193,21 @@ export function registerTimelineTool(ctx: Context, deps: ToolDeps): void {
           at: describeWindow(window),
           findings: 0,
           report: `第 ${chapter} 章的故事时间：${describeWindow(window)}${anchored ? '（有锚点）' : '（由「过了多久」累加得到）'}。`,
+        }
+      }
+
+      if (args.action === 'start') {
+        const when = args.when?.trim() ?? ''
+        const pinned = await setBookStart(store, when)
+        const snapshot = await store.snapshot()
+        const spine = buildSpine(snapshot)
+        return {
+          action: args.action,
+          at: pinned ?? '',
+          findings: 0,
+          report: pinned === undefined
+            ? ['起点清掉了，时间轴改从第一个锚点开始。', spine.report].join('\n')
+            : [`起点定在 ${pinned}：时间轴从这里开始，每十二个月一个点。`, spine.report].join('\n'),
         }
       }
 

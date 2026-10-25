@@ -48,6 +48,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
+import { setBookStart } from '../domain/book-start.ts'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
@@ -1109,10 +1110,30 @@ export async function writeEntry(
       throw new PanelInputError(`未知的条目类型 ${String(kind)}，只支持 character／world／chapter／place／story／timeline。`)
     }
     if (kind === 'timeline') {
-      throw new PanelInputError(
-        '时间线不能在这里改。日期是对正文的断言，要用 novel_timeline 记，它会把原文那句话一起存下来——面板里没有那句话。',
-        409,
-      )
+      // The start is a setting, not an assertion about a chapter: it says where
+      // the rail begins. Anchors stay tool-only — those quote the prose sentence
+      // they came from, and the panel has no such sentence to store.
+      const fields = body.fields
+      if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
+        throw new PanelInputError('fields 必须是一个对象。')
+      }
+      const start = (fields as Record<string, unknown>).start
+      if (typeof start !== 'string') {
+        throw new PanelInputError(
+          '面板这里只能钉起点。日期锚点要用 novel_timeline 记，它会把原文那句话一起存下来——面板里没有那句话。',
+          409,
+        )
+      }
+      const store = storeFor(deps, sessionId, root)
+      if (!(await store.exists())) {
+        throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+      }
+      try {
+        await setBookStart(store, start)
+      } catch (error) {
+        throw new PanelInputError((error as Error).message, 400)
+      }
+      return await readEntry(deps, sessionId, 'timeline', 'clock', root)
     }
     const key = typeof body.key === 'string' ? body.key.trim() : ''
     if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
