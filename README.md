@@ -485,6 +485,29 @@ Relations now live in `canon/relations.json`, one edge per pair, both ends named
 A book written before v0.21 folds its card lines into edges on first read (`migrated: true`) and stops
 keeping a copy on the card.
 
+### What the pack contains (v0.24)
+
+The writer used to be told who was in the chapter, never how those people stood
+to each other, and never what the place had become. Both were already in the
+project — the pack just did not look.
+
+Two sections were added:
+
+- **人物关系** — each character in this chapter, with their edges; anyone else in
+  the scene is listed first and marked 「（本章在场）」.
+- **本章地点** — the places the outline names, rendered *as of this chapter*
+  (a place is a history: the dock in chapter 3 and the dock in chapter 80 are two
+  states of one card, not two descriptions).
+
+Order: contract, clock, cast, previous tail, relations, places, ledger facts,
+recaps, open threads. The budget still decides — relations and places are cheap,
+so they arrive before the ledger starts being truncated.
+
+This also exposed a duplicate: the relation table keyed a pair by the words it
+was written with, so `端木晨琳` and `端木晨琳（晨琳）` were two edges for one
+relationship (five of the nineteen edges in the author's own book). Reads now
+settle spellings to card names and fold the second wording into the note.
+
 ### A timeline is a line, not a table (v0.22)
 
 The timeline page used to list four tables — anchors, spans, recalls, and a chapter-by-chapter

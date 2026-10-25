@@ -121,4 +121,47 @@ describe('buildBriefing', () => {
     const result = buildBriefing(snapshot(), [], 1, resolveConfig())
     expect(result.markdown).toContain('这是第一章')
   })
+
+  it('hands the writer the places the outline names, as they stand by now', () => {
+    const state = snapshot()
+    state.plans[0]!.beats.push('在三号仓里对质')
+    state.places = [
+      {
+        name: '三号仓',
+        aliases: ['旧仓'],
+        kind: '室内',
+        firstChapter: 1,
+        latestChapter: 2,
+        detail: '潮湿，霉味很重',
+        states: [
+          { chapter: 1, detail: '堆着别人的货' },
+          { chapter: 2, detail: '潮湿，霉味很重' },
+        ],
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ]
+    const result = buildBriefing(state, drafts(), 3, resolveConfig())
+    expect(result.markdown).toContain('本章地点')
+    expect(result.markdown).toContain('三号仓')
+    // The state in force as of chapter 3 is chapter 2's, not the standing detail.
+    expect(result.markdown).toContain('第2章时：潮湿，霉味很重')
+  })
+
+  it('names who is in the room and how they stand to each other', () => {
+    const state = snapshot()
+    state.relations = {
+      formatVersion: 1,
+      edges: [{ id: 'rel-阿鸢|沈砚', from: '阿鸢', to: '沈砚', kind: '债主', symmetric: false, note: '他欠她一条船' }],
+    }
+    const result = buildBriefing(state, drafts(), 3, resolveConfig())
+    expect(result.markdown).toContain('人物关系')
+    expect(result.markdown).toContain('沈砚 —— 债主')
+    expect(result.markdown).toContain('（本章在场）')
+  })
+
+  it('says the graph and the map are empty instead of pretending they are fine', () => {
+    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig())
+    expect(result.markdown).toContain('关系表里没有这几个人')
+    expect(result.markdown).toContain('章纲没有点名地点')
+  })
 })

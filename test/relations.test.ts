@@ -22,6 +22,7 @@ import {
   removeRelation,
   sameName,
   seenFrom,
+  settleRelations,
   upsertRelation,
 } from '../src/domain/relations.ts'
 import { ProjectStore } from '../src/domain/store.ts'
@@ -286,5 +287,26 @@ describe('matching a name through its brackets', () => {
     })
     const seen = relationsOf(file, cards, '端木晨琳（晨琳）')
     expect(seen.map((item) => `${item.other} ${item.kind}`)).toEqual(['王上 夫妻'])
+  })
+
+  it('folds two spellings of one pair into one edge, keeping both words', () => {
+    const cards = [card('端木晨琳（晨琳）', { aliases: ['晨琳'] }), card('王上')]
+    // What the real book actually had: the same pair written twice, once from
+    // each side, under two spellings, so `relationId` saw two pairs.
+    const file = {
+      formatVersion: 1 as const,
+      edges: [
+        { id: relationId('晨琳', '王上'), from: '晨琳', to: '王上', kind: '店东家→情人→丈夫', symmetric: false },
+        { id: relationId('王上', '端木晨琳（晨琳）'), from: '王上', to: '端木晨琳（晨琳）', kind: '第二段收编的单亲妈妈', symmetric: false },
+      ],
+    }
+    const { file: settled, merged } = settleRelations(file, cards)
+    expect(merged).toBe(1)
+    expect(settled.edges).toHaveLength(1)
+    expect(settled.edges[0]?.from).toBe('端木晨琳（晨琳）')
+    expect(settled.edges[0]?.kind).toBe('店东家→情人→丈夫')
+    expect(settled.edges[0]?.note).toBe('第二段收编的单亲妈妈')
+    // One row, one relationship, from either page.
+    expect(relationsOf(settled, cards, '王上')).toHaveLength(1)
   })
 })

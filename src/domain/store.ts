@@ -26,7 +26,7 @@ import type {
   WorldEntry,
   RelationFile,
 } from './types.ts'
-import { migrateRelations, normaliseRelations } from './relations.ts'
+import { migrateRelations, normaliseRelations, settleRelations } from './relations.ts'
 
 /** The file whose presence marks a directory as an Inkwell project. */
 export const PROJECT_FILE = 'project.json'
@@ -217,7 +217,14 @@ export class ProjectStore {
   async relations(): Promise<RelationFile> {
     const raw = await readJson<RelationFile | undefined>(join(this.root, RELATIONS_FILE), undefined)
     if (raw !== undefined && raw !== null && Array.isArray(raw.edges) && raw.edges.length > 0) {
-      return normaliseRelations(raw)
+      // Settle spellings on every read: two rows for one pair is the failure this
+      // table was introduced to end, and it arrives through aliases, not through
+      // anyone writing the same row twice.
+      const settled = settleRelations(normaliseRelations(raw), await this.characters())
+      if (settled.merged > 0) {
+        await writeJson(join(this.root, RELATIONS_FILE), { ...settled.file, migrated: true })
+      }
+      return settled.file
     }
     const { file, changed } = migrateRelations(raw === undefined ? undefined : raw, await this.characters())
     if (changed) await writeJson(join(this.root, RELATIONS_FILE), file)

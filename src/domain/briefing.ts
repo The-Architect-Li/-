@@ -10,11 +10,13 @@ import type {
   ChapterDraft,
   ChapterPlan,
   InkwellConfig,
+  PlaceCard,
   Snapshot,
   StoryPoint,
 } from './types.ts'
 import { describeWindow, resolveTimeline, windowAt } from './clock.ts'
 import { activeEntries } from './ledger.ts'
+import { describeRelation, relationsOf } from './relations.ts'
 import { countChars, tailOf } from './text.ts'
 
 /** One candidate block of the pack. */
@@ -86,6 +88,80 @@ function formatClock(snapshot: Snapshot, chapter: number, drafts: ChapterDraft[]
   return lines.join('\n')
 }
 
+/**
+ * The relationship graph, from the point of view of whoever is in this chapter.
+ *
+ * A writer who knows 沈砚 is in the scene but not that 阿蘅 is his creditor will
+ * write two strangers meeting. The edges are already in `canon/relations.json`;
+ * this section is the part that decides which of them belong in this chapter.
+ *
+ * @param snapshot - project state.
+ * @param castNames - who is in this chapter.
+ * @returns the section body.
+ */
+function formatRelations(snapshot: Snapshot, castNames: readonly string[]): string {
+  const lines: string[] = []
+  for (const name of castNames) {
+    const seen = relationsOf(snapshot.relations, snapshot.characters, name)
+    if (seen.length === 0) continue
+    const onStage = seen.filter((relation) => castNames.includes(relation.other))
+    const offStage = seen.filter((relation) => !castNames.includes(relation.other))
+    lines.push(`- **${name}**`)
+    // Who is in the room first: those are the relations the scene will press on.
+    for (const relation of onStage) lines.push(`  - 与 ${describeRelation(relation)}　（本章在场）`)
+    for (const relation of offStage.slice(0, 3)) lines.push(`  - 与 ${describeRelation(relation)}`)
+    if (lines.length >= 14) break
+  }
+  if (lines.length === 0) {
+    return '（关系表里没有这几个人。人物之间的亲疏要用 novel_canon upsert_character 的 relations 写进去，两页都能改）'
+  }
+  return lines.slice(0, 14).join('\n')
+}
+
+/** Which places the chapter plan names, in the order the plan names them. */
+function placesInPlan(snapshot: Snapshot, plan: ChapterPlan | undefined): PlaceCard[] {
+  if (!plan) return []
+  const haystack = [plan.title, plan.scene ?? '', plan.summary ?? '', ...plan.beats, ...plan.hooks].join(' ')
+  return snapshot.places.filter((place) =>
+    [place.name, ...place.aliases].some((name) => name !== '' && haystack.includes(name)),
+  )
+}
+
+/**
+ * What the places this chapter uses look like *by now*.
+ *
+ * A place is a history, not a description: the dock in chapter 3 and the dock in
+ * chapter 80 are the same card with a newer state. Handing the writer the last
+ * state as of this chapter is the whole point of storing states.
+ *
+ * @param snapshot - project state.
+ * @param plan - this chapter's outline.
+ * @param chapter - the chapter about to be written.
+ * @returns the section body.
+ */
+function formatPlaces(snapshot: Snapshot, plan: ChapterPlan | undefined, chapter: number): string {
+  const mentioned = placesInPlan(snapshot, plan)
+  const recent = snapshot.places
+    .filter((place) => !mentioned.includes(place) && place.latestChapter <= chapter && place.latestChapter >= chapter - 10)
+    .sort((a, b) => b.latestChapter - a.latestChapter)
+  const chosen = [...mentioned, ...recent.slice(0, 3)]
+  if (chosen.length === 0) {
+    return '（章纲没有点名地点。写到确定的场所时，用 novel_canon upsert_place 记一条，下一次它就会出现在这里）'
+  }
+  return chosen
+    .map((place) => {
+      const state = place.states
+        .filter((item) => item.chapter <= chapter)
+        .sort((a, b) => a.chapter - b.chapter)
+        .at(-1)
+      const detail = state?.detail ?? place.detail
+      const when = state === undefined ? '' : `第${state.chapter}章时：`
+      const later = mentioned.includes(place) ? '' : `（最近出现于第${place.latestChapter}章）`
+      return `- **${place.name}**（${place.kind}）${when}${detail}${later}`
+    })
+    .join('\n')
+}
+
 function collectSections(
   snapshot: Snapshot,
   drafts: ChapterDraft[],
@@ -142,13 +218,29 @@ function collectSections(
     content: last ? `第${last.number}章《${last.title}》结尾：\n${tailOf(last.text, config.briefingTailChars)}` : '（这是第一章）',
   })
 
+  sections.push({
+    name: '人物关系',
+    priority: 5,
+    chars: 0,
+    kept: true,
+    content: formatRelations(snapshot, castNames),
+  })
+
+  sections.push({
+    name: '本章地点',
+    priority: 6,
+    chars: 0,
+    kept: true,
+    content: formatPlaces(snapshot, plan, chapter),
+  })
+
   const subjects = new Set(castNames)
   const relevant = activeEntries(snapshot.ledger).filter(
     (entry) => subjects.has(entry.subject) || entry.subject === '世界',
   )
   sections.push({
     name: '已确立事实',
-    priority: 5,
+    priority: 7,
     chars: 0,
     kept: true,
     content: relevant.length > 0
@@ -161,7 +253,7 @@ function collectSections(
   const summaries = previous.slice(0, config.briefingLookback).sort((a, b) => a.number - b.number)
   sections.push({
     name: '前情摘要',
-    priority: 6,
+    priority: 8,
     chars: 0,
     kept: true,
     content: summaries.length > 0
@@ -172,7 +264,7 @@ function collectSections(
   const pending = activeEntries(snapshot.ledger).filter((entry) => /伏笔|线索|悬念/.test(entry.predicate))
   sections.push({
     name: '待回收线索',
-    priority: 7,
+    priority: 9,
     chars: 0,
     kept: true,
     content: pending.length > 0

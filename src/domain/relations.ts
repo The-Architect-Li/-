@@ -204,6 +204,50 @@ export function migrateRelations(
 }
 
 /**
+ * Fold edges whose two ends are the same pair of people, spelled differently.
+ *
+ * `relationId` keys a pair by the words it was written with, so 「端木晨琳」 and
+ * 「端木晨琳（晨琳）」 become two rows for one relationship. `sameName` already
+ * decides they are one person; without this collapse the writer's briefing lists
+ * the same pair twice with two different descriptions, which reads as two
+ * relationships and is exactly the kind of quiet contradiction this file exists
+ * to prevent.
+ *
+ * @param file - the table as read.
+ * @param cards - the cast, used to settle spellings to card names.
+ * @returns the table with one edge per pair, and how many were folded.
+ */
+export function settleRelations(
+  file: RelationFile,
+  cards: readonly CharacterCard[],
+): { file: RelationFile; merged: number } {
+  const settled = (written: string): string =>
+    cards.find((card) => spellings(card).some((spelling) => sameName(written, spelling)))?.name ?? written
+  const kept: RelationEdge[] = []
+  let merged = 0
+  for (const edge of file.edges) {
+    const from = settled(edge.from)
+    const to = settled(edge.to)
+    const id = relationId(from, to)
+    const existing = kept.find((item) => relationId(settled(item.from), settled(item.to)) === id)
+    if (existing === undefined) {
+      kept.push({ ...edge, from, to, id, symmetric: edge.symmetric ?? looksSymmetric(edge.kind) })
+      continue
+    }
+    merged += 1
+    // Keep the first wording as the relationship; the second becomes a note, so
+    // 「第二段收编的单亲妈妈」 is not lost and not mistaken for a second relation.
+    const extra = edge.kind.trim()
+    if (extra !== '' && extra !== existing.kind) {
+      existing.note = existing.note === undefined || existing.note === '' ? extra : `${existing.note}；${extra}`
+    }
+    if (existing.reverse === undefined && edge.reverse !== undefined) existing.reverse = edge.reverse
+    if (existing.since === undefined && edge.since !== undefined) existing.since = edge.since
+  }
+  return { file: { ...file, edges: kept }, merged }
+}
+
+/**
  * How one page reads one edge.
  *
  * @param edge - the record.
