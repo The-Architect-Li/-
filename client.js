@@ -558,397 +558,569 @@ window.__ModuleLoader__.load({
         display: 'flex',
         flexDirection: 'column',
         font: 'inherit',
-        fontSize: '12px',
-        lineHeight: 1.5,
-        color: 'inherit',
+        fontSize: '13px',
+        lineHeight: 1.6,
+        color: 'var(--iw-fg)',
         height: '100%',
         overflowY: 'auto',
         boxSizing: 'border-box',
-        padding: '6px 4px 14px',
+        padding: '4px 6px 18px',
+        scrollbarGutter: 'stable',
       },
       head: {
         display: 'flex',
         alignItems: 'center',
-        gap: '6px',
-        padding: '4px 8px 8px',
+        gap: '8px',
+        padding: '6px 8px 10px',
+        position: 'sticky',
+        top: 0,
+        zIndex: 2,
+        backgroundColor: 'var(--iw-bar)',
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid var(--iw-line)',
+        marginBottom: '4px',
       },
-      bookIcon: { opacity: 0.7, fontSize: '12px' },
+      bookIcon: { fontSize: '14px', color: 'var(--iw-accent)', flex: '0 0 auto' },
       bookTitle: {
-        fontWeight: 600,
-        fontSize: '13px',
+        fontWeight: 650,
+        fontSize: '14px',
+        letterSpacing: '0.01em',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       },
       pill: {
-        border: '1px solid color-mix(in srgb, currentColor 20%, transparent)',
+        border: '1px solid transparent',
+        backgroundColor: 'var(--iw-surface)',
         borderRadius: '999px',
-        padding: '0 6px',
-        fontSize: '10.5px',
-        opacity: 0.7,
+        padding: '0 8px',
+        fontSize: '11px',
+        lineHeight: '18px',
+        letterSpacing: '0.02em',
+        color: 'var(--iw-fg-2)',
         whiteSpace: 'nowrap',
-        lineHeight: '16px',
       },
       spacer: { flex: '1 1 auto' },
       iconButton: {
-        border: '1px solid color-mix(in srgb, currentColor 20%, transparent)',
-        color: 'inherit',
-        borderRadius: '6px',
+        border: '1px solid var(--iw-line-strong)',
+        color: 'var(--iw-fg)',
+        backgroundColor: 'var(--iw-surface)',
+        borderRadius: '7px',
         font: 'inherit',
-        fontSize: '11px',
-        padding: '1px 7px',
-        lineHeight: '18px',
+        fontSize: '12px',
+        height: '27px',
+        padding: '0 10px',
+        lineHeight: '25px',
         whiteSpace: 'nowrap',
+        boxSizing: 'border-box',
       },
       primaryButton: {
-        border: '1px solid color-mix(in srgb, currentColor 34%, transparent)',
-        color: 'inherit',
-        borderRadius: '6px',
+        border: '1px solid transparent',
+        color: 'var(--iw-accent-fg)',
+        backgroundColor: 'var(--iw-accent)',
+        borderRadius: '7px',
         font: 'inherit',
-        fontSize: '11.5px',
-        padding: '3px 10px',
+        fontSize: '12px',
+        fontWeight: 550,
+        height: '27px',
+        padding: '0 12px',
+        lineHeight: '25px',
+        whiteSpace: 'nowrap',
+        boxSizing: 'border-box',
       },
-      // The bottom entry point. Full width, labelled, and larger than a header
-      // icon on purpose: 设置 has to be findable without hunting for a gear.
       settingsRow: {
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: '11px',
         width: '100%',
-        margin: '4px 0 0',
-        padding: '11px 10px',
+        margin: '6px 0 0',
+        padding: '12px 12px',
         border: 'none',
-        borderTop: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
-        color: 'inherit',
+        borderTop: '1px solid var(--iw-line)',
+        backgroundColor: 'transparent',
+        color: 'var(--iw-fg)',
         font: 'inherit',
         textAlign: 'left',
+        borderRadius: '0 0 8px 8px',
       },
       settingsIcon: {
-        fontSize: '17px',
+        fontSize: '16px',
         lineHeight: '1',
-        opacity: '0.85',
+        color: 'var(--iw-fg-2)',
         flex: '0 0 auto',
       },
       settingsLabel: {
         fontSize: '13.5px',
-        fontWeight: '500',
+        fontWeight: '550',
         letterSpacing: '0.01em',
       },
-      // The page behind a row: label above value, so long prose wraps cleanly
-      // instead of being squeezed into a two-column table.
       entryBlock: {
-        padding: '2px 10px 0',
+        padding: '11px 10px 0',
+        margin: '10px 2px 0',
+        borderTop: '1px solid var(--iw-line)',
       },
       entryLabel: {
-        fontSize: '10.5px',
-        opacity: '0.5',
-        letterSpacing: '0.02em',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '0.09em',
+        paddingBottom: '4px',
       },
       entryValue: {
-        fontSize: '12px',
-        lineHeight: '1.55',
-        paddingBottom: '7px',
+        fontSize: '13.5px',
+        lineHeight: '1.75',
+        paddingBottom: '11px',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
+        color: 'var(--iw-fg)',
       },
       entryListHead: {
-        fontSize: '10.5px',
-        opacity: '0.5',
-        padding: '4px 10px 1px',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '0.09em',
+        padding: '12px 10px 4px',
+        fontWeight: 550,
+        margin: '10px 2px 0',
+        borderTop: '1px solid var(--iw-line)',
       },
       entryItem: {
-        fontSize: '12px',
-        lineHeight: '1.5',
-        padding: '0 10px 2px',
+        fontSize: '13.5px',
+        lineHeight: '1.7',
+        padding: '1px 10px 3px',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
+        color: 'var(--iw-fg)',
       },
-      // The second-level header's trail: 人物设计 › 主角 › 沈砚.
       crumb: {
         display: 'flex',
         alignItems: 'center',
-        gap: '4px',
-        fontSize: '10.5px',
-        opacity: 0.5,
-        padding: '0 10px 4px',
+        gap: '6px',
+        fontSize: '11.5px',
+        color: 'var(--iw-fg-3)',
+        padding: '2px 10px 6px',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
       },
-      editField: { padding: '0 10px 6px' },
+      editField: { padding: '8px 10px 0' },
       editLabel: {
-        fontSize: '10.5px',
-        opacity: 0.5,
-        letterSpacing: '0.02em',
-        paddingBottom: '2px',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '0.06em',
+        paddingBottom: '4px',
       },
       input: {
         width: '100%',
         boxSizing: 'border-box',
         font: 'inherit',
-        fontSize: '12px',
-        padding: '4px 6px',
-        borderRadius: '6px',
-        color: 'inherit',
-        background: 'transparent',
+        fontSize: '13px',
+        height: '30px',
+        padding: '0 9px',
+        borderRadius: '7px',
+        color: 'var(--iw-fg)',
+        backgroundColor: 'var(--iw-field)',
       },
       textarea: {
         width: '100%',
         boxSizing: 'border-box',
         font: 'inherit',
-        fontSize: '12px',
-        lineHeight: '1.7',
-        padding: '6px 8px',
-        borderRadius: '6px',
-        color: 'inherit',
-        background: 'transparent',
-        minHeight: '84px',
+        fontSize: '13px',
+        lineHeight: '1.75',
+        padding: '8px 10px',
+        borderRadius: '7px',
+        color: 'var(--iw-fg)',
+        backgroundColor: 'var(--iw-field)',
+        minHeight: '88px',
         resize: 'vertical',
       },
-      // A chapter's prose: a column of paragraphs, not one pre-wrapped blob.
       prose: {
-        padding: '0 10px 4px',
-        fontSize: '12.5px',
-        lineHeight: '1.75',
+        padding: '4px 10px 0',
+        fontFamily: 'var(--iw-serif)',
+        fontSize: '14.5px',
+        lineHeight: '1.95',
+        color: 'var(--iw-fg)',
       },
       proseLine: {
-        margin: '0 0 9px',
+        margin: '0 0 15px',
         textIndent: '2em',
         wordBreak: 'break-word',
       },
       blocked: {
-        margin: '2px 10px 8px',
-        padding: '6px 8px',
-        borderRadius: '6px',
-        fontSize: '11px',
-        lineHeight: '1.55',
+        margin: '6px 10px 10px',
+        padding: '9px 11px',
+        borderRadius: '8px',
+        fontSize: '12px',
+        lineHeight: '1.65',
         whiteSpace: 'pre-wrap',
-        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
-        background: 'color-mix(in srgb, currentColor 6%, transparent)',
+        border: '1px solid var(--iw-warn-line)',
+        backgroundColor: 'var(--iw-warn-bg)',
+        color: 'var(--iw-warn-fg)',
       },
       editHint: {
-        padding: '0 10px 8px',
-        fontSize: '10.5px',
-        opacity: 0.5,
+        padding: '4px 10px 10px',
+        fontSize: '11.5px',
+        color: 'var(--iw-fg-3)',
       },
       editBar: {
         display: 'flex',
         alignItems: 'center',
-        gap: '6px',
-        padding: '0 10px 6px',
+        gap: '8px',
+        padding: '0 10px 8px',
       },
       row: {
         display: 'flex',
         alignItems: 'center',
-        gap: '6px',
+        gap: '8px',
         padding: '3px 8px',
-        borderRadius: '6px',
-        minHeight: '22px',
+        borderRadius: '7px',
+        minHeight: '29px',
+        boxSizing: 'border-box',
       },
-      glyph: { width: '13px', textAlign: 'center', opacity: 0.75, flex: '0 0 auto', fontSize: '11px' },
-      label: { flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-      aside: { opacity: 0.5, fontSize: '10.5px', whiteSpace: 'nowrap', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis' },
-      count: {
-        fontSize: '10.5px',
+      glyph: {
+        width: '15px',
+        textAlign: 'center',
+        color: 'var(--iw-fg-2)',
+        flex: '0 0 auto',
+        fontSize: '11px',
+        lineHeight: '1',
+      },
+      glyphLeaf: {
+        width: '15px',
+        textAlign: 'center',
+        color: 'var(--iw-fg-3)',
+        flex: '0 0 auto',
+        fontSize: '12px',
+        lineHeight: '1',
         opacity: 0.55,
-        border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+      },
+      label: {
+        letterSpacing: '0.005em',
+        flex: '1 1 auto',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontSize: '13px',
+      },
+      aside: {
+        color: 'var(--iw-fg-3)',
+        fontSize: '11.5px',
+        whiteSpace: 'nowrap',
+        maxWidth: '45%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      },
+      count: {
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        backgroundColor: 'var(--iw-surface)',
+        border: '1px solid transparent',
         borderRadius: '999px',
-        padding: '0 5px',
-        lineHeight: '15px',
+        padding: '0 7px',
+        lineHeight: '17px',
+        fontVariantNumeric: 'tabular-nums',
         whiteSpace: 'nowrap',
       },
       sectionHead: {
         display: 'flex',
         alignItems: 'center',
-        gap: '7px',
-        padding: '7px 8px 4px',
+        gap: '9px',
+        padding: '7px 8px',
+        marginTop: '3px',
+        borderRadius: '7px',
         fontWeight: 600,
-        fontSize: '12.5px',
+        fontSize: '13.5px',
+        letterSpacing: '0.01em',
       },
       sectionCount: {
-        fontSize: '10.5px',
-        opacity: 0.55,
-        border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        backgroundColor: 'var(--iw-surface)',
         borderRadius: '999px',
-        padding: '0 6px',
-        lineHeight: '16px',
+        padding: '0 7px',
+        lineHeight: '17px',
+        fontVariantNumeric: 'tabular-nums',
       },
       note: {
-        border: '1px dashed color-mix(in srgb, currentColor 20%, transparent)',
-        borderRadius: '8px',
-        padding: '10px 12px',
-        opacity: 0.8,
-        margin: '4px 8px',
+        border: '1px dashed var(--iw-line-strong)',
+        borderRadius: '9px',
+        padding: '12px 14px',
+        color: 'var(--iw-fg-2)',
+        margin: '6px 8px',
+        fontSize: '12.5px',
+        lineHeight: '1.7',
       },
       error: {
-        border: '1px solid color-mix(in srgb, #d9534f 45%, transparent)',
-        color: '#d9534f',
-        borderRadius: '8px',
-        padding: '8px 10px',
+        border: '1px solid var(--iw-danger-line)',
+        backgroundColor: 'var(--iw-danger-bg)',
+        color: 'var(--iw-danger-fg)',
+        borderRadius: '9px',
+        padding: '10px 12px',
         whiteSpace: 'pre-wrap',
-        margin: '4px 8px',
+        margin: '6px 8px',
+        fontSize: '12.5px',
+        lineHeight: '1.6',
       },
       checkRow: {
         display: 'flex',
-        alignItems: 'center',
-        gap: '7px',
-        margin: '2px 10px 6px',
-        fontSize: '11px',
+        alignItems: 'flex-start',
+        gap: '8px',
+        margin: '4px 10px 8px',
+        fontSize: '12.5px',
+        lineHeight: '1.55',
         cursor: 'pointer',
         userSelect: 'none',
       },
       footer: {
         marginTop: 'auto',
-        padding: '8px 8px 0',
-        fontSize: '10.5px',
-        opacity: 0.45,
+        padding: '12px 10px 0',
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
         wordBreak: 'break-all',
       },
       dirPath: {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '10.5px',
-        opacity: 0.75,
-        wordBreak: 'break-all',
-        padding: '2px 8px',
-      },
-      input: {
-        background: 'transparent',
-        color: 'inherit',
-        borderRadius: '6px',
-        font: 'inherit',
+        fontFamily: 'var(--iw-mono)',
         fontSize: '11.5px',
-        padding: '3px 7px',
-        width: '100%',
-        boxSizing: 'border-box',
+        color: 'var(--iw-fg-2)',
+        wordBreak: 'break-all',
+        padding: '4px 8px',
       },
-      field: { display: 'flex', flexDirection: 'column', gap: '3px', padding: '4px 8px' },
-      fieldLabel: { fontSize: '10.5px', opacity: 0.55 },
-      listWrap: { display: 'flex', flexDirection: 'column', padding: '6px 8px', gap: '6px' },
+      field: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px 8px' },
+      fieldLabel: {
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '0.06em',
+        fontWeight: 550,
+      },
+      listWrap: { display: 'flex', flexDirection: 'column', padding: '4px 8px', gap: '8px' },
       bookRow: {
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
+        gap: '11px',
         width: '100%',
         boxSizing: 'border-box',
-        padding: '8px 10px',
-        borderRadius: '8px',
-        border: '1px solid color-mix(in srgb, currentColor 14%, transparent)',
-        color: 'inherit',
+        padding: '11px 12px',
+        borderRadius: '10px',
+        border: '1px solid var(--iw-line)',
+        backgroundColor: 'var(--iw-surface)',
+        color: 'var(--iw-fg)',
         font: 'inherit',
         textAlign: 'left',
       },
-      bookIcon: { fontSize: '15px', opacity: 0.55, width: '16px', textAlign: 'center', flex: '0 0 auto' },
-      bookBody: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: '1 1 auto' },
+      bookBody: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: '1 1 auto' },
       bookName: {
-        fontSize: '13px',
-        fontWeight: 600,
+        fontSize: '14px',
+        fontWeight: 650,
+        letterSpacing: '0.01em',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       },
       bookMeta: {
-        fontSize: '10.5px',
-        opacity: 0.6,
+        fontSize: '12px',
+        color: 'var(--iw-fg-2)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       },
-      actions: { display: 'flex', gap: '6px', padding: '8px 8px 4px', alignItems: 'center' },
-      spacerBlock: { height: '6px' },
-      select: {
-        background: 'transparent',
-        color: 'inherit',
-        borderRadius: '6px',
-        font: 'inherit',
+      bookPath: {
+        fontFamily: 'var(--iw-mono)',
         fontSize: '11px',
-        padding: '1px 4px',
+        color: 'var(--iw-fg-3)',
+        letterSpacing: '-0.01em',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        direction: 'rtl',
+        textAlign: 'left',
+      },
+      actions: { display: 'flex', gap: '8px', padding: '10px 8px 6px', alignItems: 'center' },
+      spacerBlock: { height: '8px' },
+      select: {
+        backgroundColor: 'var(--iw-field)',
+        color: 'var(--iw-fg)',
+        borderRadius: '7px',
+        font: 'inherit',
+        fontSize: '12.5px',
+        height: '30px',
+        padding: '0 6px',
         maxWidth: '100%',
         minWidth: 0,
       },
       roleCard: {
-        border: '1px solid color-mix(in srgb, currentColor 12%, transparent)',
-        borderRadius: '8px',
-        padding: '6px 8px',
-        margin: '6px 8px 0',
+        border: '1px solid var(--iw-line)',
+        backgroundColor: 'var(--iw-surface)',
+        borderRadius: '10px',
+        padding: '10px 12px',
+        margin: '8px 8px 0',
         display: 'flex',
         flexDirection: 'column',
-        gap: '4px',
+        gap: '6px',
       },
-      roleHead: { display: 'flex', alignItems: 'center', gap: '6px' },
-      roleName: { fontWeight: 600, fontSize: '12px' },
-      roleDuty: { fontSize: '10.5px', opacity: 0.55, lineHeight: 1.45 },
+      roleHead: { display: 'flex', alignItems: 'center', gap: '8px' },
+      roleName: { fontWeight: 650, fontSize: '13px' },
+      roleDuty: { fontSize: '11.5px', color: 'var(--iw-fg-2)', lineHeight: 1.6 },
       roleEffective: {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '10.5px',
-        opacity: 0.65,
+        fontFamily: 'var(--iw-mono)',
+        fontSize: '11.5px',
+        color: 'var(--iw-fg-3)',
         wordBreak: 'break-all',
       },
-      fieldRow: { display: 'flex', alignItems: 'center', gap: '6px' },
-      fieldName: { width: '46px', flex: '0 0 auto', fontSize: '10.5px', opacity: 0.55 },
+      fieldRow: { display: 'flex', alignItems: 'center', gap: '8px' },
+      fieldName: { width: '52px', flex: '0 0 auto', fontSize: '11px', color: 'var(--iw-fg-3)' },
       settingRow: {
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        padding: '8px',
-        borderRadius: '6px',
+        gap: '10px',
+        padding: '11px 12px',
+        borderRadius: '9px',
         cursor: 'pointer',
         margin: '2px 8px',
       },
     }
 
     /**
-     * Interaction states, as a real stylesheet.
+     * The panel's look, as one stylesheet: tokens, type scale, and states.
      *
      * Inline styles cannot express `:hover`, `:focus-visible`, `:active` or
-     * `:disabled`, so the panel shipped with none of them: every row and button
-     * was silent until you clicked it, and nothing told you what was clickable.
-     * The sheet below is the missing half — layout stays inline, states live
-     * here. Everything is mixed from `currentColor`, so it follows the host's
-     * light/dark theme and accent without a second palette to maintain.
+     * `:disabled`, so the panel shipped with none of them; they live here now.
+     * Colours are tokens mixed from `CanvasText`/`Canvas`, so the panel follows
+     * the host's theme without a second palette, and the theme's own accent does
+     * not leak into it: a writing surface wants one quiet accent, not the
+     * shell's.
      */
     const CSS = `
-.iw-click { cursor: pointer; transition: background-color .12s ease, border-color .12s ease, color .12s ease, opacity .12s ease; }
-.iw-click:hover:not(:disabled):not([aria-disabled='true']) { background-color: color-mix(in srgb, currentColor 8%, transparent); }
-.iw-click:active:not(:disabled):not([aria-disabled='true']) { background-color: color-mix(in srgb, currentColor 15%, transparent); }
-.iw-click:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
-.iw-row { cursor: pointer; border-radius: 6px; user-select: none; transition: background-color .12s ease, box-shadow .12s ease; }
-.iw-row:hover { background-color: color-mix(in srgb, currentColor 10%, transparent); }
-.iw-row:active { background-color: color-mix(in srgb, currentColor 15%, transparent); }
-.iw-row:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
-.iw-row-sel, .iw-row-sel:hover { background-color: color-mix(in srgb, currentColor 15%, transparent); }
-.iw-open:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); }
-.iw-open:active { background-color: color-mix(in srgb, currentColor 12%, transparent); }
-.iw-open:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
-.iw-btn { cursor: pointer; transition: background-color .12s ease, border-color .12s ease, opacity .12s ease; }
-.iw-btn:hover:not(:disabled) { background-color: color-mix(in srgb, currentColor 10%, transparent); border-color: color-mix(in srgb, currentColor 38%, transparent); }
-.iw-btn:active:not(:disabled) { background-color: color-mix(in srgb, currentColor 18%, transparent); }
-.iw-btn:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: 1px; }
-.iw-btn:disabled { opacity: .45; cursor: default; }
-.iw-primary { border-color: color-mix(in srgb, currentColor 34%, transparent); background-color: color-mix(in srgb, currentColor 12%, transparent); }
-.iw-primary:hover:not(:disabled) { background-color: color-mix(in srgb, currentColor 22%, transparent); border-color: color-mix(in srgb, currentColor 52%, transparent); }
-.iw-primary:active:not(:disabled) { background-color: color-mix(in srgb, currentColor 30%, transparent); }
-.iw-settings { cursor: pointer; transition: background-color .12s ease, padding-left .12s ease; }
-.iw-settings:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); padding-left: 14px; }
-.iw-settings:active { background-color: color-mix(in srgb, currentColor 12%, transparent); }
-.iw-settings:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -2px; }
-.iw-book { cursor: pointer; transition: background-color .12s ease, border-color .12s ease; }
-.iw-book:hover { background-color: color-mix(in srgb, currentColor 7%, transparent); border-color: color-mix(in srgb, currentColor 32%, transparent); }
-.iw-book:active { background-color: color-mix(in srgb, currentColor 13%, transparent); }
-.iw-book:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 48%, transparent); outline-offset: -1px; }
-.iw-input { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); transition: border-color .12s ease, box-shadow .12s ease; }
-.iw-input:hover { border-color: color-mix(in srgb, currentColor 34%, transparent); }
-.iw-input:focus, .iw-input:focus-visible { outline: none; border-color: color-mix(in srgb, currentColor 52%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent); }
-.iw-select { border: 1px solid color-mix(in srgb, currentColor 24%, transparent); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
-.iw-select:hover { border-color: color-mix(in srgb, currentColor 34%, transparent); }
-.iw-select:focus-visible { outline: none; border-color: color-mix(in srgb, currentColor 52%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent); }
-.iw-glyph { border-radius: 4px; transition: background-color .12s ease; }
-.iw-glyph:hover { background-color: color-mix(in srgb, currentColor 14%, transparent); }
-.iw-card { transition: border-color .12s ease, background-color .12s ease; }
-.iw-card:hover { border-color: color-mix(in srgb, currentColor 26%, transparent); }
-.iw-card:focus-within { border-color: color-mix(in srgb, currentColor 38%, transparent); }
-.iw-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background-color: color-mix(in srgb, #000 42%, transparent); }
-.iw-dialog { width: min(392px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; padding: 14px; border-radius: 12px; font: inherit; font-size: 12px; line-height: 1.5; color: CanvasText; background-color: Canvas; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); box-shadow: 0 18px 48px color-mix(in srgb, #000 32%, transparent); }
-.iw-dialogpath { font-size: 10.5px; line-height: 1.4; word-break: break-all; opacity: .66; }
-@media (prefers-reduced-motion: reduce) { .iw-click, .iw-row, .iw-btn, .iw-settings, .iw-book, .iw-input, .iw-select, .iw-glyph, .iw-card, .iw-open { transition: none; } .iw-settings:hover { padding-left: 10px; } }
+:root {
+  --iw-serif: 'Source Han Serif SC', 'Songti SC', 'Noto Serif CJK SC', 'SimSun', Georgia, serif;
+  --iw-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --iw-fg: CanvasText;
+  --iw-fg-2: color-mix(in srgb, CanvasText 80%, transparent);
+  --iw-fg-3: color-mix(in srgb, CanvasText 62%, transparent);
+  --iw-line: color-mix(in srgb, CanvasText 13%, transparent);
+  --iw-line-strong: color-mix(in srgb, CanvasText 24%, transparent);
+  --iw-surface: color-mix(in srgb, CanvasText 5%, transparent);
+  --iw-surface-hover: color-mix(in srgb, CanvasText 9%, transparent);
+  --iw-surface-active: color-mix(in srgb, CanvasText 14%, transparent);
+  --iw-bar: color-mix(in srgb, Canvas 86%, transparent);
+  --iw-field: color-mix(in srgb, CanvasText 4%, Canvas);
+  --iw-accent: #33628f;
+  --iw-accent-fg: #ffffff;
+  --iw-accent-soft: color-mix(in srgb, #33628f 12%, transparent);
+  --iw-accent-line: color-mix(in srgb, #33628f 46%, transparent);
+  --iw-warn-bg: color-mix(in srgb, #b7791f 10%, Canvas);
+  --iw-warn-line: color-mix(in srgb, #b7791f 34%, transparent);
+  --iw-warn-fg: color-mix(in srgb, #8a5a11 88%, CanvasText);
+  --iw-danger-bg: color-mix(in srgb, #c0392b 9%, Canvas);
+  --iw-danger-line: color-mix(in srgb, #c0392b 38%, transparent);
+  --iw-danger-fg: color-mix(in srgb, #b3352a 88%, CanvasText);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --iw-accent: #8ab4e8;
+    --iw-accent-fg: #0d1a26;
+    --iw-accent-soft: color-mix(in srgb, #8ab4e8 16%, transparent);
+    --iw-accent-line: color-mix(in srgb, #8ab4e8 50%, transparent);
+    --iw-warn-bg: color-mix(in srgb, #d6a13a 14%, Canvas);
+    --iw-warn-fg: color-mix(in srgb, #e8c07a 82%, CanvasText);
+    --iw-danger-bg: color-mix(in srgb, #e05a4c 14%, Canvas);
+    --iw-danger-fg: color-mix(in srgb, #f3a09a 84%, CanvasText);
+  }
+}
+
+/* Rows --------------------------------------------------------------------- */
+.iw-click, .iw-row, .iw-btn, .iw-settings, .iw-book, .iw-open, .iw-glyph, .iw-card, .iw-input, .iw-select {
+  transition: background-color .13s ease, border-color .13s ease, color .13s ease, box-shadow .13s ease, opacity .13s ease, padding-left .13s ease;
+}
+.iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
+.iw-row:hover { background-color: var(--iw-surface-hover); }
+.iw-row:active { background-color: var(--iw-surface-active); }
+.iw-row:focus-visible { outline: none; border-color: var(--iw-accent-line); box-shadow: 0 0 0 2px var(--iw-accent-soft); }
+.iw-row-sel, .iw-row-sel:hover {
+  background-color: var(--iw-accent-soft);
+  border-color: transparent;
+  box-shadow: inset 2px 0 0 var(--iw-accent);
+  color: var(--iw-fg);
+}
+.iw-row-sel:focus-visible { box-shadow: inset 2px 0 0 var(--iw-accent), 0 0 0 2px var(--iw-accent-soft); }
+
+/* Drawer headings ---------------------------------------------------------- */
+.iw-open { cursor: pointer; user-select: none; background-color: transparent; border: 1px solid transparent; }
+.iw-open:hover { background-color: var(--iw-surface-hover); }
+.iw-open:active { background-color: var(--iw-surface-active); }
+.iw-open:focus-visible { outline: none; border-color: var(--iw-accent-line); box-shadow: 0 0 0 2px var(--iw-accent-soft); }
+
+/* Glyph toggles ------------------------------------------------------------ */
+.iw-glyph { cursor: pointer; border-radius: 5px; }
+.iw-glyph:hover { background-color: var(--iw-surface-active); color: var(--iw-fg); }
+.iw-glyph:focus-visible { outline: 2px solid var(--iw-accent-line); outline-offset: -2px; }
+
+/* Buttons ------------------------------------------------------------------ */
+.iw-btn { cursor: pointer; }
+.iw-btn:hover:not(:disabled) { background-color: var(--iw-surface-hover); border-color: var(--iw-line-strong); }
+.iw-btn:active:not(:disabled) { background-color: var(--iw-surface-active); }
+.iw-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--iw-accent-soft); border-color: var(--iw-accent-line); }
+.iw-btn:disabled { opacity: .5; cursor: default; }
+.iw-primary:hover:not(:disabled) { background-color: color-mix(in srgb, var(--iw-accent) 86%, #000); border-color: transparent; }
+.iw-primary:active:not(:disabled) { background-color: color-mix(in srgb, var(--iw-accent) 74%, #000); }
+.iw-primary:focus-visible { box-shadow: 0 0 0 3px var(--iw-accent-soft); }
+
+/* Settings door ------------------------------------------------------------ */
+.iw-settings { cursor: pointer; }
+.iw-settings:hover { background-color: var(--iw-surface-hover); }
+.iw-settings:active { background-color: var(--iw-surface-active); }
+.iw-settings:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--iw-accent-line); }
+
+/* Shelf cards -------------------------------------------------------------- */
+.iw-book { cursor: pointer; }
+.iw-book:hover { background-color: var(--iw-surface-hover); border-color: var(--iw-line-strong); box-shadow: 0 2px 10px color-mix(in srgb, #000 7%, transparent); }
+.iw-book:active { background-color: var(--iw-surface-active); box-shadow: none; }
+.iw-book:focus-visible { outline: none; border-color: var(--iw-accent-line); box-shadow: 0 0 0 2px var(--iw-accent-soft); }
+
+/* Fields ------------------------------------------------------------------- */
+.iw-input { border: 1px solid var(--iw-line); transition: border-color .13s ease, box-shadow .13s ease; }
+.iw-input:hover { border-color: var(--iw-line-strong); }
+.iw-input:focus, .iw-input:focus-visible {
+  outline: none;
+  border-color: var(--iw-accent);
+  box-shadow: 0 0 0 3px var(--iw-accent-soft);
+}
+.iw-select { border: 1px solid var(--iw-line); cursor: pointer; }
+.iw-select:hover { border-color: var(--iw-line-strong); }
+.iw-select:focus-visible { outline: none; border-color: var(--iw-accent); box-shadow: 0 0 0 3px var(--iw-accent-soft); }
+
+/* Cards -------------------------------------------------------------------- */
+.iw-card { border-color: var(--iw-line); }
+.iw-card:hover { border-color: var(--iw-line-strong); }
+.iw-card:focus-within { border-color: var(--iw-accent-line); }
+
+/* Dialog ------------------------------------------------------------------- */
+.iw-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background-color: color-mix(in srgb, #05070a 46%, transparent);
+  backdrop-filter: blur(3px);
+}
+.iw-dialog {
+  width: min(412px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; box-sizing: border-box;
+  padding: 20px;
+  border-radius: 14px;
+  font: inherit; font-size: 13px; line-height: 1.6;
+  color: CanvasText; background-color: Canvas;
+  border: 1px solid var(--iw-line-strong);
+  box-shadow: 0 24px 60px color-mix(in srgb, #000 34%, transparent), 0 2px 6px color-mix(in srgb, #000 12%, transparent);
+}
+.iw-dialogpath {
+  font-family: var(--iw-mono);
+  font-size: 11.5px; line-height: 1.5; word-break: break-all;
+  color: var(--iw-fg-3);
+}
+
+/* Reading ------------------------------------------------------------------ */
+.iw-reading { font-family: var(--iw-serif); }
+.iw-reading p { margin: 0 0 13px; text-indent: 2em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .iw-click, .iw-row, .iw-btn, .iw-settings, .iw-book, .iw-open, .iw-glyph, .iw-card, .iw-input, .iw-select { transition: none; }
+}
 `
 
     /**
@@ -1003,7 +1175,15 @@ window.__ModuleLoader__.load({
             onRowClick(row)
           },
         },
-        h('span', { style: S.glyph, className: hasChildren ? 'iw-glyph' : undefined, onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined }, glyph),
+        h(
+          'span',
+          {
+            style: hasChildren ? S.glyph : S.glyphLeaf,
+            className: hasChildren ? 'iw-glyph' : undefined,
+            onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined,
+          },
+          glyph,
+        ),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
         row.aside ? h('span', { style: S.aside }, row.aside) : null,
         row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
@@ -1051,7 +1231,7 @@ window.__ModuleLoader__.load({
               onToggle(section.id)
             },
           },
-          h('span', { style: S.glyph }, SECTION_ICON[section.id] || '▫'),
+          h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', fontSize: '12.5px' } }, SECTION_ICON[section.id] || '▫'),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
         ),
@@ -1125,7 +1305,7 @@ window.__ModuleLoader__.load({
               { style: S.bookMeta },
               `${PHASE_LABEL[book.phase] || book.phase} · ${num(book.chapters)} 章 · ${num(book.words)} 字`,
             ),
-            h('span', { style: S.bookMeta }, book.root),
+            h('span', { style: S.bookPath }, book.root),
           ),
           here ? h('span', { style: S.pill }, '上次') : book.current ? h('span', { style: S.pill }, '当前') : null,
         )
@@ -1910,7 +2090,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-          h('span', { style: { fontSize: '13px', fontWeight: '500' } }, data.title),
+          h('span', { style: { fontSize: '15.5px', fontWeight: '600', letterSpacing: '0.01em' } }, data.title),
           data.chip ? h('span', { style: S.pill }, data.chip) : null,
         ),
         data.subtitle ? h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, data.subtitle) : null,
@@ -2047,11 +2227,11 @@ window.__ModuleLoader__.load({
           { className: 'iw-row', style: S.settingRow, onClick, role: 'button' },
           h('span', { style: S.glyph }, glyph),
           h('div', { style: { display: 'flex', flexDirection: 'column', minWidth: 0 } },
-            h('span', { style: { fontSize: '12px' } }, label),
-            detail ? h('span', { style: { fontSize: '10.5px', opacity: 0.55 } }, detail) : null,
+            h('span', { style: { fontSize: '13px' } }, label),
+            detail ? h('span', { style: { fontSize: '11.5px', color: 'var(--iw-fg-3)' } }, detail) : null,
           ),
           h('span', { style: S.spacer }),
-          h('span', { style: { opacity: 0.4 } }, '›'),
+          h('span', { style: { color: 'var(--iw-fg-3)' } }, '›'),
         )
 
       return h(
@@ -2068,7 +2248,7 @@ window.__ModuleLoader__.load({
         h('div', { style: { ...S.sectionHead, cursor: 'default' } }, '关于'),
         h(
           'div',
-          { style: { padding: '0 8px', fontSize: '10.5px', opacity: 0.6, lineHeight: 1.6 } },
+          { style: { padding: '0 8px', fontSize: '11.5px', color: 'var(--iw-fg-3)', lineHeight: 1.65 } },
           h('div', null, '墨井 · 长篇小说约束内核'),
           h('div', null, '面板只做两件写操作：建书、给智能体选模型。正文与设定仍然只走 novel_* 工具和它们的闸门。'),
         ),

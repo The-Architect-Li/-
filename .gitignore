@@ -8,3 +8,6 @@ Thumbs.db
 
 # 写作项目目录：属于用户数据，不进仓库
 .novel/
+
+# 面板预览页（`npm run preview` 生成）
+preview/
