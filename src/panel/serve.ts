@@ -13,6 +13,8 @@
  * - `POST /api/inkwell/entry` — save an edit to a character, world entry, or
  *   chapter body.
  * - `GET|POST /api/inkwell/roles` — the agent team, and each role's model.
+ * - `POST /api/inkwell/pin` — bind one session to one book, so the chat session
+ *   the create flow just opened starts on the book it was opened for.
  *
  * Why an HTTP route instead of a Remote namespace: the Remote carrier pairs a
  * host face with a client face through the bundle manifest, which is more
@@ -45,6 +47,7 @@ import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readChapterPatch, readCharacterPatch, readWorldPatch } from './edit.ts'
 import { bookKey, describeBook, libraryFile, readShelf, rememberBook, type LibraryBook } from '../domain/shelf.ts'
+import { pinBook, pinnedRoot, sessionsFile } from '../domain/session-books.ts'
 import { buildEntry } from './entry.ts'
 import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelSnapshot } from './model.ts'
 import type { LlmCatalogSource } from './ports.ts'
@@ -127,9 +130,13 @@ async function readDrafts(store: ProjectStore, numbers: readonly number[]): Prom
 /**
  * Resolve the book a request is about.
  *
- * An explicit `root` wins over everything: the create flow hands back the
- * directory it just used, and the panel then reads that book even though the
- * session's own workspace is somewhere else. Without one, the session decides.
+ * Three layers, most specific first: an explicit `root` from the browser (the
+ * create flow hands back the directory it just used), the session's own pin, and
+ * finally the session's workspace. The pin sits above the workspace so the chat
+ * session the create flow opened shows the book it was opened for even before any
+ * workspace setting applies — and so this route and `storeFor` in the tool layer
+ * answer with the same book, which they must: the panel and the conversation
+ * edit the same files.
  *
  * @param deps - route dependencies.
  * @param sessionId - the calling session, when the browser named one.
@@ -141,6 +148,10 @@ function storeFor(deps: PanelDeps, sessionId: string | undefined, root: string |
   if (root !== undefined && root !== '') {
     if (!isAbsolute(root)) throw new PanelInputError('root 必须是绝对路径。')
     return new ProjectStore(resolve(root))
+  }
+  if (sessionId !== undefined && sessionId !== '') {
+    const pinned = pinnedRoot(sessionsFile(), sessionId)
+    if (pinned !== undefined) return new ProjectStore(pinned)
   }
   if (!deps.config.perWorkspace) return deps.baseStore
   if (sessionId === undefined || deps.cwdOf === undefined) return deps.baseStore
@@ -325,6 +336,50 @@ export async function createBook(deps: PanelDeps, body: Record<string, unknown>)
     const created: CreatedBook = { root, title, existing: false }
     await rememberBook(libraryFile(), root)
     return { status: 200, body: { ok: true, data: created } }
+  } catch (error) {
+    if (error instanceof PanelInputError) {
+      return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 500, body: { ok: false, error: { message } } }
+  }
+}
+
+/**
+ * Bind one session to one book.
+ *
+ * The create flow opens a fresh chat session in the new workspace, and that
+ * session's `cwd` already points at the book — but only when `perWorkspace` is
+ * on. A pin is the more specific answer, and it costs one line: the session the
+ * writer just created shows the book they just made, even before any workspace
+ * setting is touched.
+ *
+ * Why the panel may write this: it is the same binding `novel_project
+ * action="open"` writes in the conversation, kept in the same file. It grants no
+ * access — the pin is a pointer, and `/api/inkwell` still reads through
+ * `ProjectStore`, which requires a real project on disk.
+ *
+ * @param body - `{ session, root }`; both absolute-path and session ids are
+ *   validated before anything is written.
+ * @returns the pin that was written.
+ * @throws {PanelInputError} for a missing session id, a relative root, or a
+ *   directory that holds no book.
+ */
+export async function pinSession(body: Record<string, unknown>): Promise<PanelAnswer> {
+  try {
+    const session = typeof body.session === 'string' ? body.session.trim() : ''
+    if (session === '') throw new PanelInputError('pin 需要 session（会话 id）。', 400)
+    const raw = typeof body.root === 'string' ? body.root.trim() : ''
+    if (raw === '') throw new PanelInputError('pin 需要 root（书的绝对路径）。', 400)
+    if (!isAbsolute(raw)) throw new PanelInputError(`root 必须是绝对路径：${raw}`, 400)
+    const root = resolve(raw)
+    const store = new ProjectStore(root)
+    if (!(await store.exists())) {
+      throw new PanelInputError(`这里没有书：${root}（里面没有 project.json）。`, 404)
+    }
+    pinBook(sessionsFile(), session, store.root)
+    await rememberBook(libraryFile(), store.root)
+    return { status: 200, body: { ok: true, data: { session, root: store.root } } }
   } catch (error) {
     if (error instanceof PanelInputError) {
       return { status: error.status, body: { ok: false, error: { message: error.message } } }
@@ -774,6 +829,15 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await createBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/pin') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/pin 需要 POST' } } })
+          return
+        }
+        send(res, await pinSession(await readJson(req)))
         return
       }
 

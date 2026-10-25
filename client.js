@@ -54,6 +54,7 @@ window.__ModuleLoader__.load({
     const API_ROLES = '/api/inkwell/roles'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
+    const API_PIN = '/api/inkwell/pin'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -81,13 +82,43 @@ window.__ModuleLoader__.load({
      *   chooser or the operator cancelled.
      */
     function pickHostDirectory() {
-      const current = hostContext
-      if (current === null) return Promise.resolve(null)
-      const service = typeof current.get === 'function' ? current.get('uiWorkspace') : current.uiWorkspace
-      if (service === undefined || service === null || typeof service.pickDirectory !== 'function') {
+      const service = hostService('uiWorkspace')
+      if (service === null || typeof service.pickDirectory !== 'function') {
         return Promise.resolve(null)
       }
       return Promise.resolve(service.pickDirectory()).then((path) => (typeof path === 'string' && path !== '' ? path : null))
+    }
+
+    /**
+     * Read one client service off the host context, or `null`.
+     *
+     * Lazy on purpose: `inject` declares the packages this bundle cannot live
+     * without, and none of the workspace plumbing is on that list. A host that
+     * has it gets the full flow; a host that does not still gets a panel.
+     *
+     * @param name - the service name as the host registers it.
+     * @returns the service, or `null` when the host has none or `apply` has not
+     *   run yet.
+     */
+    function hostService(name) {
+      const current = hostContext
+      if (current === null) return null
+      const service = typeof current.get === 'function' ? current.get(name) : current[name]
+      return service === undefined || service === null ? null : service
+    }
+
+    /**
+     * Whether the host can open its own folder chooser.
+     *
+     * Distinguishes "the operator cancelled" from "there is no chooser", which
+     * `pickHostDirectory` alone cannot: one should do nothing, the other has to
+     * fall back to the in-panel browser.
+     *
+     * @returns true when `uiWorkspace.pickDirectory` exists.
+     */
+    function hostCanPick() {
+      const service = hostService('uiWorkspace')
+      return service !== null && typeof service.pickDirectory === 'function'
     }
 
     /** How often a visible panel re-reads the book, in ms. */
@@ -190,6 +221,92 @@ window.__ModuleLoader__.load({
         throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
       }
       return payload.data
+    }
+
+    /**
+     * Bind one chat session to one book on the host.
+     *
+     * The pin is what makes "the conversation I just opened is about the book I
+     * just made" true without waiting for a workspace setting: `storeFor` reads
+     * the pin before it falls back to the session's cwd.
+     *
+     * @param sessionId - the session to bind.
+     * @param root - the book's absolute directory.
+     * @returns the pin the host wrote.
+     */
+    async function pinSessionTo(sessionId, root) {
+      const response = await fetch(API_PIN, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ session: sessionId, root }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * The sessionStorage key that remembers which book one panel tab shows.
+     * @param sessionId - the session the tab belongs to.
+     * @returns the storage key.
+     */
+    function panelRootKey(sessionId) {
+      return `inkwell.root.${sessionId || 'shared'}`
+    }
+
+    /**
+     * Seed the book a brand-new session's panel should open on.
+     *
+     * The panel reads this key on mount. Writing it before the host switches
+     * views is what makes the new tab land on the new book instead of the shelf.
+     *
+     * @param sessionId - the session the host is about to show.
+     * @param root - the book's absolute directory.
+     */
+    function seedPanelRoot(sessionId, root) {
+      try {
+        window.sessionStorage.setItem(panelRootKey(sessionId), root)
+      } catch {
+        /* storage disabled: the panel falls back to the shelf, which lists it */
+      }
+    }
+
+    /**
+     * Register a directory as a workspace and open a chat session in it.
+     *
+     * This is the part of 新建 that no HTTP route can do: a workspace and a
+     * session are the host's own client-side state. `workspaces.create` is
+     * idempotent, so a folder that is already a workspace is simply returned,
+     * and `connectWorkspace` reuses a blank session there rather than piling up
+     * empties.
+     *
+     * @param dir - the absolute directory the book lives in.
+     * @param root - the book's absolute directory.
+     * @returns the opened session and workspace, or a note when the host has no
+     *   workspace service at all (a panel-only host still gets a book).
+     */
+    async function openBookWorkspace(dir, root) {
+      const workspaces = hostService('workspaces')
+      const ui = hostService('uiWorkspace')
+      const usable =
+        workspaces !== null &&
+        typeof workspaces.create === 'function' &&
+        ui !== null &&
+        typeof ui.connectWorkspace === 'function'
+      if (!usable) {
+        return { sessionId: null, workspaceId: null, note: '宿主没有工作区服务：书已经建好，在书库里点它就能进来。' }
+      }
+      const workspace = await workspaces.create({ path: dir })
+      const sessionId = await ui.connectWorkspace(workspace.workspaceId)
+      // Pin before showing it: the session's panel mounts the moment the host
+      // switches views, so the binding has to be on disk first.
+      await pinSessionTo(sessionId, root).catch(() => undefined)
+      seedPanelRoot(sessionId, root)
+      // `openSession` takes a SessionId (or a subagent address), not a wrapper.
+      if (typeof ui.openSession === 'function') ui.openSession(sessionId)
+      return { sessionId, workspaceId: workspace.workspaceId, note: '' }
     }
 
     /**
@@ -666,6 +783,9 @@ window.__ModuleLoader__.load({
 .iw-card { transition: border-color .12s ease, background-color .12s ease; }
 .iw-card:hover { border-color: color-mix(in srgb, currentColor 26%, transparent); }
 .iw-card:focus-within { border-color: color-mix(in srgb, currentColor 38%, transparent); }
+.iw-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background-color: color-mix(in srgb, #000 42%, transparent); }
+.iw-dialog { width: min(392px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; padding: 14px; border-radius: 12px; font: inherit; font-size: 12px; line-height: 1.5; color: CanvasText; background-color: Canvas; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); box-shadow: 0 18px 48px color-mix(in srgb, #000 32%, transparent); }
+.iw-dialogpath { font-size: 10.5px; line-height: 1.4; word-break: break-all; opacity: .66; }
 @media (prefers-reduced-motion: reduce) { .iw-click, .iw-row, .iw-btn, .iw-settings, .iw-book, .iw-input, .iw-select, .iw-glyph, .iw-card, .iw-open { transition: none; } .iw-settings:hover { padding-left: 10px; } }
 `
 
@@ -903,6 +1023,125 @@ window.__ModuleLoader__.load({
           h('span', { style: S.settingsLabel }, '设置'),
           h('span', { style: S.spacer }),
           h('span', { style: S.aside }, '智能体团队'),
+        ),
+      )
+    }
+
+    /**
+     * The folder name, used as the default book title.
+     * @param dir - an absolute directory.
+     * @returns the last path segment, or an empty string.
+     */
+    function baseNameOf(dir) {
+      const parts = String(dir || '').split(/[\\/]/).filter((part) => part !== '')
+      return parts.length === 0 ? '' : parts[parts.length - 1]
+    }
+
+    /**
+     * The create-a-book dialog: one folder, one title, one button.
+     *
+     * It opens after the host's chooser has already returned a directory, so the
+     * folder is a fact the writer just picked rather than a path to type. 重选
+     * re-opens the same chooser; 浏览仍 leaves for the in-panel browser, which is
+     * the only way through on a host without a chooser.
+     *
+     * @param props - the chosen directory, busy/error state, and callbacks.
+     * @returns the modal overlay.
+     */
+    function CreateDialog(props) {
+      const { dir, busy, error, onCreate, onCancel, onBrowse, onRepick } = props
+      const [title, setTitle] = useState(() => baseNameOf(dir))
+      const [target, setTarget] = useState('')
+
+      const submit = () => {
+        if (busy) return
+        onCreate(dir, title, Number(target) || 0)
+      }
+
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '新建小说' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '✎'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '新建小说'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, dir),
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onRepick, title: '重新选择文件夹' },
+              '重选目录…',
+            ),
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onBrowse, title: '在面板里逐层浏览目录' },
+              '浏览…',
+            ),
+          ),
+          h(
+            'div',
+            { style: S.field },
+            h('span', { style: S.fieldLabel }, '书名'),
+            h('input', {
+              className: 'iw-input',
+              style: S.input,
+              value: title,
+              placeholder: '例如：雾港',
+              autoFocus: true,
+              onChange: (event) => setTitle(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') submit()
+                if (event.key === 'Escape') onCancel()
+              },
+            }),
+          ),
+          h(
+            'div',
+            { style: S.field },
+            h('span', { style: S.fieldLabel }, '目标字数（可留空）'),
+            h('input', {
+              className: 'iw-input',
+              style: S.input,
+              value: target,
+              inputMode: 'numeric',
+              placeholder: '例如：800000',
+              onChange: (event) => setTarget(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') submit()
+                if (event.key === 'Escape') onCancel()
+              },
+            }),
+          ),
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, disabled: busy, onClick: submit },
+              busy ? '正在创建…' : '创建并开始写',
+            ),
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '取消'),
+          ),
+          h(
+            'div',
+            { style: S.footer },
+            '会在这个文件夹里建 .novel，把它注册成工作区，并新开一个聊天会话——那里的会话看这本书，别的文件夹看别的。',
+          ),
         ),
       )
     }
@@ -1609,7 +1848,7 @@ window.__ModuleLoader__.load({
       const hooks = props.hooks
       const tabInfo = hooks !== undefined && typeof hooks.tabInfo === 'function' ? hooks.tabInfo() : undefined
       const visible = tabInfo && tabInfo.tab ? tabInfo.tab.visible : true
-      const storeKey = `inkwell.root.${sessionId || 'shared'}`
+      const storeKey = panelRootKey(sessionId)
       const [root, setRoot] = useState(() => {
         try {
           return window.sessionStorage.getItem(storeKey) || ''
@@ -1629,6 +1868,13 @@ window.__ModuleLoader__.load({
       const [collapsed, setCollapsed] = useState(() => new Set(['world', 'cast', 'plot', 'text']))
       const [selected, setSelected] = useState(null)
       const [detail, setDetail] = useState(null)
+      // The create dialog: the folder the chooser returned, or null when closed.
+      const [draft, setDraft] = useState(null)
+      const [creating, setCreating] = useState(false)
+      const [createError, setCreateError] = useState('')
+      // A caveat that belongs to the book, not to the dialog: the dialog closes
+      // on success, so anything the writer still needs to know is said here.
+      const [notice, setNotice] = useState('')
 
       // The interaction sheet goes in once, on first mount of any view: hover,
       // focus and pressed states cannot live in inline styles.
@@ -1702,6 +1948,55 @@ window.__ModuleLoader__.load({
         setView('new')
       }, [])
 
+      // 新建 asks the host for a folder first, then shows one small dialog. On a
+      // host with no chooser it falls back to the browser page, which is the only
+      // way to name a directory there.
+      const beginCreate = useCallback(
+        (from) => {
+          setReturnTo(from)
+          setCreateError('')
+          if (!hostCanPick()) {
+            setView('new')
+            return
+          }
+          pickHostDirectory()
+            .then((picked) => {
+              if (picked === null) return
+              setCreateError('')
+              setDraft(picked)
+            })
+            .catch((failure) => setCreateError(String((failure && failure.message) || failure)))
+        },
+        [],
+      )
+
+      // Create the book, then hand the same folder to the host: a workspace, a
+      // chat session in it, that session pinned to this book, and the panel
+      // pre-seeded to open it. One click, one place to keep writing.
+      const submitCreate = useCallback(
+        (dir, title, targetWords) => {
+          setCreating(true)
+          setCreateError('')
+          createBook(dir, title, targetWords)
+            .then((book) =>
+              openBookWorkspace(dir, book.root)
+                .catch((failure) => ({ sessionId: null, workspaceId: null, note: String((failure && failure.message) || failure) }))
+                .then((opened) => ({ book, opened })),
+            )
+            .then(({ book, opened }) => {
+              setCreating(false)
+              setDraft(null)
+              setNotice(opened.note)
+              onCreated(book)
+            })
+            .catch((failure) => {
+              setCreating(false)
+              setCreateError(String((failure && failure.message) || failure))
+            })
+        },
+        [onCreated],
+      )
+
       const header = h(
         'div',
         { style: S.head },
@@ -1715,7 +2010,7 @@ window.__ModuleLoader__.load({
           : null,
         h('span', { style: S.spacer }),
         view === 'tree'
-          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => openNewBook('tree'), title: '在某个目录里新建一本书' }, '＋ 新建')
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => beginCreate('tree'), title: '选一个文件夹，在里面新建一本书' }, '＋ 新建')
           : null,
         view === 'tree'
           ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: refresh, title: '重新读取' }, '刷新')
@@ -1753,107 +2048,157 @@ window.__ModuleLoader__.load({
         setSelected((current) => (current === row.id ? null : row.id))
       }, [])
 
+      // One dialog, whichever view is behind it. `display: contents` keeps the
+      // wrapper out of the layout, and the overlay itself is position: fixed.
+      const withDialog = (element) => {
+        if (draft === null) return element
+        return h(
+          'div',
+          { style: { display: 'contents' } },
+          element,
+          h(CreateDialog, {
+            dir: draft,
+            busy: creating,
+            error: createError,
+            onCreate: submitCreate,
+            onCancel: () => {
+              setDraft(null)
+              setCreateError('')
+            },
+            onBrowse: () => {
+              setDraft(null)
+              setCreateError('')
+              setView('new')
+            },
+            onRepick: () => {
+              pickHostDirectory()
+                .then((picked) => {
+                  if (picked !== null) setDraft(picked)
+                })
+                .catch((failure) => setCreateError(String((failure && failure.message) || failure)))
+            },
+          }),
+        )
+      }
+
       if (view === 'library') {
-        return h(Library, {
-          sessionId,
-          lastRoot: root || '',
-          onOpen: openBook,
-          onNew: () => openNewBook('library'),
-          onSettings: () => setView('settings'),
-        })
+        return withDialog(
+          h(Library, {
+            sessionId,
+            lastRoot: root || '',
+            onOpen: openBook,
+            onNew: () => beginCreate('library'),
+            onSettings: () => setView('settings'),
+          }),
+        )
       }
 
       if (view === 'new') {
         const suggested = state.status === 'ready' && state.data.root ? state.data.root.replace(/[\\/]\.novel[\\/]?$/, '') : ''
-        return h(NewBook, {
-          sessionId,
-          suggestedDir: suggested,
-          onCancel: () => setView(returnTo),
-          onCreated,
-        })
+        return withDialog(
+          h(NewBook, {
+            sessionId,
+            suggestedDir: suggested,
+            onCancel: () => setView(returnTo),
+            onCreated,
+          }),
+        )
       }
 
       if (view === 'detail' && detail !== null) {
-        return h(Detail, {
-          sessionId,
-          root: root || '',
-          target: detail,
-          onBack: () => setView('tree'),
-          // A save can change a count (a chapter's words) or a state chip, so the
-          // tree behind the page is re-read rather than left stale.
-          onChanged: refresh,
-        })
+        return withDialog(
+          h(Detail, {
+            sessionId,
+            root: root || '',
+            target: detail,
+            onBack: () => setView('tree'),
+            // A save can change a count (a chapter's words) or a state chip, so the
+            // tree behind the page is re-read rather than left stale.
+            onChanged: refresh,
+          }),
+        )
       }
 
       if (view === 'settings') {
-        return h(Settings, {
-          root: state.status === 'ready' && state.data.root ? state.data.root : '',
-          roleCount: 4,
-          onBack: () => setView('library'),
-          onOpenTeam: () => setView('team'),
-        })
+        return withDialog(
+          h(Settings, {
+            root: state.status === 'ready' && state.data.root ? state.data.root : '',
+            roleCount: 4,
+            onBack: () => setView('library'),
+            onOpenTeam: () => setView('team'),
+          }),
+        )
       }
 
       if (view === 'team') {
-        return h(Team, { sessionId, root: root || '', onBack: () => setView('settings') })
+        return withDialog(h(Team, { sessionId, root: root || '', onBack: () => setView('settings') }))
       }
 
       if (state.status === 'loading') {
-        return h('div', { style: S.root }, header, h('div', { style: S.note }, '正在读取这一本书…'))
+        return withDialog(
+          h('div', { style: S.root }, header, h('div', { style: S.note }, '正在读取这一本书…')),
+        )
       }
       if (state.status === 'error') {
-        return h(
-          'div',
-          { style: S.root },
-          header,
-          h('div', { style: S.error }, state.message || '读取失败'),
-          h('div', { style: S.note }, '宿主端的面板接口没有响应。插件仍可用，novel_* 工具不受影响。'),
+        return withDialog(
+          h(
+            'div',
+            { style: S.root },
+            header,
+            h('div', { style: S.error }, state.message || '读取失败'),
+            h('div', { style: S.note }, '宿主端的面板接口没有响应。插件仍可用，novel_* 工具不受影响。'),
+          ),
         )
       }
 
       const data = state.data
       if (!data.phase) {
-        return h(
-          'div',
-          { style: S.root },
-          header,
+        return withDialog(
           h(
             'div',
-            { style: S.note },
-            '这个目录还没有书。',
+            { style: S.root },
+            header,
             h(
               'div',
-              { style: { marginTop: '8px' } },
-              h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: () => openNewBook('library') }, '选择目录新建'),
+              { style: S.note },
+              '这个目录还没有书。',
+              h(
+                'div',
+                { style: { marginTop: '8px' } },
+                h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: () => beginCreate('library') }, '选择目录新建'),
+              ),
+              h(
+                'div',
+                { style: { marginTop: '8px', opacity: 0.7 } },
+                '也可以在对话里调用 novel_project（action="init"），面板会自己出现。',
+              ),
             ),
-            h(
-              'div',
-              { style: { marginTop: '8px', opacity: 0.7 } },
-              '也可以在对话里调用 novel_project（action="init"），面板会自己出现。',
-            ),
+            notice ? h('div', { style: S.note }, notice) : null,
+            h('div', { style: S.footer }, data.root || ''),
+            settingsRow,
           ),
-          h('div', { style: S.footer }, data.root || ''),
-          settingsRow,
         )
       }
 
       const sections = Array.isArray(data.sections) ? data.sections : []
       const progress = data.targetWords > 0 ? Math.min(1, data.words / data.targetWords) : 0
 
-      return h(
-        'div',
-        { style: S.root },
-        header,
-        sections.map((section) =>
-          h(Section, {
-            key: section.id,
-            section,
-            collapsed,
-            onToggle: toggle,
-            selected,
-            onRowClick,
-          }),
-        ),
+      return withDialog(
+        h(
+          'div',
+          { style: S.root },
+          header,
+          notice ? h('div', { style: S.note }, notice) : null,
+          sections.map((section) =>
+            h(Section, {
+              key: section.id,
+              section,
+              collapsed,
+              onToggle: toggle,
+              selected,
+              onRowClick,
+            }),
+          ),
         h('div', { style: S.spacerBlock }),
         h(
           'div',
@@ -1895,6 +2240,7 @@ window.__ModuleLoader__.load({
           : null,
         h('div', { style: S.footer }, data.root),
         settingsRow,
+        ),
       )
     }
 

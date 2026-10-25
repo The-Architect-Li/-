@@ -243,8 +243,10 @@ export interface InkwellConfig {
   roles: Partial<Record<RoleId, RoleRoute>>
   /**
    * Resolve `root` against each session's working directory instead of the
-   * process's. Off by default: one dsh process serves many workspaces, and a
-   * relative root resolved once would point every book at the same folder.
+   * process's. On by default: one dsh process serves many workspaces, and a
+   * relative root resolved once at apply time pointed every book at the same
+   * folder. Set it to `false` for the old one-book-at-the-process-directory
+   * behaviour.
    */
   perWorkspace: boolean
 }
