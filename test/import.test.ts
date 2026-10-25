@@ -234,6 +234,9 @@ describe('novel_import', () => {
 
     const project = JSON.parse(await readFile(join(harness.root, 'project.json'), 'utf8'))
     expect(project.premise).toBe('一个穷小子往上爬。')
+    // A book that arrives with chapters is already drafting; leaving it in
+    // premise would block chapter 3 of a two-chapter book.
+    expect(project.phase).toBe('drafting')
 
     const cast = JSON.parse(
       await readFile(join(harness.root, 'canon', 'characters.json'), 'utf8'),

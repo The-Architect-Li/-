@@ -6,6 +6,7 @@
  * gets a revision, cards through `upsertCharacter` so names collide correctly.
  * That rule lives here once.
  */
+import { PHASES, type Phase } from './types.ts'
 import type { ImportPlan } from './import-scan.ts'
 import type { ProjectStore } from './store.ts'
 
@@ -16,6 +17,8 @@ export interface AppliedImport {
   /** Chapters left alone because the book already had them. */
   skipped: number
   words: number
+  /** Set when the import moved the book forward; absent when it did not. */
+  phase?: Phase | undefined
 }
 
 /**
@@ -64,9 +67,33 @@ export async function applyImport(
     })
     written += 1
   }
+
+  // An imported book arrives with its chapters already written, so the phase
+  // machine's question — "is this book ready to write?" — is already answered.
+  // Leaving it in premise would block chapter 86 of an eighty-chapter book,
+  // which is exactly the trap this branch exists to close. The move is a floor,
+  // never a ceiling: a book already past drafting keeps the phase it had.
+  const phase = await landInDrafting(store)
+
   return {
     written,
     skipped,
     words: plan.chapters.reduce((sum, chapter) => sum + chapter.words, 0),
+    ...(phase === undefined ? {} : { phase }),
   }
+}
+
+/**
+ * Raise a book's phase to drafting when it has chapters but has not got there.
+ *
+ * @param store - the book just written into.
+ * @returns the phase it was moved to, or undefined when it already qualified.
+ */
+async function landInDrafting(store: ProjectStore): Promise<Phase | undefined> {
+  const chapters = await store.chapters()
+  if (chapters.length === 0) return undefined
+  const project = await store.readProject()
+  if (PHASES.indexOf(project.phase) >= PHASES.indexOf('drafting')) return undefined
+  await store.writeProject({ ...project, phase: 'drafting' })
+  return 'drafting'
 }

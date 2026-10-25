@@ -110,6 +110,11 @@ export function registerImportTool(ctx: Context, deps: ToolDeps): void {
         `正文共 ${wordsText(applied.words)}，写在 ${join(store.root, 'chapters')}。`,
         '下一步：novel_check action="all" 看看这些老章节自己的问题；briefing 现在有前情可取了。',
       ]
+      if (applied.phase === 'drafting') {
+        lines.push(
+          `阶段：这本书已经有正文，阶段直接落在「drafting」，不必从 premise 重走一遍——现在可以接着写第 ${plan.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0) + 1} 章。`,
+        )
+      }
       if (plan.chapters.length === 0) {
         lines.push(
           '',
