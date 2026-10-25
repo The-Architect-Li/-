@@ -168,7 +168,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线 → v0.15 独立导入 → v0.16 导出与删除）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -232,6 +232,13 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   `导入并开始写` 之后由 `POST /import-book` 一次做完建书 + 导入，再把这个文件夹注册成工作区、
   新开一个聊天会话切过去。正文可以是 md，也可以是一个装整本书的 txt——里面写着「第一章」「第 1 章」
   「Chapter 1」就按标题拆章，只有一个标题的文件不拆（那是正文提到，不是书的结构）。
+- **导出这本书**（v0.16）：书卡下面一行小字「导出」。先弹系统目录选择框（选哪儿就写到哪儿，必须是绝对路径），
+  再选格式：整本一个 `.txt`（投稿用，只有章名和段落），或每卷一个 `.md`（保留分卷）。落点是 `POST /export`，
+  与工具 `novel_export` 共用同一套拼装，同名文件会被覆盖——再导一次就是刷新一遍。
+- **删除这本书**（v0.16）：书卡下面另一个「删除」，弹窗第一句是「删除后不能恢复。」。主按钮是
+  「先导出，再删除」（导出成功才删；导出失败就停在那里，书还在），另一个入口要先勾
+  「我确认不要这本书了，直接删除」。删除只删 `.novel` 那个目录，原稿文件夹不动；服务端也拒绝任何
+  结尾不是 `.novel` 的路径，删书没有顺手动到原稿的机会。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
 - **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 13 个工具，只是没有面板。
@@ -253,9 +260,11 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 GET  /api/inkwell/scan?dir=<绝对路径>       # 只读：这个文件夹里有什么稿件
 POST /api/inkwell/import                # { dir } 把稿子导进当前这本
 POST /api/inkwell/import-book           # { dir, title?, targetWords? } 建书 + 导入，一次做完
+POST /api/inkwell/export                # { root, dir, format } 把一本书导到你选的文件夹
+POST /api/inkwell/delete-book           # { root } 删掉这本书的 .novel 目录（先从书架摘掉）
 ```
 
-`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有三扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
+`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有五扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目、`/export` 导出、`/delete-book` 删书，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。`/delete-book` 只接受结尾是 `.novel` 的绝对路径：删的是插件的书目录，不是你的原稿文件夹。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
 
 ### 设置 → 智能体团队（v0.6）
 
@@ -327,7 +336,7 @@ POST /api/inkwell/import-book           # { dir, title?, targetWords? } 建书 +
 - **不续写、不代笔。** 插件自己没有生成文字的模型调用，一个字都不替你写（`novel_dispatch` 派出去的是子智能体，不是本插件）。
 - **不判断文学质量。** 「这段好不好」不是确定性函数能回答的，所以它不装作能。
 - **不做平台敏感词审核。** 各平台规则不同且常变，硬编码在插件里很快会过期。
-- **面板只开三扇写门。** 右侧栏能选目录建一本新书（与 `novel_project action="init"` 等价），能给四个智能体挑模型（与 `novel_roles action="set"` 等价），能改已经存在的角色卡、设定条目和章节正文（与 `novel_canon`、`novel_chapter action="write"` 同一段落盘代码）。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做。
+- **面板只开三扇写门。** 右侧栏能选目录建一本新书（与 `novel_project action="init"` 等价），能给四个智能体挑模型（与 `novel_roles action="set"` 等价），能改已经存在的角色卡、设定条目和章节正文（与 `novel_canon`、`novel_chapter action="write"` 同一段落盘代码）。导出与删除（v0.16）也走面板：导出等价于 `novel_export`，删除等价于删掉那本书的 `.novel` 目录——两件都不改书里的一个字，只决定它留在哪个磁盘上。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做。
 - **不替你选默认模型。** 团队页只列你已经在 dsh 里配好的接口与模型；没配就先配，插件不塞一份自己的清单。
 
 ## 已知边界

@@ -173,15 +173,19 @@ makes each row open its own page. v0.8 makes those pages editable — and gives 
 chapter page a preview/edit split. v0.9 puts a shelf in front of it: 小说工坊 is
 the workbench, and a book is something you pick inside it. v0.11 makes "New" one
 click, from the folder chooser to a fresh conversation in that workspace; v0.12
-lets it bring an existing manuscript along.
+lets it bring an existing manuscript along. v0.15 gives importing a door of its own,
+and v0.16 gives each book two ways out: export it into a folder you choose, or
+delete it after being asked whether you want a copy first.
 
 ```text
-▤ 小说工坊                        ＋ New   Refresh
+▤ 小说工坊                        ＋ New   Import…   Refresh
 2 books here
 ▤ 雾港            drafting · 3 ch · 6,380 words    [here]
   E:\dshplugin\.novel
+                                 Export  Delete
 ▤ 旧稿            premise · 0 ch · 0 words
   D:\ novels\旧稿\.novel
+                                 Export  Delete
 ⚙ Settings                              Agent team
 ```
 
@@ -259,6 +263,17 @@ Pick one and you get that book's tree:
   single txt holding the whole book: headings like 第一章 / 第 1 章 / Chapter 1 split
   it into chapters, and a file with fewer than two headings is left whole — that is
   prose mentioning a chapter, not the book's structure.
+- **Exporting a book (v0.16).** Each shelf card carries a small *导出* link: the host
+  folder chooser decides where, then you pick the shape — one `.txt` for the whole book
+  (submission style: headings and paragraphs only), or one `.md` per volume. It hits
+  `POST /export` and shares its assembly with `novel_export`; same-named files are
+  overwritten, so a second export refreshes rather than piles up `(1)` copies.
+- **Deleting a book (v0.16).** The other link opens a dialog whose first line is
+  "删除后不能恢复。" The primary button is *先导出，再删除* — export first, delete only if
+  that worked; the direct path needs the checkbox "我确认不要这本书了，直接删除" before it
+  can be pressed. Only the `.novel` directory goes, and the route rejects any absolute
+  path that does not end in `.novel`, so deleting a book has no way to reach the folder
+  holding your manuscript.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
@@ -288,17 +303,22 @@ POST /api/inkwell/roles                   # { role, provider?, model?, reasoning
 GET  /api/inkwell/scan?dir=<abs>          # read-only: what a manuscript folder holds
 POST /api/inkwell/import                  # { dir } put that manuscript into this book
 POST /api/inkwell/import-book             # { dir, title?, targetWords? } build the book and fill it
+POST /api/inkwell/export                  # { root, dir, format } write one book into a folder you chose
+POST /api/inkwell/delete-book             # { root } remove that book's .novel directory
 ```
 
-The reads answer 405 to anything but GET. There are four writes — create a book,
-pin a session to it, pick an agent's model, edit one existing row — and each
-requires `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot
-set. Advancing a phase, approving an outline, committing a chapter and recording a
-ledger fact still go through the tools, so the gate stays the only writer of the
-things that need an argument. The shelf cannot delete, rename or move a book:
-that is the file manager's job, not a sidebar's. `/entry` answers 404 for a row
-the book no longer has — a browser holding a stale tree should be told to refresh
-rather than shown a blank card.
+The reads answer 405 to anything but GET. There are six writes — create a book,
+pin a session to it, pick an agent's model, edit one existing row, export a book and
+delete one — and each requires `x-dsh-plugin: inkwell`, a header a cross-site simple
+form post cannot set. Advancing a phase, approving an outline, committing a chapter
+and recording a ledger fact still go through the tools, so the gate stays the only
+writer of the things that need an argument. `/delete-book` accepts only an absolute
+path ending in `.novel`: what it removes is the plugin's book directory, never the
+folder holding the manuscript. Export and delete are the two things the shelf does
+among its own files — it still will not rename or move a book, and it never touches
+anything outside a `.novel` directory. `/entry` answers 404 for a row the book no
+longer has — a browser holding a stale tree should be told to refresh rather than
+shown a blank card.
 
 ### Settings → the agent team (v0.6)
 
@@ -332,12 +352,13 @@ on, and which layer that route came from.
 ## Non-goals
 
 It does not generate prose itself, does not judge literary quality, and does not
-encode any platform's content policy. The panel opens exactly three write doors —
-creating a book, picking an agent's model, and editing a row that already exists
-(all equivalent to a tool call, and the third one through the very same
-`saveChapterBody` the writer tool uses) — while phase transitions, outline
+encode any platform's content policy. The panel opens five write doors — creating a
+book, picking an agent's model, editing a row that already exists (all equivalent to
+a tool call, and the third one through the very same `saveChapterBody` the writer
+tool uses), exporting a book, and deleting one — while phase transitions, outline
 approval, committing and ledger facts still go through the tools and their gate.
-The shelf lists books; it never deletes, renames or moves one.
+Export and delete are the only two things the shelf does among its own files: it
+never renames or moves a book, and it never writes outside a `.novel` directory.
 
 ## Development
 

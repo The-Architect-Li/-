@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.15.0。
+> 最后更新：2026-10-25，对应 release v0.16.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -289,6 +289,40 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
 **教训**：`PHASES`/`Phase` 不在 `phase.ts` 里导出，从 `domain/types.ts` 拿；
 「实时更新」靠提示词不如靠工具输出里那句具体的欠账——模型会读工具结果，不一定会读文档。
 
+### v0.16 导出与删除：书能搬出去，也能丢掉
+
+书搬进来了，就得能搬出去、能丢掉。两条都不改书里的一个字，只决定这份书留在哪个磁盘上。
+
+- **导出（面板）**：`src/panel/serve.ts` 的
+  `export async function exportBook(deps: PanelDeps, body, pinned?): Promise<PanelAnswer>`。
+  `dir` 必须非空且绝对（否则 400：`dir 必须是绝对路径：…`）；`format` 只有 `txt`
+  （整本一个文件）与 `markdown`（每卷一个 `.md`）；书用 **body 的 `root` 优先、回退 query 的 pin**——
+  这条踩过：只在 query 上读 root 时，导出会读到 baseStore 的另一本书（测试里 `chapters` 得到 3）。
+  空书给 409「这本书还没有落盘的正文，导出来会是空的。」拼装仍走 `src/domain/export.ts`
+  的 `bookText` / `volumeFiles` / `safeFileName`，与工具 `novel_export` 同一份代码。
+- **删除（面板）**：`removeBook(deps, body)`。**只接受 `basename(root) === '.novel'` 的绝对路径**，
+  否则 400（`只删 inkwell 自己的书目录（必须以 .novel 结尾）：…。原稿文件夹不会被删。`）——
+  这条是「删书别变成删原稿」的唯一防线。顺序是先 `forgetBook(libraryFile(), root)` 摘书架、
+  再 `rm(root, { recursive: true, force: true })`；`src/domain/shelf.ts` 因此多了一个
+  `export async function forgetBook(file: string, root: string): Promise<void>`。
+- **删除前先问**：`client.js` 的 `DeleteDialog` 第一句是「删除后不能恢复。」，主按钮
+  「先导出，再删除」（导出成功才 `deleteBookAt`；失败就停在那里，书还在），直接删的入口要先勾
+  「我确认不要这本书了，直接删除」（`disabled: busy || !confirm`）。
+- **导出选择框**：`ExportDialog` 两个 radio（整本 `.txt` / 每卷 `.md`），`dir` 为空时主按钮
+  `disabled`，目录由宿主的 `pickDirectory()` 给。
+- **书卡**：`S.bookCard` 负责边框与圆角，里面的 `iw-book` 按钮改成无边框透明底，两个
+  `iw-link`（导出／删除）在卡内右对齐。**删除在常态就是红的**——一个要 hover 才变红的删除按钮
+  是会被误点的。血的教训再记一次：**inline style 压过 class CSS**（`S.linkButton.color`
+  必须删掉，否则 `.iw-link.iw-danger` 的红永远不生效）。
+- **弹窗宽度**：`.iw-dialog` 是 flex 项，默认 `min-width: auto`，长路径能把它顶出视口；
+  已加 `min-width: 0`。
+- **测试**：`test/panel-deliver.test.ts` 8 例（导出 txt／markdown、相对路径 400、空书 409、
+  删书 200 且目录消失且不在 `/books`、删书不动原稿、非 `.novel` 400、删不存在 404）+
+  `test/client-shelf.test.ts` 3 例（未勾选时「直接删除」`disabled === true`；文案含「删除后不能恢复」；
+  `dir === ''` 时导出禁用、给了目录才可点且默认 `txt`）。为此 `client.js` 末尾多一个
+  `exports.dialogs = { DeleteDialog, ExportDialog }`（与 `exports.tree` 同理，只给测试）。
+  全量 **406 个用例（33 文件）**，`client bundle` 131,140 字节。
+
 ## 怎么本地跑
 
 ```sh
@@ -346,6 +380,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 - ✅ **面板写入门真机验证**（v0.8，隔离 profile + 演示书）：`POST /entry` 把沈砚的目标改成「把妹妹带回岸上」后读回一致（改的是磁盘上的 `canon/characters.json`）；无 `x-dsh-plugin` 头 403；写未批准的第四章 409 并回传门禁原话；组合客户端 bundle 451,534 字节里含「预览正文／改正文／保存中／breadcrumb／api/inkwell/entry」
 - ✅ **书库真机验证**（v0.9，同一 profile）：`GET /api/inkwell/books` → `雾港（drafting · 3 章 · 6380 字 · current）`；`POST /books` 无头 403、非 GET 405；面板建的「第二本」当场进书架（当前会话那本仍排第一）；组合 bundle 459,223 字节含 `function Library`／`已有的书`／`api/inkwell/books`／`回到书库`／`上次`
 - ✅ **外观在预览里逐屏看过**（v0.13）：`npm run preview` 生成的 `preview/{shelf,tree,detail,prose,dialog}.html` 用 360px 宽无头截图核对（浅色与深色各一次），判定依据是「13px 正文/29px 行/发丝线分块/选中淡底+左竖条」都真的出现了。**这是预览，不是应用内截图**：宿主主题色、真实滚动条、以及 Shell 自身的间距仍以用户实际看到的为准。
+- ✅ **导出与删除**（v0.16）：`test/panel-deliver.test.ts` 走真 HTTP 打 `POST /export` 与 `POST /delete-book`——导出的 txt 含正文、markdown 每个文件以 `.md` 结尾、相对路径 400、空书 409、删书后目录真的不在且 `/books` 里也没有、删书不动同级的原稿文件夹、路径不以 `.novel` 结尾 400、删不存在的书 404。面板的两个弹窗由 `test/client-shelf.test.ts` 用 stub React 渲染后断言（未勾选不能删、没选目录不能导）。**没有在真机上点过「先导出，再删除」的完整链路**（需要一台有宿主目录选择框的 dsh），这是下一个应该补的验证。
 
 ## DSH 关键 API 速查（已核实源码级，别再从头查）
 
@@ -419,15 +454,16 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.15 候选，按性价比排序）
+## 下一步（v0.16 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里点一次「新建 + 导入」**：选目录 → 勾选框 → 建书 → 导入，这条链路
-   无头环境里只验到 HTTP 层（`/scan` / `/init` / `/import` 都通过），原生选择框之后的真实点击还得他来点。
+0. **让用户在他的 Desktop 应用里点一次「先导出，再删除」**：v0.16 的两条链路在 HTTP 层与组件层都有测试
+   （`panel-deliver.test.ts`、`client-shelf.test.ts`），但从原生选择框点下去、导出成功、再真的删掉书这一步
+   只有他自己能验。
 1. **把地点历史接进上下文包**：时间线已经进了包（`src/domain/briefing.ts` 的 `resolveTimeline` + `windowAt` 给出一行「本章故事时间」，没有锚点时会提示去记），
    但 **地点还没进包**——`briefing.ts` 至今不读 `snapshot.places`，写第 45 章时看不到「三号舱现在是烧过一半」。
    接法：按 `plans[chapter].characters` 与章纲文本命中地点名，取 `state` 里 `chapter <= N` 的最后一版。
 2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）。
-3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，五者都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
+3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
 4. **导入时补 voice 的入口**：v0.12 故意留空并点名，下一步可以给面板一个「补齐说话方式」的批量页，把这 N 张卡一次填完，而不是逐个点进去编辑。
 5. **有争议时串行审稿**：现在 logic/character/chief 各跑各的，意见按轮次并排存进 `reviews/`，没有谁读谁的。做依赖图（两位审核先跑，chief 收全量再裁决），并把「分歧」本身记成一条 review item——v0.10 已经有 `state` 与 `id`，缺的只是顺序。
 6. **`novel_briefing` 的预算自适应**：按模型上下文窗口算预算，而不是固定 6000 字。团队页已经有了「这个角色跑在哪个模型上」，上下文窗口就不该再靠猜。
@@ -436,11 +472,11 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 395 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 406 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
-4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。
-5. 决定先做上面 v0.15 列表的哪一项。
+4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
+5. 决定先做上面 v0.16 列表的哪一项。
 
 ## 项目记忆
 
