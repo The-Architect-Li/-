@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.20.0。
+> 最后更新：2026-10-25，对应 release v0.21.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）、`v0.21.0`（关系是一张表：一条边两个名字，两页都能改）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -396,6 +396,8 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   `ready()` 造书要 2 个角色才能进 outline / drafting。
 
 
+### v0.19 角色卡是档案：多五个字段，关系原来存一侧（v0.21 起改为边表）
+
 写角色以前只写「怎么写他」——说话方式、外貌、目标、秘密。写到第八十几章，要查的是「他是谁」：
 有没有别的叫法、脾气、走到今天经历了什么、跟谁是什么关系、现在在什么境地。
 
@@ -406,7 +408,7 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   `export async function updateCharacter(store: ProjectStore, name: string, patch: CharacterPatch): Promise<CharacterCard>`
   ——`undefined` 保留、空串清空、空数组清空，合并层显式写，不靠调用方记得。面板
   （`src/panel/serve.ts` 的角色写分支）与 `novel_canon` 都走它。
-- **关系只存一侧**：`export function inboundRelations(cards, name)` 反查「别人写了跟我什么关系」，
+- **关系只存一侧**（v0.21 已废弃，见下一节）：`export function inboundRelations(cards, name)` 反查「别人写了跟我什么关系」，
   面板渲染成「别人写的」。两侧各存一份就会对不齐，而反查是零成本的。
 - **别称算名字**：`export function answersTo(card, name)` 同时看 `name` 与 `aliases`；
   导入的 `splitHeading` 把括注里的名字放进 `aliases`（`# 刘紫灵（网名刘格格，正文里直接叫「格格」）`
@@ -422,6 +424,39 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
 - **真书核对**（`C:\Users\china\Downloads\check-cast.mjs`，调 `lib/domain/*`）：6 张卡的 `relations`
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
+
+### v0.21 关系是一张表：一条边两个名字，两页都能改
+
+v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了半句话：刘紫灵怎么当王上的妈写了，王上怎么
+当她儿子没写。这一版把关系搬进 `canon/relations.json`。
+
+- **类型**（`src/domain/types.ts`）：
+  `export interface RelationEdge { id: string; from: string; to: string; kind: string; reverse?: string; symmetric?: boolean; note?: string; since?: number }`、
+  `export interface RelationFile { formatVersion: 1; edges: RelationEdge[]; migrated?: boolean }`。
+  `id` 由 `relationId(a, b)` 生成（`rel-{较小}|{较大}`，按 `localeCompare('zh')` 排），所以一对人只有一条。
+- **域**（`src/domain/relations.ts`）：`emptyRelations()`、`coerceRelations(raw)`、`upsertRelation(file, edge)`、
+  `removeRelation(file, id)`、`relationsOf(file, cards, name): SeenRelation[]`、`seeFrom(edge, name)`、
+  `describeRelation(seen)`、`looksSymmetric(kind)`、`migrateRelations(file, cards)`、
+  `checkRelations(file, cards): Finding[]`、`touches(edge, cards, name)`、`nameTokens(name)`、`sameName(a, b)`。
+  `checkRelations` 两条：`relations/unknown-person`（info）与 `relations/contradiction`（error，对称边写了两个词）。
+- **存储**（`src/domain/store.ts`）：`async relations(): Promise<RelationFile>`（读时把卡上的旧 `relations` 折成边，
+  第一次折叠置 `migrated: true`）、`async writeRelations(file)`；文件是 `canon/relations.json`。
+- **唯一写入口仍是 `updateCharacter`**：给 `relations` 时，先删掉「这张卡是 `from` 且这次没再提」的边，
+  再逐条 upsert；若该 pair 已有边且 `from` 是别人，改的是 `reverse` 而不是把方向翻过来。
+  不给 `relations` 时旧边一条都不动。
+- **面板**：角色页的「关系」列由 `relationsOf` 生成（对方显示成对方的卡名）；「人物设计」下多一页
+  **关系一览**（`buildEntry(snapshot, 'relations', 'relations', …)`，按 双向/单向 分组）。
+  `novel_check action="relations"` 走 `checkRelations`。
+- **认人**：`sameName` 按括号切段、要求**整段匹配**；`晨琳（端木晨琳）` 与 `端木晨琳（晨琳）` 是同一个人，
+  而 `王上势` 不会被认成 `王上`。`answersTo` 仍然只看精确的 name/aliases（给 `novel_outline card` 用）。
+- **导入**：`applyImport` 把 `plan.cast` 里的 `relations` 搬进边表并从卡上删掉（先 `{ ...card }` 复制再删，
+  否则会改到调用方的 plan 对象）。
+- **测试**：`test/relations.test.ts` 17 例（表、迁移、两页读法、检查、从远页改写成 `reverse`、删线后边消失、
+  关系一览页、`novel_check` 报告、括号认人三例）；`test/characters.test.ts` 改成读边表。
+  全量 **479 个用例（40 文件）**。
+- **真书核对**（`C:\Users\china\Downloads\check-relations.mjs`）：19 条边、`migrated: true`；
+  王上那一页 12 条关系里，`晨琳（端木晨琳）`/`格格（刘紫灵，网名刘格格）`/`佳欣（裴佳欣）` 经 `sameName`
+  落到卡上，剩下的 `灰子`/`眼哥`/`周老板`/`刘明远` 仍标「角色卡里还没有这个人」（info，是事实）。
 
 ### v0.18 章卡是总结，不是合同
 
@@ -591,11 +626,11 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.21 候选，按性价比排序）
+## 下一步（v0.22 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里看一眼「卡过期」**：v0.20 的三处提示（`novel_check action="cards"`、章节页一栏、抽屉行标）在测试里全走过，
-   但「改完正文再打开那一章，看到红的『卡过期』」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19 那四条链路。
-1. **把关系网接进上下文包**：角色卡现在有了 `relations` 与 `stages`，但 `src/domain/briefing.ts` 还只按出场人物列卡，不列「这个人和谁是什么关系」「他走到哪一段了」。接法：在本章出场人物的卡上取 `relations`，反查对方是否也在本章出场（在的话写「沈砚 与 阿鸢：彼此试探」），并取 `stages` 的最后一段当作「他现在在哪」。
+0. **让用户在他的 Desktop 应用里看一眼关系表**：v0.21 的迁移（19 条边、`migrated: true`）在脚本里验过，
+   但「打开王上那一页，看见晨琳那一条、点进去能改」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19／v0.20 那几条链路。
+1. **把关系网接进上下文包**：关系现在是边表，但 `src/domain/briefing.ts` 还只按出场人物列卡，不列「这个人和谁是什么关系」「他走到哪一段了」。接法：取本章出场人物相关的边（`relationsOf`），对方也在本章时写「沈砚 与 阿鸢：彼此试探」，并取 `stages` 最后一段当作「他现在在哪」。
 2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）。
 3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
 4. **导入时补 voice 的入口**：v0.12 故意留空并点名，下一步可以给面板一个「补齐说话方式」的批量页，把这 N 张卡一次填完，而不是逐个点进去编辑。
@@ -606,7 +641,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 462 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 479 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。

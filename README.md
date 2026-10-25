@@ -103,7 +103,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
-| `novel_check` | repetition, rhythm, tone, contract, timeline, records, stale cards | never; it reports instead |
+| `novel_check` | repetition, rhythm, tone, contract, timeline, records, stale cards, relations | never; it reports instead |
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
@@ -453,6 +453,31 @@ chapter and both revisions, the chapter page shows a "card: stale" row, and the 
 reads "card stale" instead of "done". There is one fix — save the card again from the current prose.
 Editing outline fields (title, point of view, cast, beats, hooks) does not restamp it: those say what
 should happen, not what did.
+
+### Relations are a table (v0.21)
+
+A relation used to be a sentence on one person's card: "刘紫灵: mother, though neither admits it".
+That is half a sentence — it never said what 王上 calls 刘紫灵. Copy it to both sides and one side goes
+stale; store it on one side and the other side is never its own.
+
+Relations now live in `canon/relations.json`, one edge per pair, both ends named:
+
+```json
+{ "from": "王上", "to": "刘紫灵", "kind": "母亲", "reverse": "儿子", "since": 3 }
+```
+
+- `kind` is what the `from` end calls the `to` end; `reverse` is the other direction. Both pages read
+  the same record.
+- `symmetric` (spouses, siblings, classmates) means one word covers both directions; giving a
+  different `reverse` then reports `relations/contradiction`.
+- Either page can edit it: on the `from` page you change `kind`, on the other page you change `reverse`,
+  and the edge is never silently flipped.
+- Names are matched through their brackets, so `晨琳（端木晨琳）` and `端木晨琳（晨琳）` are one person.
+- The 人物设计 drawer has a **relation overview** page, grouped by one-way and two-way, and
+  `novel_check action="relations"` reports names that answer to no card.
+
+A book written before v0.21 folds its card lines into edges on first read (`migrated: true`) and stops
+keeping a copy on the card.
 
 ## Non-goals
 
