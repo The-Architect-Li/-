@@ -143,14 +143,26 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 只读仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
-它把磁盘上的书**投影**成一张抽屉树，全是确定性计算，零 token。树打开时四个抽屉都是收起的：先看目录，需要时才摊开。
+打开面板先落地在**书库**：这台机器上 dsh 写过的书都在这里，点进一本才是那本书的抽屉树。
 
 ```text
-▤ 雾港  长篇
+▤ 小说工坊                      ＋ 新建   刷新
+已有的书 2 本
+▤ 雾港                写正文 · 3 章 · 6,380 字        [当前]
+  E:\dshplugin\.novel
+▤ 旧稿                前提 · 0 章 · 0 字
+  D:\ novels\旧稿\.novel
+⚙ 设置                                   智能体团队
+```
+
+点进去之后：
+
+```text
+←  ▤ 雾港  写正文
 ◎ 世界观       7
 ◍ 人物设计     12
     概览
@@ -170,15 +182,17 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
         第3章 潮声      [可写]
 ```
 
+- **书库**（v0.9）：落地页是书，不是抽屉。每行给出书名、阶段、章数、字数与目录；`当前` 是当前会话解析出的那本，`上次` 是本次浏览器最后打开的那本。左上角 `←` 随时回到书库。
+- **书从三处来**：`?root=` 指定的、会话工作区解析出的、以及书架记着的（`$DSH_HOME/inkwell/books.json`，只存路径与时间，最近 40 条）。三处都要过一遍磁盘，删掉或搬走的书不会出现在列表里——书架是提示，不是承诺。
 - **抽屉**：世界观／人物设计／剧情设计／正文，各自带计数、可折叠、可选中；长列表截断到 25 行并补「还有 N 条」，300 章的书不会变成一堵墙。
 - **打开即折叠**（v0.7）：四个抽屉初始收起，面板一打开是目录而不是九十四章；折叠状态在面板会话内保留。
 - **点开就是那一页**（v0.7）：点「沈砚」，整个侧边栏换成人物的页面（说话方式／外貌／目标／秘密／出场章节／账本里的事实）；点设定条目、章节也一样。分组行（主角、第N卷）点击即展开收起。
 - **就在那一页改**（v0.8）：角色页与设定页点「编辑」进输入态，章节页有「预览正文／改正文」两态——正文按段落预览（首行缩进 2em），改的时候输入框下方实时显示去空白字数。保存走 `POST /entry`，落盘的仍是同一批文件；随手在聊天窗口说「把沈砚的目标改成把妹妹带回岸上」也能改同一处，两条路不会各写一份。
 - **改不动会说为什么**（v0.8）：章纲没批准时，章节页直接把闸门那句话放在页面上（「第4章的章纲还没批准…」）；正文里漏了必写人物时，保存返回 409 并列出缺谁。面板不比工具宽松，也不比工具啰嗦。
 - **进度就是状态**：每章标 `已完成`（定稿）、`N 稿`（有草稿未定稿）、`可写`（章纲已批准）、`未写`。
-- **能建书。** 空态下有「新建」：点「选择目录…」开系统目录选择框（`ctx.uiWorkspace.pickDirectory()`），也可以逐层点面板里的目录浏览器（Windows 上可切盘符）。建书与 `novel_project action="init"` 走同一个 `ProjectStore.init`，两条路字节相同。
+- **能建书。** 书库页与树头都有「新建」：点「选择目录…」开系统目录选择框（`ctx.uiWorkspace.pickDirectory()`），也可以逐层点面板里的目录浏览器（Windows 上可切盘符）。建书与 `novel_project action="init"` 走同一个 `ProjectStore.init`，两条路字节相同；建完直接进那本书，也顺势进书库列表。
 - **不含糊。** 目录里已经有书就报「已经有《…》」并给「打开这本书」，不覆盖；相对路径一律 400，绝不让宿主进程的 cwd 替用户猜。
-- **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts` 从磁盘数据算得，不调模型。
+- **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
 - **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 9 个工具，只是没有面板。
 
@@ -188,6 +202,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 GET  /api/inkwell                      # 进程那一本
 GET  /api/inkwell?session=<id>          # 该会话工作区里的那一本
 GET  /api/inkwell/snapshot?root=<绝对路径>  # 指定的那一本
+GET  /api/inkwell/books                 # 书库：这台机器上已有的书（当前会话那本标 current）
 GET  /api/inkwell/dirs?path=<绝对路径>      # 列一层子目录、盘符，并回报该目录里有没有书
 POST /api/inkwell/init                  # { dir, title?, targetWords? } 建书
 GET  /api/inkwell/entry?kind=&key=      # 一行背后的那一页：character／world／chapter
@@ -196,7 +211,7 @@ GET  /api/inkwell/roles                 # 四个智能体的当前路由 + 可�
 POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
 ```
 
-`/snapshot`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有三扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
+`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有三扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
 
 ### 设置 → 智能体团队（v0.6）
 
@@ -271,7 +286,7 @@ POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEf
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest，237 个用例，含端到端流程、双工作区隔离、面板投影／建书／详情页／就地编辑／团队路由
+npm test            # vitest，253 个用例，含端到端流程、双工作区隔离、面板投影／书库／建书／详情页／就地编辑／团队路由
 npm run build       # 产出 lib/
 npm run verify      # 冒烟：用假上下文挂载构建产物，确认 9 个工具都注册了、入口形状能被装载器接受
 npm run check       # 以上全部

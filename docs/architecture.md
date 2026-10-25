@@ -162,18 +162,29 @@ src/panel/model.ts   纯函数：Snapshot → PanelSnapshot（阶段、进度、
 src/panel/tree.ts    纯函数：Snapshot → 四个抽屉（世界/人物/剧情/正文），带计数与状态
 src/panel/entry.ts   纯函数：一行 → 一页（fields + lists + breadcrumb + edit），角色/设定/章节三种
 src/panel/edit.ts    纯函数：三个 readXxxPatch，写门的字段校验与上限
-src/panel/serve.ts   路由：读投影、详情与团队，序列化 JSON，处理 /init、/dirs 与 /entry
+src/panel/library.ts 书架：记住了哪些目录是书，读回时逐个验明还在不在
+src/panel/serve.ts   路由：读投影、书库、详情与团队，序列化 JSON，处理 /init、/dirs 与 /entry
 src/panel/dirs.ts    纯函数 + 一层 readdir：列目录，回报该目录里有没有书
-client.js            浏览器半边：每 15 秒 GET 一次，渲染成抽屉树、详情页与设置页
+client.js            浏览器半边：先书库再抽屉树，每 15 秒 GET 一次，渲染成抽屉树、详情页与设置页
 ```
 
-`model.ts`／`tree.ts`／`entry.ts`／`dirs.ts`／`edit.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
+`model.ts`／`tree.ts`／`entry.ts`／`dirs.ts`／`edit.ts`／`library.ts` 都不认识 Cordis，也不认识 HTTP——和 `domain/` 的同一条理由：面板上显示的东西必须能在 node 里直接断言。
 
 详情页的载荷是**通用形状**（`fields` 加 `lists`，外加可编辑的 `edit.inputs` 与 `edit.body`），不是三套写死的模板：加第四种页面只改 `entry.ts`，`client.js` 那半边一行都不用动。这是把一个组件写两次和写一次的分界——浏览器不该知道「角色」有什么字段，也不该知道哪些字段能改。
 
 正文之所以能从两个地方写进来而不打架，是因为**只有一处落盘**：`saveChapterBody(store, config, input)` 在 `src/domain/save.ts` 里跑合同与体检，`novel_chapter action="write"` 和 `POST /entry` 都只调用它一次。规则复制一份到面板里，两边迟早会分叉成「工具不让写、面板却写得进」。
 
 服务是**可选**的：`webServer` 经 `ctx.inject` 等，headless profile 里没有它，插件就只装工具不装面板。反过来，如果把它写进 `inject` 导出，headless 下的插件会整个不激活——一个面板不该有这种权力。
+
+### 书库：列表是提示，磁盘是事实
+
+一本书就是一个装着 `project.json` 的目录，没有任何索引能把它找出来。面板因此维护一份书架（`$DSH_HOME/inkwell/books.json`，没有 `DSH_HOME` 就是 `~/.dsh`），只记路径与时间，最近 40 条。`GET /books` 把三处并起来：请求里 `?root=` 指定的、会话解析出的、书架上记着的——**每一处都要过一遍磁盘**（`describeBook` 先 `exists()` 再读 `project.json`）。
+
+这条「都要验明」的规矩不是洁癖：书架记的是路径，路径会过期。目录被删、被搬走、被改名之后，一份不验的书架会把一本书永远列在第一位，而点进去只能得到「这里没有书」。所以书架只负责**让人少点几次目录**，不负责断言存在；`test/panel.test.ts` 里有一条专门删掉目录再问 `/books`。
+
+排序也是个决定：当前会话那本永远第一，其余按 `project.json` 的 `updatedAt` 倒序。前者是「继续写」，后者是「最近动过的」——两个问题不一样，混在一起排会让「继续写」沉到列表中间去。
+
+`rememberBook` 只在书不在第一位时才写盘。快照路由每 15 秒轮询一次，每次都 `readFile` 一份几十行了列表无所谓，每次都 `writeFile` 就是拿读者的磁盘换取零信息。
 
 ### 面板写操作只开三扇门
 

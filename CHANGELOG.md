@@ -3,6 +3,45 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.9.0] - 2026-10-25
+
+小说工坊现在是一个书库，而不是一本书：打开侧边栏先看见「已有的书」和「新建」，点进一本书
+才是人物、剧情、正文那套抽屉。
+
+### 新增
+
+- **书库页**（`GET /api/inkwell/books`）：面板的落地页。列出这台机器上 dsh 写过的书，每行给出
+  书名、阶段、章数、字数与目录，`当前` 标这本书属于当前会话，`上次` 标本次浏览器最后打开的那本。
+- **书的来源是三处并集**：请求里 `?root=` 指定的、会话自己解析出来的、以及书架（shelf）记着的。
+  三处都要过一遍磁盘，目录被删或被搬走的书直接不出现——书架是提示，不是承诺。
+- **书架**（`src/panel/library.ts`）：`$DSH_HOME/inkwell/books.json`（没有 `DSH_HOME` 就用
+  `~/.dsh`）记最近 40 个书根，只有路径与时间，没有标题、没有正文。建书、按路径打开、以及会话
+  解析出的书都会记一行；已经排在第一位的根不再重写文件，所以 15 秒一次的轮询不会变成写盘抖动。
+- **新建与打开在同一层**：书库页有 `＋ 新建`，书库里点一本书才进树；树的左上角是 `←`（回到书库），
+  设置页的返回也回到书库，而不是掉进某一本书里。
+- **`Library` 组件**（`client.js`）：与抽屉树同一套尺寸与配色，条目是一整行可点按钮，路径过长时
+  单行省略，不换行、不撑破侧边栏。
+
+### 变更
+
+- **落地页从树变成书库**。上次打开的书仍记在 `sessionStorage`（`inkwell.root.<sessionId>`），
+  关掉面板再打开还在，但它只用来给书库那行打 `上次`，不再决定你一眼看见什么。
+- **空态措辞**：书库没有书时说「这台机器上还没有书」，并给出「选择目录新建」和「可以在对话里
+  调用 novel_project（action="init"）」两条路。
+
+### 仍然不做
+
+- 面板不能推进阶段、批准章纲、定稿、记账本事实；书库也不能删书、改名或移动目录。删除是文件系统
+  的事，交给资源管理器比交给侧边栏安全。
+
+### 验证
+
+`npm run check` 通过，**253 个用例**全绿（18 个文件，新增 `test/library.test.ts` 12 例、`/books`
+路由 3 例），`client bundle : ./client.js 69575 bytes`。真机（隔离 profile `inkwell-verify`）：
+`GET /books` 返回 `雾港（连载中 · 3 章 · 6380 字, current）`，无头 `POST /books` 403，`POST /books`
+405；面板建的「第二本」当场出现在书架第二位（第一位留给当前会话那本）。组合 bundle 459,223 字节，
+含 `function Library`、`已有的书`、`api/inkwell/books`、`回到书库`、`上次`。
+
 ## [0.8.0] - 2026-10-24
 
 二级页面不再是只能看的卡片：角色、设定、章节正文都能就地改，改的是同一本账——聊天窗口里的
@@ -336,6 +375,9 @@
 - 无并发写保护：同一项目目录被两个会话同时写会互相覆盖。
 - 账本只防同属性取值冲突，不防逻辑矛盾（如同时出现在两地）。
 
+[0.9.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.9.0
+[0.8.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.8.0
+[0.7.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.7.0
 [0.6.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.6.1
 [0.6.0]: https://github.com/The-Architect-Li/-/releases/tag/v0.6.0
 [0.5.1]: https://github.com/The-Architect-Li/-/releases/tag/v0.5.1

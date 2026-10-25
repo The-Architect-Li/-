@@ -116,10 +116,23 @@ only one and taking it over would push the Sidebar out.
 v0.5 turns it into a drawer tree, and gives it the one write it needs: creating a
 book without going back to the conversation. v0.7 folds every drawer on open and
 makes each row open its own page. v0.8 makes those pages editable — and gives the
-chapter page a preview/edit split.
+chapter page a preview/edit split. v0.9 puts a shelf in front of it: 小说工坊 is
+the workbench, and a book is something you pick inside it.
 
 ```text
-▤ 雾港  novel
+▤ 小说工坊                        ＋ New   Refresh
+2 books here
+▤ 雾港            drafting · 3 ch · 6,380 words    [here]
+  E:\dshplugin\.novel
+▤ 旧稿            premise · 0 ch · 0 words
+  D:\ novels\旧稿\.novel
+⚙ Settings                              Agent team
+```
+
+Pick one and you get that book's tree:
+
+```text
+←  ▤ 雾港  drafting
 ◎ World          7
 ◍ Cast          12
     Overview
@@ -138,6 +151,15 @@ chapter page a preview/edit split.
         Ch.3 Tide        [ready]
 ```
 
+- **A shelf first** (v0.9): the panel opens on books, not on drawers. Every row
+  carries title, phase, chapter count, word count and its directory; `here` marks
+  the book this session resolves to, `last` the one this browser opened. `←`
+  returns to the shelf from anywhere in a book.
+- **Where the list comes from** (v0.9): three sets, unioned — a `?root=` the
+  browser pinned, the book the session resolves for itself, and the shelf of roots
+  this machine has opened (`$DSH_HOME/inkwell/books.json`, paths and timestamps
+  only, newest 40). All three are checked against the disk, so a deleted or moved
+  book simply is not listed: the shelf is a hint, not a claim.
 - **Four drawers** — world, cast, plot, manuscript — each with a count, a caret,
   a selection state; cast groups by structural role, plot splits into story line
   / beats / foreshadows / chapter cards, manuscript hangs chapters under their
@@ -161,12 +183,13 @@ chapter page a preview/edit split.
   (`ctx.uiWorkspace.pickDirectory()`), or you can walk the in-panel browser level
   by level — including other drives on Windows. Creation goes through the same
   `ProjectStore.init` as `novel_project action="init"`, so both doors produce the
-  same bytes on disk.
+  same bytes on disk; the new book then opens and joins the shelf.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
 - **No tokens.** The snapshot is `src/panel/model.ts`, the pages are
-  `src/panel/entry.ts`; both are computed from disk.
+  `src/panel/entry.ts`, the shelf rows are `src/panel/library.ts`; all three are
+  computed from disk.
 - **Per session.** With `perWorkspace` on, the panel resolves the book from the
   session's `cwd`, so switching sessions switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
@@ -178,6 +201,7 @@ The host routes, polled by the browser half:
 GET  /api/inkwell                        # the process-wide book
 GET  /api/inkwell?session=<id>            # the book in that session's workspace
 GET  /api/inkwell/snapshot?root=<abs>     # a named book
+GET  /api/inkwell/books                   # the shelf: books this machine has opened
 GET  /api/inkwell/dirs?path=<abs>         # one directory level, plus "is a book here?"
 POST /api/inkwell/init                    # { dir, title?, targetWords? }
 GET  /api/inkwell/entry?kind=&key=        # the page behind a row: character / world / chapter
@@ -191,9 +215,10 @@ pick an agent's model, edit one existing row — and each requires
 `x-dsh-plugin: inkwell`, a header a cross-site simple form post cannot set.
 Advancing a phase, approving an outline, committing a chapter and recording a
 ledger fact still go through the tools, so the gate stays the only writer of the
-things that need an argument. `/entry` answers 404 for a row the book no longer
-has — a browser holding a stale tree should be told to refresh rather than shown
-a blank card.
+things that need an argument. The shelf cannot delete, rename or move a book:
+that is the file manager's job, not a sidebar's. `/entry` answers 404 for a row
+the book no longer has — a browser holding a stale tree should be told to refresh
+rather than shown a blank card.
 
 ### Settings → the agent team (v0.6)
 
@@ -232,6 +257,7 @@ creating a book, picking an agent's model, and editing a row that already exists
 (all equivalent to a tool call, and the third one through the very same
 `saveChapterBody` the writer tool uses) — while phase transitions, outline
 approval, committing and ledger facts still go through the tools and their gate.
+The shelf lists books; it never deletes, renames or moves one.
 
 ## Development
 
