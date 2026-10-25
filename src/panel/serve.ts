@@ -37,6 +37,9 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, resolve } from 'node:path'
+import { applyImport } from '../domain/import-apply.ts'
+import { planImport } from '../domain/import-scan.ts'
+import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
 import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
@@ -417,6 +420,131 @@ export async function listPanelDirs(deps: PanelDeps, requested: string | undefin
     const message = error instanceof Error ? error.message : String(error)
     return { status: 500, body: { ok: false, error: { message } } }
   }
+}
+
+/**
+ * Answer the create dialog: what is already in this folder?
+ *
+ * The question is asked before a book exists, so this route never requires one.
+ * It reports what an import would write and, when the session already points at
+ * a book, which chapters would be skipped — the two numbers the dialog needs to
+ * put "86 章，12.5 万字" next to the checkbox instead of letting the writer find
+ * out afterwards.
+ *
+ * @param deps - route dependencies.
+ * @param dir - the folder to look at (absolute).
+ * @param sessionId - the calling session, used only to find an existing book.
+ * @param root - an explicit book directory, when the browser names one.
+ * @returns the summary, with a human report for the tool-family readers.
+ */
+export async function scanFolder(
+  deps: PanelDeps,
+  dir: string | undefined,
+  sessionId?: string | undefined,
+  root?: string | undefined,
+): Promise<PanelAnswer> {
+  const requested = (dir ?? '').trim()
+  if (requested === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有给目录：dir 不能为空。' } } }
+  }
+  if (!isAbsolute(requested)) {
+    return { status: 400, body: { ok: false, error: { message: `dir 必须是绝对路径：${requested}` } } }
+  }
+  const folder = resolve(requested)
+  if (!(await isDirectory(folder))) {
+    return { status: 404, body: { ok: false, error: { message: `没有这个文件夹：${folder}` } } }
+  }
+  const sources = await readSources(folder)
+  const plan = planImport(sources)
+  let existing = new Set<number>()
+  let bookRoot: string | undefined
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (await store.exists()) {
+      bookRoot = store.root
+      existing = new Set((await store.chapters()).map((meta) => meta.number))
+    }
+  } catch {
+    // A scan is read-only and useful with no book at all; a bad `root` only
+    // means we cannot say which chapters would be skipped.
+  }
+  const summary = summarize(folder, plan, existing, sources.used)
+  return {
+    status: 200,
+    body: { ok: true, data: { ...summary, bookRoot: bookRoot ?? null, report: describeScan(summary, bookRoot) } },
+  }
+}
+
+/** What the create dialog did with the manuscript. */
+export interface ImportedManuscript {
+  root: string
+  /** Chapters written into the book. */
+  written: number
+  /** Chapters already in the book, left alone. */
+  skipped: number
+  words: number
+  cast: number
+  volumes: number
+  plans: number
+}
+
+/**
+ * Write a manuscript into the book this request resolves to.
+ *
+ * Same rules as `novel_import action="apply"`, through the same writer: the
+ * panel may not overwrite a chapter the writer edited, and it may not invent a
+ * premise over one they typed.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ dir, overwrite? }`.
+ * @param root - an explicit book directory, when the browser names one.
+ * @returns how much was imported.
+ */
+export async function importFolder(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root?: string | undefined,
+): Promise<PanelAnswer> {
+  const requested = typeof body.dir === 'string' ? body.dir.trim() : ''
+  if (requested === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有说导哪个文件夹：dir 不能为空。' } } }
+  }
+  if (!isAbsolute(requested)) {
+    return { status: 400, body: { ok: false, error: { message: `dir 必须是绝对路径：${requested}` } } }
+  }
+  const folder = resolve(requested)
+  if (!(await isDirectory(folder))) {
+    return { status: 404, body: { ok: false, error: { message: `没有这个文件夹：${folder}` } } }
+  }
+  let store: ProjectStore
+  try {
+    store = storeFor(deps, sessionId, root)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = error instanceof PanelInputError ? error.status : 400
+    return { status, body: { ok: false, error: { message } } }
+  }
+  if (!(await store.exists())) {
+    return {
+      status: 409,
+      body: { ok: false, error: { message: `这里还没有书：${store.root}。先建书，再导入。` } },
+    }
+  }
+  const sources = await readSources(folder)
+  const plan = planImport(sources)
+  const applied = await applyImport(store, plan, { overwrite: body.overwrite === true })
+  const data: ImportedManuscript = {
+    root: store.root,
+    written: applied.written,
+    skipped: applied.skipped,
+    words: applied.words,
+    cast: plan.cast.length,
+    volumes: plan.volumes.length,
+    plans: plan.plans.length,
+  }
+  return { status: 200, body: { ok: true, data } }
 }
 
 /**
@@ -838,6 +966,40 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await pinSession(await readJson(req)))
+        return
+      }
+
+      if (path === '/scan') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/scan 只读，导入用 /import' } } })
+          return
+        }
+        send(
+          res,
+          await scanFolder(
+            deps,
+            url.searchParams.get('dir') ?? undefined,
+            url.searchParams.get('session') ?? undefined,
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/import') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/import 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await importFolder(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
         return
       }
 

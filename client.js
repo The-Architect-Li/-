@@ -55,6 +55,8 @@ window.__ModuleLoader__.load({
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
+    const API_SCAN = '/api/inkwell/scan'
+    const API_IMPORT = '/api/inkwell/import'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
     const WRITE_HEADER = { 'x-dsh-plugin': 'inkwell' }
@@ -245,6 +247,103 @@ window.__ModuleLoader__.load({
         throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
       }
       return payload.data
+    }
+
+    /**
+     * Ask what is already in a folder, before anything is created.
+     *
+     * The dialog needs this number to offer "把已有稿件导进来" at all: a folder
+     * with no prose must not show the option, and one with 86 chapters must say
+     * so before the writer wonders why the panel looks empty.
+     *
+     * @param dir - absolute directory the writer picked.
+     * @param sessionId - the calling session, so an existing book can be checked for conflicts.
+     * @returns the scan summary; `chapters` is 0 for an empty folder.
+     */
+    async function scanFolder(dir, sessionId) {
+      const query = new URLSearchParams({ dir })
+      if (sessionId) query.set('session', sessionId)
+      const response = await fetch(`${API_SCAN}?${query.toString()}`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Import a folder's manuscript into a book.
+     *
+     * @param dir - absolute directory holding 正文/、人物/、大纲/.
+     * @param root - the book to write into.
+     * @param sessionId - the calling session.
+     * @returns how many chapters landed, and how many were already there.
+     */
+    async function importManuscript(dir, root, sessionId) {
+      const query = new URLSearchParams()
+      if (sessionId) query.set('session', sessionId)
+      if (root) query.set('root', root)
+      const response = await fetch(`${API_IMPORT}?${query.toString()}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ dir }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Say what a scan found, in one line, for the create dialog.
+     *
+     * Three cases, and the wording matters for all of them: still reading, could
+     * not read (which must not block creating a book), and read — where an empty
+     * folder is stated plainly so nobody waits for an import that will not come.
+     *
+     * @param scan - `{ status, data?, message? }` from the dialog's state.
+     * @returns the sentence to show.
+     */
+    function describeScanLine(scan) {
+      if (scan.status === 'loading') return '正在看这个文件夹里有什么…'
+      if (scan.status === 'error') return `没看成这个文件夹（${scan.message}）——不影响建书。`
+      const data = scan.data || {}
+      const chapters = data.chapters || 0
+      const cast = data.cast || 0
+      const volumes = data.volumes || 0
+      if (chapters === 0 && cast === 0 && volumes === 0) return '这个文件夹里没有现成稿件，从第一章开始写。'
+      const parts = []
+      if (chapters > 0) parts.push(`${chapters} 章正文（${formatWords(data.words || 0)}）`)
+      if (cast > 0) parts.push(`${cast} 张角色卡`)
+      if (volumes > 0) parts.push(`${volumes} 卷大纲`)
+      return `这个文件夹里已经有 ${parts.join('、')}。`
+    }
+
+    /** `125000` → `12.5 万字`; small numbers stay in characters. */
+    function formatWords(words) {
+      return words >= 10000 ? `${(words / 10000).toFixed(1)} 万字` : `${words} 字`
+    }
+
+    /**
+     * Say what an import did, joined with whatever the workspace step had to say.
+     *
+     * Skipped chapters are named rather than hidden: "导了 3 章，跳过 83 章" is the
+     * one fact that explains why the panel did not change as much as expected.
+     *
+     * @param imported - the `/import` payload.
+     * @param note - the host's own note from opening the workspace, if any.
+     * @returns the notice text.
+     */
+    function importNote(imported, note) {
+      if (!imported) return note
+      const parts = []
+      if (imported.written > 0) parts.push(`导进 ${imported.written} 章（${formatWords(imported.words)}）`)
+      if (imported.cast > 0) parts.push(`${imported.cast} 张角色卡`)
+      if (imported.volumes > 0) parts.push(`${imported.volumes} 卷大纲`)
+      if (imported.skipped > 0) parts.push(`跳过 ${imported.skipped} 章（书里已有）`)
+      const sentence = parts.length > 0 ? `已${parts.join('、')}。` : '这个文件夹里没有可导入的稿件。'
+      return note ? `${sentence} ${note}` : sentence
     }
 
     /**
@@ -688,6 +787,15 @@ window.__ModuleLoader__.load({
         whiteSpace: 'pre-wrap',
         margin: '4px 8px',
       },
+      checkRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
+        margin: '2px 10px 6px',
+        fontSize: '11px',
+        cursor: 'pointer',
+        userSelect: 'none',
+      },
       footer: {
         marginTop: 'auto',
         padding: '8px 8px 0',
@@ -1103,13 +1211,34 @@ window.__ModuleLoader__.load({
      * @returns the modal overlay.
      */
     function CreateDialog(props) {
-      const { dir, busy, error, onCreate, onCancel, onBrowse, onRepick } = props
+      const { dir, busy, error, onCreate, onCancel, onBrowse, onRepick, sessionId } = props
       const [title, setTitle] = useState(() => baseNameOf(dir))
       const [target, setTarget] = useState('')
+      const [scan, setScan] = useState({ status: 'loading' })
+      const [importToo, setImportToo] = useState(true)
 
+      // What is already in this folder decides whether the import offer is even
+      // shown: offering it on an empty folder would be a promise about nothing.
+      useEffect(() => {
+        let alive = true
+        setScan({ status: 'loading' })
+        scanFolder(dir, sessionId)
+          .then((data) => {
+            if (alive) setScan({ status: 'ready', data })
+          })
+          .catch((failure) => {
+            if (alive) setScan({ status: 'error', message: String((failure && failure.message) || failure) })
+          })
+        return () => {
+          alive = false
+        }
+      }, [dir, sessionId])
+
+      const found = scan.status === 'ready' ? scan.data : null
+      const hasProse = found !== null && (found.chapters > 0 || found.cast > 0 || found.volumes > 0)
       const submit = () => {
         if (busy) return
-        onCreate(dir, title, Number(target) || 0)
+        onCreate(dir, title, Number(target) || 0, hasProse && importToo)
       }
 
       return h(
@@ -1131,6 +1260,24 @@ window.__ModuleLoader__.load({
             h('span', { style: S.spacer }),
           ),
           h('div', { className: 'iw-dialogpath' }, dir),
+          h('div', { style: S.note }, describeScanLine(scan)),
+          hasProse
+            ? h(
+                'label',
+                { style: S.checkRow },
+                h('input', {
+                  type: 'checkbox',
+                  checked: importToo,
+                  disabled: busy,
+                  onChange: (event) => setImportToo(event.target.checked),
+                }),
+                h(
+                  'span',
+                  null,
+                  `建好之后把这些稿件导进来（${found.chapters} 章正文${found.cast > 0 ? `、${found.cast} 张角色卡` : ''}${found.volumes > 0 ? `、${found.volumes} 卷大纲` : ''}）`,
+                ),
+              )
+            : null,
           h(
             'div',
             { style: S.actions },
@@ -1214,6 +1361,8 @@ window.__ModuleLoader__.load({
       const [title, setTitle] = useState('')
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
+      const [scan, setScan] = useState({ status: 'loading' })
+      const [importToo, setImportToo] = useState(true)
 
       const go = useCallback(
         (path) => {
@@ -1232,6 +1381,27 @@ window.__ModuleLoader__.load({
         go(suggestedDir || '')
       }, [go, suggestedDir])
 
+      // Every folder the writer browses gets the same question asked of it, so
+      // walking into the manuscript's folder is enough to see that it has one.
+      useEffect(() => {
+        if (!listing) return undefined
+        let alive = true
+        setScan({ status: 'loading' })
+        scanFolder(listing.path, sessionId)
+          .then((data) => {
+            if (alive) setScan({ status: 'ready', data })
+          })
+          .catch((failure) => {
+            if (alive) setScan({ status: 'error', message: String((failure && failure.message) || failure) })
+          })
+        return () => {
+          alive = false
+        }
+      }, [listing, sessionId])
+
+      const found = scan.status === 'ready' ? scan.data : null
+      const hasProse = found !== null && (found.chapters > 0 || found.cast > 0 || found.volumes > 0)
+
       const submit = useCallback(() => {
         if (!listing) return
         setBusy(true)
@@ -1239,13 +1409,13 @@ window.__ModuleLoader__.load({
         createBook(listing.path, title, Number(target) || 0)
           .then((book) => {
             setBusy(false)
-            onCreated(book)
+            onCreated(book, { dir: listing.path, importToo: hasProse && importToo })
           })
           .catch((failure) => {
             setBusy(false)
             setError(String(failure && failure.message))
           })
-      }, [listing, title, target, onCreated])
+      }, [listing, title, target, onCreated, hasProse, importToo])
 
       // The host's own chooser when it has one: the operator knows that dialog,
       // and it can reach drives this list cannot.
@@ -1346,6 +1516,24 @@ window.__ModuleLoader__.load({
             )
           : null,
         rows.length > 0 ? h('div', null, ...rows) : h('div', { style: { ...S.aside, padding: '4px 8px' } }, '没有子目录，可以就在这里建书。'),
+        h('div', { style: S.note }, describeScanLine(scan)),
+        hasProse
+          ? h(
+              'label',
+              { style: S.checkRow },
+              h('input', {
+                type: 'checkbox',
+                checked: importToo,
+                disabled: busy,
+                onChange: (event) => setImportToo(event.target.checked),
+              }),
+              h(
+                'span',
+                null,
+                `建好之后把这些稿件导进来（${found.chapters} 章正文${found.cast > 0 ? `、${found.cast} 张角色卡` : ''}${found.volumes > 0 ? `、${found.volumes} 卷大纲` : ''}）`,
+              ),
+            )
+          : null,
 
         h('div', { style: S.spacerBlock }),
         h(
@@ -1981,12 +2169,19 @@ window.__ModuleLoader__.load({
       }, [])
 
       const onCreated = useCallback(
-        (book) => {
+        (book, options) => {
           setView('tree')
           setRoot(book.root)
           setTick((n) => n + 1)
+          // The browse-and-create path creates the book itself, so the import it
+          // offered has to be carried out here rather than inside that view.
+          if (options && options.importToo && options.dir) {
+            importManuscript(options.dir, book.root, sessionId)
+              .then((imported) => setNotice(importNote(imported, '')))
+              .catch((failure) => setNotice(`建好了，但稿件没导进来：${String((failure && failure.message) || failure)}`))
+          }
         },
-        [],
+        [sessionId],
       )
 
       const openBook = useCallback((book) => {
@@ -2028,7 +2223,7 @@ window.__ModuleLoader__.load({
       // chat session in it, that session pinned to this book, and the panel
       // pre-seeded to open it. One click, one place to keep writing.
       const submitCreate = useCallback(
-        (dir, title, targetWords) => {
+        (dir, title, targetWords, importToo) => {
           setCreating(true)
           setCreateError('')
           createBook(dir, title, targetWords)
@@ -2037,10 +2232,18 @@ window.__ModuleLoader__.load({
                 .catch((failure) => ({ sessionId: null, workspaceId: null, note: String((failure && failure.message) || failure) }))
                 .then((opened) => ({ book, opened })),
             )
-            .then(({ book, opened }) => {
+            // The manuscript goes in before the panel switches, so the first
+            // thing the new tab shows is the book's real shape rather than an
+            // empty tree that fills in a second later.
+            .then(({ book, opened }) =>
+              importToo && !book.existing
+                ? importManuscript(dir, book.root, sessionId).then((imported) => ({ book, opened, imported }))
+                : { book, opened, imported: null },
+            )
+            .then(({ book, opened, imported }) => {
               setCreating(false)
               setDraft(null)
-              setNotice(opened.note)
+              setNotice(imported === null ? opened.note : importNote(imported, opened.note))
               onCreated(book)
             })
             .catch((failure) => {
@@ -2048,7 +2251,7 @@ window.__ModuleLoader__.load({
               setCreateError(String((failure && failure.message) || failure))
             })
         },
-        [onCreated],
+        [onCreated, sessionId],
       )
 
       const header = h(
@@ -2112,6 +2315,7 @@ window.__ModuleLoader__.load({
           element,
           h(CreateDialog, {
             dir: draft,
+            sessionId,
             busy: creating,
             error: createError,
             onCreate: submitCreate,
