@@ -45,6 +45,7 @@ function snapshot(): Snapshot {
     places: [],
     storyPoints: [],
     timeline: { formatVersion: 1, anchors: [], spans: [] },
+    relations: { formatVersion: 1, edges: [] },
     volumes: [{ number: 1, title: '雾里的货单', summary: '三号舱的货单对不上。', approved: true }],
     plans: [
       { number: 1, volume: 1, title: '裂缝', pov: '沈砚', characters: ['沈砚'], beats: ['发现裂缝', '妹妹开口'], hooks: ['货单上多了一个名字'], approved: true },

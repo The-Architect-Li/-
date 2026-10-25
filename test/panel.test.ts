@@ -56,6 +56,7 @@ function book(overrides: Partial<Snapshot> = {}): Snapshot {
     places: [],
     storyPoints: [],
     timeline: { formatVersion: 1, anchors: [], spans: [] },
+    relations: { formatVersion: 1, edges: [] },
     volumes: [],
     plans: [],
     ledger: [],
@@ -302,7 +303,8 @@ describe('panel tree', () => {
   it('describes an empty book with four empty drawers', () => {
     const sections = buildPanelSnapshot(book(), config, [], '/nowhere').sections
     expect(sections.map((section) => section.count)).toEqual([0, 0, 0, 0])
-    expect(sections.map((section) => section.rows.length)).toEqual([0, 5, 4, 0])
+    // 人物设计 gained 「关系一览」 in v0.21, so the empty cast drawer is 6 rows.
+    expect(sections.map((section) => section.rows.length)).toEqual([0, 6, 4, 0])
   })
 })
 

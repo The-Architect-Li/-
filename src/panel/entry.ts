@@ -18,7 +18,8 @@ import type { ChapterDrafts } from './model.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { presentInText } from '../domain/cards.ts'
 import { cardIsStale } from '../domain/review-window.ts'
-import { answersTo, inboundRelations } from '../domain/characters.ts'
+import { answersTo } from '../domain/characters.ts'
+import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
@@ -148,8 +149,9 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
   const roleLabel = ROLE_LABEL[card.role] ?? card.role
   const aliases = (card.aliases ?? []).filter((alias) => alias.trim() !== '')
   const stages = (card.stages ?? []).map((stage) => (stage.label === '' ? stage.text : `${stage.label}：${stage.text}`))
-  const relations = (card.relations ?? []).filter((relation) => relation.name.trim() !== '')
-  const inbound = inboundRelations(snapshot.characters, name)
+  const relations = relationsOf(snapshot.relations, snapshot.characters, name)
+  const known = (other: string): boolean =>
+    snapshot.characters.some((entry) => sameName(entry.name, other) || (entry.aliases ?? []).some((alias) => sameName(alias, other)))
   return {
     kind: 'character',
     title: card.name,
@@ -171,22 +173,19 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
     ],
     lists: [
       ...(stages.length > 0 ? [{ label: '经历的阶段', items: stages }] : []),
+      // One list, both directions: since v0.21 a relation is one edge, so a line
+      // written on the other person's page is the same record and is editable here.
       ...(relations.length > 0
         ? [
             {
               label: '关系',
               items: relations.map((relation) =>
-                snapshot.characters.some((other) => answersTo(other, relation.name))
-                  ? `${relation.name} —— ${relation.kind}`
-                  : `${relation.name} —— ${relation.kind}（角色卡里还没有这个人）`,
+                known(relation.other)
+                  ? describeRelation(relation)
+                  : `${describeRelation(relation)}（角色卡里还没有这个人）`,
               ),
             },
           ]
-        : []),
-      // The other side of every relation, derived on read. Editing happens on
-      // the card that states it, so one fact has one home.
-      ...(inbound.length > 0
-        ? [{ label: '别人写的', items: inbound.map((entry) => `${entry.from} —— ${entry.kind}`) }]
         : []),
       ...(appearances.length > 0 ? [{ label: '出场章节', items: appearances }] : []),
       ...(facts.length > 0
@@ -204,7 +203,7 @@ function characterPage(snapshot: Snapshot, name: string, root: string): EntryPay
         { key: 'secret', label: '秘密', value: card.secret, multiline: true },
         { key: 'status', label: '当前状态', value: card.status ?? '', multiline: true },
         { key: 'stages', label: '经历的阶段（一行一段：阶段：发生了什么）', value: stages.join('\n'), multiline: true },
-        { key: 'relations', label: '关系（一行一条：对方：关系）', value: relations.map((relation) => `${relation.name}：${relation.kind}`).join('\n'), multiline: true },
+        { key: 'relations', label: '关系（一行一条：对方：关系）', value: relations.map((relation) => `${relation.other}：${relation.kind}`).join('\n'), multiline: true },
         { key: 'notes', label: '其他材料', value: card.notes ?? '', multiline: true },
       ],
     },
@@ -245,6 +244,62 @@ function worldPage(snapshot: Snapshot, name: string, root: string): EntryPayload
         { key: 'detail', label: '细节', value: entry.detail, multiline: true },
       ],
     },
+    root,
+  }
+}
+
+/**
+ * Every relation in the book, once, as one page.
+ *
+ * v0.19 could only answer this per card, which meant the shape of the web — who
+ * is central, who is only ever reached through somebody else — was invisible.
+ * Since v0.21 a relation is an edge, so the whole table is one list.
+ *
+ * @param snapshot - the book.
+ * @param root - project directory, for the footer.
+ * @returns the page.
+ */
+function relationsPage(snapshot: Snapshot, root: string): EntryPayload {
+  const edges = snapshot.relations.edges
+  const known = (name: string): boolean =>
+    snapshot.characters.some((card) => answersTo(card, name))
+  const line = (edge: (typeof edges)[number]): string => {
+    const head = edge.symmetric
+      ? `${edge.from} —— ${edge.kind} —— ${edge.to}`
+      : `${edge.from} —— ${edge.kind} → ${edge.to}`
+    const tail = [
+      ...(edge.reverse === undefined ? [] : [`反过来：${edge.reverse}`]),
+      ...(edge.note === undefined ? [] : [edge.note]),
+      ...(edge.since === undefined ? [] : [`第${edge.since}章起`]),
+    ]
+    const missing = [edge.from, edge.to].filter((name) => !known(name))
+    const warn = missing.length === 0 ? '' : `（角色卡里还没有：${missing.join('、')}）`
+    return `${head}${tail.length === 0 ? '' : ` · ${tail.join(' · ')}`}${warn}`
+  }
+  const asymmetric = edges.filter((edge) => !edge.symmetric)
+  const symmetric = edges.filter((edge) => edge.symmetric)
+  const touched = new Set(edges.flatMap((edge) => [edge.from, edge.to]))
+  const lonely = snapshot.characters.filter((card) => !touched.has(card.name)).map((card) => card.name)
+  return {
+    kind: 'relations',
+    title: '关系一览',
+    subtitle: `${edges.length} 条关系 · ${touched.size} 人`,
+    chip: '关系',
+    breadcrumb: ['人物设计', '关系一览'],
+    fields: [
+      { label: '怎么改', value: '在任何一个人的页面上改「关系」那一栏即可：一条关系只存一份，从哪一头改都是同一条记录。' },
+      ...(lonely.length > 0 ? [{ label: '还没有任何关系的人', value: lonely.join('、') }] : []),
+    ],
+    lists: [
+      ...(symmetric.length > 0
+        ? [{ label: '双向（同一个词两边都通）', items: symmetric.map(line) }]
+        : []),
+      ...(asymmetric.length > 0 ? [{ label: '单向（反过来另有说法）', items: asymmetric.map(line) }] : []),
+      ...(edges.length === 0
+        ? [{ label: '还没有关系', items: ['在角色页的「关系」里写「对方：关系」，例如「刘紫灵：母亲」。'] }]
+        : []),
+    ],
+    edit: { inputs: [] },
     root,
   }
 }
@@ -524,6 +579,7 @@ export function buildEntry(
 ): EntryPayload | undefined {
   if (key === '' && kind !== 'timeline') return undefined
   if (kind === 'character') return characterPage(snapshot, key, root)
+  if (kind === 'relations') return relationsPage(snapshot, root)
   if (kind === 'world') return worldPage(snapshot, key, root)
   if (kind === 'place') return placePage(snapshot, key, root)
   if (kind === 'story') return storyPage(snapshot, key, root)

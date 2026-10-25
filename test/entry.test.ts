@@ -30,6 +30,7 @@ function book(overrides: Partial<Snapshot> = {}): Snapshot {
     places: [],
     storyPoints: [],
     timeline: { formatVersion: 1, anchors: [], spans: [] },
+    relations: { formatVersion: 1, edges: [] },
     volumes: [],
     plans: [],
     ledger: [],

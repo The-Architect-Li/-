@@ -121,7 +121,7 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       relations: {
         type: 'array',
         items: { type: 'string' },
-        description: '关系，每条形如「对方：关系」，例如「刘紫灵：母女，但彼此不认」；只写这张卡这一侧，另一侧由面板自动反查',
+        description: '关系，每条形如「对方：关系」，例如「刘紫灵：母女，但彼此不认」；关系是一张表里的一条边（两款都可以改），这里写的是从这张卡看过去的那一面',
       },
       kind: { type: 'string', description: '世界观条目类型，或地点的类别（室内/街区/机构/城市）' },
       detail: { type: 'string', description: '世界观条目的内容；对地点是它现在长什么样' },

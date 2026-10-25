@@ -43,7 +43,7 @@ export interface PanelRow {
 }
 
 /** The kinds of thing a row can open. */
-export type PanelEntryKind = 'character' | 'world' | 'chapter' | 'place' | 'story' | 'timeline'
+export type PanelEntryKind = 'character' | 'world' | 'chapter' | 'place' | 'story' | 'timeline' | 'relations'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -160,11 +160,25 @@ function castSection(snapshot: Snapshot): PanelSection {
       children: capped(children, cards.length, MAX_ROWS, `cast.${group.role}`),
     }
   })
+  const edges = snapshot.relations.edges.length
   return {
     id: 'cast',
     label: '人物设计',
     count: snapshot.characters.length,
-    rows: [{ id: 'cast.overview', label: '概览', aside: `${snapshot.characters.length} 人` }, ...groups],
+    rows: [
+      { id: 'cast.overview', label: '概览', aside: `${snapshot.characters.length} 人` },
+      // One line for the whole web: since v0.21 a relation is an edge, so this page
+      // can show every pair once instead of asking the author to open each card.
+      {
+        id: 'cast.relations',
+        label: '关系一览',
+        kind: 'relations',
+        key: 'relations',
+        aside: `${edges} 条`,
+        tone: edges === 0 ? 'muted' : 'todo',
+      },
+      ...groups,
+    ],
   }
 }
 

@@ -25,6 +25,7 @@ function snapshot(): Snapshot {
     places: [],
     storyPoints: [],
     timeline: { formatVersion: 1, anchors: [], spans: [] },
+    relations: { formatVersion: 1, edges: [] },
     volumes: [{ number: 1, title: '入港', summary: '', approved: true }],
     plans: [{
       number: 1, volume: 1, title: '夜渡', pov: '沈砚',

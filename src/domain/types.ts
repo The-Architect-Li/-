@@ -35,16 +35,68 @@ export interface CharacterStage {
 /**
  * A relationship as *this* card states it.
  *
- * Stored one-sided on purpose: 「王上 · 母女 · 刘紫灵」 lives on 刘紫灵's card, and
- * the other side is derived by scanning the cast. Two copies of one fact drift
- * apart the first time somebody edits one of them — the same reason volumes are
- * a single field on the plan and not a reverse index on the volume.
+ * Since v0.21 the storage of record is `canon/relations.json` (an edge per pair,
+ * with both ends named). This shape survives on cards because imported books and
+ * older tools still write it; the read path turns every one of these into an
+ * edge whose `from` is the card that carries it, so a card written before v0.21
+ * reads exactly as it did.
  */
 export interface CharacterRelation {
   /** The other person's name, as their own card spells it. */
   name: string
   /** 「母女」「夫妻」「师徒」「对手」— free text, because books invent their own. */
   kind: string
+}
+
+/**
+ * One relationship, stored once, with both ends named.
+ *
+ * The v0.19 shape (a name and a kind on one card) could not answer "and who am
+ * I to them", so the other side had to be shown read-only as 「别人写的」. An edge
+ * names both ends, so both pages read the same record and either one can edit it.
+ *
+ * `symmetric` is the one thing the words cannot carry: 「夫妻」 reads the same from
+ * either side, 「母亲」 does not. It defaults to false — a relation that is
+ * asymmetric by default is wrong in a visible way (the phrasing shows the
+ * direction), while a symmetric one marked asymmetric is wrong in a quiet way.
+ */
+export interface RelationEdge {
+  /** Stable id, derived from the two ends; never shown to the author. */
+  id: string
+  /** The person whose card would have carried this before v0.21. */
+  from: string
+  /** The other end. */
+  to: string
+  /** 「母亲」「师父」「丈夫」「对手」— the word *from* uses about *to*. */
+  kind: string
+  /** The word *to* uses about *from*, when it is not the same one. */
+  reverse?: string
+  /** True when the same word describes both directions (夫妻、兄弟、同事). */
+  symmetric: boolean
+  /** 「但彼此不认」「十年没叫过他的名字」— anything the kind cannot hold. */
+  note?: string
+  /** The chapter where this became true, when the book says so. */
+  since?: number
+}
+
+/** The whole relation table, as stored on disk. */
+export interface RelationFile {
+  formatVersion: 1
+  /** True once the cards' old one-sided relations have been folded into edges. */
+  migrated?: boolean
+  edges: RelationEdge[]
+}
+
+/** One relation as one person's page reads it. */
+export interface SeenRelation {
+  /** The other person, as this page shows them. */
+  other: string
+  /** The word used about the other person from *this* page's point of view. */
+  kind: string
+  note?: string
+  since?: number
+  symmetric: boolean
+  id: string
 }
 
 /** Root record of a project. */
@@ -416,6 +468,7 @@ export interface Snapshot {
   places: PlaceCard[]
   storyPoints: StoryPoint[]
   timeline: TimelineFile
+  relations: RelationFile
   volumes: VolumeOutline[]
   plans: ChapterPlan[]
   ledger: LedgerEntry[]

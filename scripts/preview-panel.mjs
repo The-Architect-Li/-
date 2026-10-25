@@ -227,8 +227,16 @@ const detail = `<div ${attr(S.root)}>
   ${fieldBlock('当前状态', '白天在码头替人记账，晚上翻旧档；三个月房租没交。')}
   ${listHead('经历的阶段')}${listItem('码头少年：替人扛包，认字是账房教的')}${listItem('巡捕房探员：签下那张放行单')}${listItem('被停职：白天记账，晚上翻旧档')}
   ${listHead('关系')}${listItem('阿蘅 —— 彼此试探，谁先摊牌谁先死')}${listItem('老周 —— 师父，十年没再叫过他的名字')}
-  ${listHead('别人写的')}${listItem('程微 —— 债主')}
   ${listHead('出场章节')}${listItem('第 3 章')}${listItem('第 4 章')}${listItem('第 7 章')}
+  ${footer(ROOT_PATH)}
+</div>`
+
+const relations = `<div ${attr(S.root)}>
+  ${headBar('关系一览', button('返回'))}
+  ${crumbLine(['人物设计', '关系一览'])}
+  ${heading('关系一览', '', '19 条关系 · 18 人 · 6 张角色卡')}
+  ${listHead('双向（同一个词两边都通） 2')}${listItem('王上 —— 夫妻 —— 薛梦静')}${listItem('王上 —— 兄弟 —— 老周')}
+  ${listHead('单向（反过来另有说法） 17')}${listItem('端木晨琳（晨琳） —— 店东家→情人→丈夫（第61章婚礼） → 王上')}${listItem('刘紫灵（网名刘格格） —— 色狼→主人（嘴上不认，身体认） → 王上')}${listItem('薛梦静 —— 第20章被她甩掉 → 前男友（角色卡里还没有：前男友）')}
   ${footer(ROOT_PATH)}
 </div>`
 
@@ -356,6 +364,7 @@ const views = [
   ['shelf', '书库', shelf],
   ['tree', '目录', tree],
   ['detail', '角色页', detail],
+  ['relations', '关系一览', relations],
   ['prose', '正文页', prose],
   ['dialog', '建书弹窗', dialog],
   ['import', '导入弹窗', importDialog],

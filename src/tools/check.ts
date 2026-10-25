@@ -5,6 +5,7 @@ import { checkProseAgainstClock, resolveTimeline, windowAt } from '../domain/clo
 import { checkContract, rank } from '../domain/contract.ts'
 import { staleCards } from '../domain/cards.ts'
 import { chapterRanges, describeCoverage, recordCoverage } from '../domain/records.ts'
+import { checkRelations } from '../domain/relations.ts'
 import { scanChapter } from '../domain/scan.ts'
 import type { Finding } from '../domain/types.ts'
 import { auditLedger } from './ledger.ts'
@@ -28,7 +29,7 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       action: {
         type: 'string',
         required: true,
-        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'all'],
+        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'relations', 'all'],
         description: '检查类型',
       },
       number: { type: 'number', description: '章号；all 时可省略，省略则检查全书' },
@@ -132,6 +133,17 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
           report: described === ''
             ? '正文与记录对得上：每一章都有地点、故事点或时间线的痕迹。'
             : described,
+        }
+      }
+
+      if (args.action === 'relations') {
+        const found = checkRelations(snapshot.relations, snapshot.characters)
+        return {
+          errors: found.filter((item) => item.severity === 'error').length,
+          warnings: found.filter((item) => item.severity === 'warn').length,
+          report: found.length === 0
+            ? `关系表没有冲突：${snapshot.relations.edges.length} 条关系，两端都认得出人。`
+            : formatFindings(found),
         }
       }
 

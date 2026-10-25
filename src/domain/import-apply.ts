@@ -9,6 +9,7 @@
 import { PHASES, type CharacterCard, type Phase } from './types.ts'
 import type { ImportPlan } from './import-scan.ts'
 import type { ProjectStore } from './store.ts'
+import { upsertRelation } from './relations.ts'
 
 /**
  * Fill a card in, without overwriting anything already written.
@@ -89,7 +90,25 @@ export async function applyImport(
   for (const volume of plan.volumes) await store.upsertVolume(volume)
   for (const chapterPlan of plan.plans) await store.upsertPlan(chapterPlan)
   const cards = new Map((await store.characters()).map((card) => [card.name, card]))
-  for (const { card } of plan.cast) await store.upsertCharacter(topUpCard(cards.get(card.name), card))
+  // Relations are their own table since v0.21. The plan still produces them on the
+  // card (that is what a 人物/*.md file looks like), so they are folded into the
+  // table here and then dropped from the card — one record per pair, not two.
+  let table = await store.relations()
+  let movedRelations = false
+  for (const { card } of plan.cast) {
+    // Copy before stripping: `topUpCard` returns the plan's own object when the
+    // book has no card yet, and deleting a field on it would reach back into the
+    // caller's plan (the panel prints the plan after applying it).
+    const merged = { ...topUpCard(cards.get(card.name), card) }
+    const relations = merged.relations ?? []
+    delete merged.relations
+    for (const relation of relations) {
+      table = upsertRelation(table, { from: merged.name, to: relation.name, kind: relation.kind })
+      movedRelations = true
+    }
+    await store.upsertCharacter(merged)
+  }
+  if (movedRelations) await store.writeRelations(table)
 
   let written = 0
   let skipped = 0

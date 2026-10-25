@@ -24,13 +24,16 @@ import type {
   TimelineFile,
   VolumeOutline,
   WorldEntry,
+  RelationFile,
 } from './types.ts'
+import { migrateRelations, normaliseRelations } from './relations.ts'
 
 /** The file whose presence marks a directory as an Inkwell project. */
 export const PROJECT_FILE = 'project.json'
 const CHARACTERS_FILE = 'canon/characters.json'
 const WORLD_FILE = 'canon/world.json'
 const PLACES_FILE = 'canon/places.json'
+const RELATIONS_FILE = 'canon/relations.json'
 const STORY_POINTS_FILE = 'outline/story-points.json'
 const TIMELINE_FILE = 'timeline/clock.json'
 const VOLUMES_FILE = 'outline/volumes.json'
@@ -202,6 +205,30 @@ export class ProjectStore {
     list.sort((a, b) => a.firstChapter - b.firstChapter || a.name.localeCompare(b.name, 'zh'))
     await writeJson(join(this.root, PLACES_FILE), list)
     return list
+  }
+
+  /**
+   * The relation table, folded out of the cards the first time a book asks.
+   *
+   * Old books keep their one-sided `card.relations`; this is where they become
+   * edges. The fold is written on the spot so the next read is the same answer
+   * even if the cards are edited in between.
+   */
+  async relations(): Promise<RelationFile> {
+    const raw = await readJson<RelationFile | undefined>(join(this.root, RELATIONS_FILE), undefined)
+    if (raw !== undefined && raw !== null && Array.isArray(raw.edges) && raw.edges.length > 0) {
+      return normaliseRelations(raw)
+    }
+    const { file, changed } = migrateRelations(raw === undefined ? undefined : raw, await this.characters())
+    if (changed) await writeJson(join(this.root, RELATIONS_FILE), file)
+    return file
+  }
+
+  /** Replace the whole relation table. */
+  async writeRelations(file: RelationFile): Promise<RelationFile> {
+    const next = normaliseRelations({ ...file, migrated: true })
+    await writeJson(join(this.root, RELATIONS_FILE), next)
+    return next
   }
 
   /** Every story point, in chapter order. */
@@ -381,6 +408,7 @@ export class ProjectStore {
       places: await this.places(),
       storyPoints: await this.storyPoints(),
       timeline: await this.timeline(),
+      relations: await this.relations(),
       volumes: await this.volumes(),
       plans: await this.plans(),
       ledger: await this.ledger(),

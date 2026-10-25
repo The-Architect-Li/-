@@ -19,6 +19,7 @@ const EMPTY: Snapshot = {
   places: [],
   storyPoints: [],
   timeline: { formatVersion: 1, anchors: [], spans: [], recalls: [] },
+  relations: { formatVersion: 1, edges: [] },
   volumes: [],
   plans: [],
   ledger: [],

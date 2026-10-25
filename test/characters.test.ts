@@ -12,7 +12,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
-import { answersTo, inboundRelations, updateCharacter } from '../src/domain/characters.ts'
+import { answersTo, updateCharacter } from '../src/domain/characters.ts'
+import { emptyRelations, relationsOf, upsertRelation } from '../src/domain/relations.ts'
 import { ProjectStore } from '../src/domain/store.ts'
 import type { CharacterCard } from '../src/domain/types.ts'
 import { readCharacterPatch } from '../src/panel/edit.ts'
@@ -93,7 +94,11 @@ describe('updateCharacter', () => {
     expect(card?.personality).toContain('记仇')
     expect(card?.aliases).toEqual(['王总', '小王'])
     expect(card?.stages).toEqual([{ label: '工地上', text: '扛水泥，被人叫小名' }])
-    expect(card?.relations).toEqual([{ name: '刘紫灵', kind: '母女，但彼此不认' }])
+    // Relations moved to their own table in v0.21: one edge, both ends named.
+    expect(card?.relations).toBeUndefined()
+    expect((await store.relations()).edges).toEqual([
+      expect.objectContaining({ from: '王上', to: '刘紫灵', kind: '母女，但彼此不认' }),
+    ])
     expect(card?.notes).toContain('自己改的')
   })
 
@@ -106,6 +111,7 @@ describe('updateCharacter', () => {
     const card = await cardOf('阿鸢')
     expect(card?.status).toBeUndefined()
     expect(card?.relations).toBeUndefined()
+    expect((await store.relations()).edges).toEqual([])
   })
 
   it('creates the card when nobody wrote one yet', async () => {
@@ -118,34 +124,7 @@ describe('updateCharacter', () => {
   })
 })
 
-describe('inboundRelations', () => {
-  it('answers both sides from one stored side', () => {    const cards: CharacterCard[] = [
-      {
-        name: '刘紫灵',
-        role: 'supporting',
-        voice: '',
-        appearance: '',
-        goal: '',
-        secret: '',
-        relations: [{ name: '王上', kind: '母女' }],
-        updatedAt: 'now',
-      },
-      {
-        name: '王上',
-        role: 'protagonist',
-        voice: '',
-        appearance: '',
-        goal: '',
-        secret: '',
-        relations: [{ name: '刘紫灵', kind: '母女' }],
-        updatedAt: 'now',
-      },
-    ]
-    expect(inboundRelations(cards, '王上')).toEqual([{ from: '刘紫灵', kind: '母女' }])
-    // Nobody claims themselves as a relative.
-    expect(inboundRelations([cards[0]!], '刘紫灵')).toEqual([])
-  })
-
+describe('answersTo', () => {
   it('finds a person through the name their heading carried in brackets', () => {
     const [subject]: CharacterCard[] = [
       {
@@ -172,8 +151,10 @@ describe('inboundRelations', () => {
     expect(answersTo(subject!, '格格')).toBe(true)
     expect(answersTo(subject!, '刘紫灵')).toBe(true)
     expect(answersTo(subject!, '别人')).toBe(false)
-    // 「格格」 is not the card's name, but it is one of its names.
-    expect(inboundRelations([subject!, other], subject!.name)).toEqual([{ from: '王上', kind: '压着的人' }])
+    // A relation written under the nickname still lands on the card that owns it.
+    const edge = upsertRelation(emptyRelations(), { from: '王上', to: '格格', kind: '压着的人' })
+    const seen = relationsOf(edge, [subject!, other], subject!.name)
+    expect(seen.map((item) => `${item.other} ${item.kind}`)).toEqual(['王上 压着的人'])
   })
 })
 
@@ -215,7 +196,8 @@ describe('the character page', () => {
     const page = (await (await fetch(`${base}/entry?kind=character&key=${encodeURIComponent('刘紫灵')}`)).json()) as {
       data: { lists: { label: string; items: string[] }[] }
     }
-    expect(page.data.lists.find((list) => list.label === '别人写的')?.items).toEqual(['王上 —— 母女'])
+    // One edge, so the other person's page reads the same record — and can edit it.
+    expect(page.data.lists.find((list) => list.label === '关系')?.items).toEqual(['王上 —— 母女'])
   })
 
   it('writes relations and stages typed into the editor', async () => {
@@ -233,7 +215,9 @@ describe('the character page', () => {
     expect(card?.aliases).toEqual(['王总', '上势老板', '小王'])
     expect(card?.status).toBe('被停职')
     expect(card?.stages).toHaveLength(2)
-    expect(card?.relations).toEqual([{ name: '刘紫灵', kind: '母女' }])
+    expect((await new ProjectStore(harness.root).relations()).edges).toEqual([
+      expect.objectContaining({ from: '王上', to: '刘紫灵', kind: '母女' }),
+    ])
   })
 
   it('refuses a stage line without a colon, and says what it wants', async () => {
@@ -269,7 +253,9 @@ describe('novel_canon', () => {
     expect(card?.personality).toBe('记仇')
     expect(card?.aliases).toEqual(['王总'])
     expect(card?.stages).toEqual([{ label: '工地上', text: '扛水泥' }])
-    expect(card?.relations).toEqual([{ name: '刘紫灵', kind: '母女' }])
+    expect((await new ProjectStore(harness.root).relations()).edges).toEqual([
+      expect.objectContaining({ from: '王上', to: '刘紫灵', kind: '母女' }),
+    ])
   })
 
   it('refuses a relation that names nobody', async () => {

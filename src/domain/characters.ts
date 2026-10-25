@@ -13,6 +13,7 @@
  */
 import type { CharacterCard, CharacterRelation, CharacterStage } from './types.ts'
 import type { ProjectStore } from './store.ts'
+import { relationId, removeRelation, upsertRelation } from './relations.ts'
 
 /** What one edit asks for: a value to write, or nothing to keep the old one. */
 export interface CardEdit {
@@ -100,8 +101,44 @@ export async function updateCharacter(store: ProjectStore, name: string, edit: C
   if (aliases !== undefined) card.aliases = aliases
   const stages = list(edit.stages === undefined ? undefined : cleanStages(edit.stages), previous?.stages)
   if (stages !== undefined) card.stages = stages
-  const relations = list(edit.relations === undefined ? undefined : cleanRelations(edit.relations), previous?.relations)
-  if (relations !== undefined) card.relations = relations
+
+  // Relations live in their own table since v0.21: one edge per pair, both ends
+  // named, so the other person's page can edit the same record. A card edit that
+  // mentions relations rewrites exactly the lines it gives and leaves every other
+  // edge alone — the same "only what you named" rule the rest of this file
+  // follows. Reading the table first is what folds a pre-v0.21 book's one-sided
+  // lines in, so an edit cannot silently drop what the card used to say.
+  const table = await store.relations()
+  if (edit.relations === undefined) {
+    // Keeping the stored relations means keeping the edges too, not re-stating them.
+    delete card.relations
+  } else {
+    const incoming = cleanRelations(edit.relations)
+    const stated = new Set(incoming.map((relation) => relationId(name, relation.name)))
+    let next = table
+    // A line the author deleted: drop the edge if this card was the one claiming it.
+    for (const edge of table.edges) {
+      if (edge.from === name && !stated.has(edge.id)) next = removeRelation(next, edge.id)
+    }
+    for (const relation of incoming) {
+      const id = relationId(name, relation.name)
+      const existing = next.edges.find((edge) => edge.id === id)
+      if (existing === undefined) {
+        next = upsertRelation(next, { from: name, to: relation.name, kind: relation.kind })
+        continue
+      }
+      // The edge exists. The author is on one of its two pages, and the word they
+      // typed describes the other person *from this page*. If this page is the
+      // `from` end it is the kind; otherwise it is the reverse, and flipping the
+      // direction instead would quietly take the other person's word away.
+      next = existing.from === name
+        ? upsertRelation(next, { ...existing, kind: relation.kind })
+        : upsertRelation(next, { ...existing, reverse: relation.kind })
+    }
+    await store.writeRelations(next)
+    delete card.relations
+  }
+
   const notes = text(edit.notes, previous?.notes)
   if (notes !== undefined) card.notes = notes
   await store.upsertCharacter(card)
@@ -121,33 +158,4 @@ export async function updateCharacter(store: ProjectStore, name: string, edit: C
  */
 export function answersTo(card: CharacterCard, name: string): boolean {
   return card.name === name || (card.aliases ?? []).includes(name)
-}
-
-/**
- * The relations other cards claim with this person.
- *
- * Derived, never stored: 「刘紫灵 是 王上 的 母亲」 lives on 刘紫灵's card, and this
- * answers "who says they are related to me" for 王上's page. The two sides cannot
- * drift because there is only one side on disk.
- *
- * @param cards - the whole cast.
- * @param name - whose page is being drawn.
- * @returns one entry per inbound claim, in cast order, skipping self-claims.
- */
-export function inboundRelations(
-  cards: readonly CharacterCard[],
-  name: string,
-): { from: string; kind: string }[] {
-  const subject = cards.find((card) => card.name === name)
-  const matches = (written: string): boolean =>
-    written === name || (subject !== undefined && answersTo(subject, written))
-  const found: { from: string; kind: string }[] = []
-  for (const card of cards) {
-    if (card.name === name) continue
-    for (const relation of card.relations ?? []) {
-      if (!matches(relation.name)) continue
-      found.push({ from: card.name, kind: relation.kind })
-    }
-  }
-  return found
 }

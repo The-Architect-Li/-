@@ -261,7 +261,14 @@ describe('novel_import', () => {
     ) as CharacterCard[]
     expect(cast[0]!.name).toBe('王上')
     expect(cast[0]!.role).toBe('protagonist')
-    expect(cast[0]!.relations).toEqual([{ name: '薛梦静', kind: '第一段' }])
+    // The 人物/*.md relation网 lands in its own table since v0.21.
+    expect(cast[0]!.relations).toBeUndefined()
+    const relations = JSON.parse(
+      await readFile(join(harness.root, 'canon', 'relations.json'), 'utf8'),
+    ) as { edges: { from: string; to: string; kind: string }[] }
+    expect(relations.edges).toEqual([
+      expect.objectContaining({ from: '王上', to: '薛梦静', kind: '第一段' }),
+    ])
 
     const volumes = JSON.parse(
       await readFile(join(harness.root, 'outline', 'volumes.json'), 'utf8'),
