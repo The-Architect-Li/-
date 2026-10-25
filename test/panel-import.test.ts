@@ -153,4 +153,57 @@ describe('panel import routes', () => {
     )
     expect(response.status).toBe(409)
   })
+
+  /** A folder holding one long txt instead of one file per chapter. */
+  async function singleFile(space: string): Promise<string> {
+    const dir = join(space, '单文件')
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      join(dir, '待定.txt'),
+      ['第一章 裂缝', '', '雨落了一夜。', '', '第二章 金童玉女', '', '她当年那句话还在耳边。'].join('\n'),
+      'utf8',
+    )
+    return dir
+  }
+
+  it('creates the book from the folder in one call, txt included', async () => {
+    const { base, space } = await serve()
+    const dir = await singleFile(space)
+    const response = await fetch(`${base}${PANEL_PREFIX}/import-book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: JSON.stringify({ dir }),
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      data: {
+        root: string
+        title: string
+        existing: boolean
+        written: number
+        phase?: string
+        report: string
+      }
+    }
+    expect(body.data.existing).toBe(false)
+    expect(body.data.title).toBe('单文件')
+    expect(body.data.written).toBe(2)
+    expect(body.data.phase).toBe('drafting')
+    const first = await readFile(join(body.data.root, 'chapters', '001.md'), 'utf8')
+    expect(first).toContain('雨落了一夜。')
+    expect(body.data.report).toContain('还没写任何文件')
+  })
+
+  it('refuses a folder with no numbered prose', async () => {
+    const { base, space } = await serve()
+    const dir = join(space, '空稿')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '随手记.md'), '这里没有章号。', 'utf8')
+    const response = await fetch(`${base}${PANEL_PREFIX}/import-book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: JSON.stringify({ dir }),
+    })
+    expect(response.status).toBe(422)
+  })
 })

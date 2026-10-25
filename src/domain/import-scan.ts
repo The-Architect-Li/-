@@ -122,6 +122,10 @@ function numeralValue(text: string): number | undefined {
  * the one being worked on, and length is the only signal available without
  * dates.
  *
+ * A `.txt` that holds a whole novel in one file has no chapter number in its
+ * name, so it is split on its own `第N章` heading lines first — that is the
+ * shape Word exports and 起点 downloads arrive in.
+ *
  * @param files - every markdown file that might be prose.
  * @returns the chapters in reading order, and the names that named no chapter.
  */
@@ -132,31 +136,137 @@ export function planChapters(files: readonly SourceFile[]): {
   const best = new Map<number, PlannedChapter>()
   const ignored: string[] = []
   for (const file of files) {
-    const number = chapterNumberOf(file.name)
-    if (number === undefined) {
-      if (file.text.trim() !== '') ignored.push(file.name)
-      continue
-    }
-    const title = chapterTitleOf(file.name, number)
-    const text = stripHeading(file.text, number)
-    if (text === '') continue
-    const candidate: PlannedChapter = {
-      number,
-      title,
-      text,
-      words: countChars(text),
-      summary: deriveSummary(text),
-      source: file.path,
-    }
-    const previous = best.get(number)
-    if (previous === undefined || candidate.text.length > previous.text.length) {
-      best.set(number, candidate)
+    const parts = splitManuscript(file)
+    for (const part of parts) {
+      const number = chapterNumberOf(part.name)
+      if (number === undefined) {
+        if (part.text.trim() !== '') ignored.push(part.name)
+        continue
+      }
+      const title = chapterTitleOf(part.name, number)
+      const text = stripHeading(part.text, number)
+      if (text === '') continue
+      const candidate: PlannedChapter = {
+        number,
+        title,
+        text,
+        words: countChars(text),
+        summary: deriveSummary(text),
+        source: file.path,
+      }
+      const previous = best.get(number)
+      if (previous === undefined || candidate.text.length > previous.text.length) {
+        best.set(number, candidate)
+      }
     }
   }
   return {
     chapters: [...best.values()].sort((left, right) => left.number - right.number),
     ignored,
   }
+}
+
+/** `第一章 裂缝` / `第12章 裂缝` / `Chapter 12 裂缝` at the start of a line. */
+const CHAPTER_LINE = /^\s*第\s*([0-9０-９]+|[零〇一二三四五六七八九十百千两]+)\s*[章回节]\s*(.*)$/
+const ENGLISH_CHAPTER_LINE = /^\s*chapter\s+([0-9]+)\s*(.*)$/i
+
+/**
+ * Split one file that holds more than one chapter.
+ *
+ * Only files that name no chapter of their own are split: a folder of
+ * `第1章.md`… stays as it is, and a single long `.txt` becomes chapters. The
+ * split is stated rather than guessed — a file with fewer than two headings is
+ * returned untouched, so a stray `第一章` inside prose cannot fragment a file.
+ *
+ * @param file - one prose file as read from the disk.
+ * @returns the file, or its chapters in reading order.
+ */
+export function splitManuscript(file: SourceFile): SourceFile[] {
+  if (chapterNumberOf(file.name) !== undefined) return [file]
+  const body = file.text.replace(/^\uFEFF/, '')
+  const lines = body.split(/\r?\n/)
+  const headings: { at: number; number: number; title: string }[] = []
+  for (const [at, raw] of lines.entries()) {
+    const line = raw.trim()
+    if (line === '') continue
+    const match = CHAPTER_LINE.exec(line) ?? ENGLISH_CHAPTER_LINE.exec(line)
+    if (match === null) continue
+    const number = numberFromText(match[1]!)
+    if (number === undefined) continue
+    headings.push({ at, number, title: cleanTitle(match[2] ?? '') })
+  }
+  const seen = new Set<number>()
+  const usable = headings.filter((heading) => {
+    if (seen.has(heading.number)) return false
+    seen.add(heading.number)
+    return true
+  })
+  if (usable.length < 2) return [file]
+  const parts: SourceFile[] = []
+  for (const [index, heading] of usable.entries()) {
+    const next = usable[index + 1]
+    const end = next === undefined ? lines.length : next.at
+    const text = lines.slice(heading.at + 1, end).join('\n').trim()
+    if (text === '') continue
+    const title = heading.title === '' ? `第${heading.number}章` : heading.title
+    parts.push({
+      path: `${file.path}#${heading.number}`,
+      name: `第${heading.number}章 ${title}.txt`,
+      text,
+    })
+  }
+  return parts.length === 0 ? [file] : parts
+}
+
+/** Trim the punctuation a heading puts between its number and its title. */
+function cleanTitle(raw: string): string {
+  return raw.replace(/^[\s\-_—–·、:：.．]+/, '').replace(/\s+$/, '').trim()
+}
+
+/** Read a number written either in digits or in Chinese numerals. */
+function numberFromText(text: string): number | undefined {
+  const digits = text.replace(/[０-９]/g, (digit) =>
+    String.fromCharCode(digit.charCodeAt(0) - 0xfee0),
+  )
+  if (/^[0-9]+$/.test(digits)) {
+    const value = Number.parseInt(digits, 10)
+    return value > 0 ? value : undefined
+  }
+  return chineseNumber(text)
+}
+
+/**
+ * Turn `一` … `一千零一` into a number.
+ *
+ * Only the digits a chapter heading actually uses are supported: no 万, because
+ * a book with ten thousand chapters is not the case worth carrying code for.
+ *
+ * @param text - Chinese numerals, e.g. `二十三`.
+ * @returns the value, or undefined when the text is not numerals.
+ */
+export function chineseNumber(text: string): number | undefined {
+  const digits: Record<string, number> = {
+    零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+  }
+  const units: Record<string, number> = { 十: 10, 百: 100, 千: 1000 }
+  let total = 0
+  let current = 0
+  let seenAny = false
+  for (const char of text) {
+    if (char in digits) {
+      current = digits[char]!
+      seenAny = true
+      continue
+    }
+    const unit = units[char]
+    if (unit === undefined) return undefined
+    seenAny = true
+    total += (current === 0 ? 1 : current) * unit
+    current = 0
+  }
+  if (!seenAny) return undefined
+  const value = total + current
+  return value > 0 ? value : undefined
 }
 
 /**

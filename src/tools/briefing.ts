@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { buildBriefing } from '../domain/briefing.ts'
+import { recordCoverage } from '../domain/records.ts'
 import type { ToolDeps } from './deps.ts'
 
 /**
@@ -41,6 +42,21 @@ export function registerBriefingTool(ctx: Context, deps: ToolDeps): void {
 
       const result = buildBriefing(snapshot, drafts, chapter, deps.config)
 
+      // Every chapter's pack ends with what the records still owe. A book that
+      // was imported arrives with eighty-five chapters and no places at all, and
+      // nothing else would ever bring that up again.
+      const coverage = recordCoverage(snapshot)
+      const owed =
+        coverage.silent.length === 0
+          ? []
+          : [
+              '',
+              '【记录欠账】',
+              coverage.empty
+                ? '地点、故事点、时间线都还是空的。写到哪一章，就用 novel_canon action="upsert_place"、novel_story action="add"、novel_timeline action="anchor" 把那一章的样子记下来。'
+                : `${coverage.silent.length} 章还没有留下任何记录（最远到第 ${coverage.reached} 章）。写完一章就顺手记一条，别攒着。`,
+            ]
+
       return {
         chapter,
         chars: result.totalChars,
@@ -52,6 +68,7 @@ export function registerBriefingTool(ctx: Context, deps: ToolDeps): void {
           `第${chapter}章上下文包：${result.totalChars}/${result.budgetChars} 字。`,
           '',
           result.markdown,
+          ...owed,
         ].join('\n'),
       }
     },

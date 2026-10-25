@@ -9,6 +9,10 @@
  * - `GET /api/inkwell/dirs?path=<abs>` — one directory level, for the create
  *   flow's picker.
  * - `POST /api/inkwell/init` — create a book in a chosen directory.
+ * - `GET /api/inkwell/scan?dir=<abs>` — what a manuscript folder holds, read-only.
+ * - `POST /api/inkwell/import` — put that manuscript into the current book.
+ * - `POST /api/inkwell/import-book` — create a book *from* a manuscript folder
+ *   in one step: 新建 and 导入 are the same door, different cargo.
  * - `GET /api/inkwell/entry?kind=&key=` — the page behind one row.
  * - `POST /api/inkwell/entry` — save an edit to a character, world entry, or
  *   chapter body.
@@ -36,7 +40,7 @@
  * someone should have to argue for in words.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isAbsolute, resolve } from 'node:path'
+import { basename, isAbsolute, resolve } from 'node:path'
 import { applyImport } from '../domain/import-apply.ts'
 import { planImport } from '../domain/import-scan.ts'
 import { describeScan, isDirectory, readSources, summarize } from '../domain/manuscript.ts'
@@ -44,7 +48,7 @@ import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
-import type { CharacterCard, Finding, InkwellConfig } from '../domain/types.ts'
+import type { CharacterCard, Finding, InkwellConfig, Phase } from '../domain/types.ts'
 import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
@@ -475,6 +479,80 @@ export async function scanFolder(
   }
 }
 
+/**
+ * Create a book **from** a manuscript folder, in one request.
+ *
+ * 新建 and 导入 differ only in what the writer already has: an empty folder or
+ * a folder with eighty-five chapters in it. Doing that as two round-trips from
+ * the dialog means a second chance to create the book twice (or to create it
+ * and then fail to import), so the whole thing is one route with one commit
+ * point: the book is created, then the manuscript goes into it, then the shelf
+ * remembers it.
+ *
+ * The title comes from the dialog, falling back to the outline's premise title
+ * and then to the folder name — the same order a person would guess in.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ dir, title?, targetWords?, overwrite? }`.
+ * @returns the created book, plus what the import wrote.
+ */
+export async function importBook(deps: PanelDeps, body: Record<string, unknown>): Promise<PanelAnswer> {
+  const requested = typeof body.dir === 'string' ? body.dir.trim() : ''
+  if (requested === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有说导哪个文件夹：dir 不能为空。' } } }
+  }
+  if (!isAbsolute(requested)) {
+    return { status: 400, body: { ok: false, error: { message: `dir 必须是绝对路径：${requested}` } } }
+  }
+  const folder = resolve(requested)
+  if (!(await isDirectory(folder))) {
+    return { status: 404, body: { ok: false, error: { message: `没有这个文件夹：${folder}` } } }
+  }
+  const sources = await readSources(folder)
+  const plan = planImport(sources)
+  if (plan.chapters.length === 0) {
+    return {
+      status: 422,
+      body: {
+        ok: false,
+        error: {
+          message: `这个文件夹里没找到带章号的正文：${folder}。看过 正文/（或 chapters/）、人物/、大纲/全书大纲.md；markdown 与 txt 都认，单文件里写「第N章」也能拆。`,
+        },
+      },
+    }
+  }
+  const rawTitle = typeof body.title === 'string' ? body.title.trim() : ''
+  const title = rawTitle === '' ? basename(folder).slice(0, 120) : rawTitle.slice(0, 120)
+  const claimed = await createBook(deps, {
+    dir: folder,
+    title,
+    ...(body.targetWords === undefined ? {} : { targetWords: body.targetWords }),
+  })
+  if (claimed.body === null || typeof claimed.body !== 'object') return claimed
+  const answer = claimed.body as { ok?: boolean; data?: CreatedBook; error?: { message?: string } }
+  if (answer.ok === false || answer.data === undefined) return claimed
+  const created = answer.data
+  const store = new ProjectStore(created.root)
+  const applied = await applyImport(store, plan, { overwrite: body.overwrite === true })
+  await rememberBook(libraryFile(), created.root)
+  const summary = summarize(folder, plan, new Set<number>(), sources.used, sources.capped)
+  const data: ImportedManuscript & { title: string; existing: boolean; phase?: Phase } = {
+    root: created.root,
+    title: created.title,
+    existing: created.existing,
+    written: applied.written,
+    skipped: applied.skipped,
+    words: applied.words,
+    cast: plan.cast.length,
+    volumes: plan.volumes.length,
+    plans: plan.plans.length,
+    voiceless: summary.voiceless,
+    report: describeScan(summary, created.root),
+    ...(applied.phase === undefined ? {} : { phase: applied.phase }),
+  }
+  return { status: 200, body: { ok: true, data } }
+}
+
 /** What the create dialog did with the manuscript. */
 export interface ImportedManuscript {
   root: string
@@ -486,6 +564,10 @@ export interface ImportedManuscript {
   cast: number
   volumes: number
   plans: number
+  /** Cards whose `voice` is still empty, named so the writer can fill them. */
+  voiceless?: string[]
+  /** The scan, in prose, for the dialog's receipt. */
+  report?: string
 }
 
 /**
@@ -1040,6 +1122,15 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
             url.searchParams.get('root') ?? undefined,
           ),
         )
+        return
+      }
+
+      if (path === '/import-book') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/import-book 需要 POST' } } })
+          return
+        }
+        send(res, await importBook(deps, await readJson(req)))
         return
       }
 

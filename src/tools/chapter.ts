@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkContract, rank } from '../domain/contract.ts'
+import { recordCoverage } from '../domain/records.ts'
 import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/save.ts'
 import { scanChapter } from '../domain/scan.ts'
 import type { ProjectStore } from '../domain/store.ts'
@@ -270,6 +271,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       const draft = saved.draft
       const findings = saved.findings
       const counts = tally(findings)
+      const next = await recordHint(store, number)
 
       return {
         number,
@@ -284,6 +286,7 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
             : '',
           '',
           '下一步：把本章新确立的设定用 novel_ledger 记进账本（action="record"），避免后面自相矛盾。',
+          next,
         ].filter(Boolean).join('\n'),
       }
     },
@@ -291,8 +294,31 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
 }
 
 /**
- * One Chinese label per review item state.
+ * What to record about the chapter that was just saved.
  *
+ * Locations, arcs and dates cannot be inferred from prose without inventing
+ * them, so the tool does the next honest thing: it says whether this chapter
+ * left a trace, and names the three calls that would leave one. The wording is
+ * a checklist, not a scold — an author who deliberately records nothing should
+ * be able to read it and move on.
+ *
+ * @param store - the book's store.
+ * @param number - the chapter just written.
+ * @returns one line for the report, or an empty string when it is covered.
+ */
+async function recordHint(store: ProjectStore, number: number): Promise<string> {
+  const snapshot = await store.snapshot()
+  const coverage = recordCoverage(snapshot)
+  if (!coverage.silent.includes(number)) return ''
+  const parts = [
+    `这一章还没有地点、故事点或时间线的记录（全书 ${coverage.silent.length}/${coverage.written.length} 章如此）。`,
+    `要更新的话：novel_canon action="upsert_place"（第 ${number} 章这里是什么样）、novel_timeline action="anchor"（这一章是哪天），story 该收尾就 novel_story action="close"。`,
+  ]
+  return parts.join('')
+}
+
+/**
+ * One Chinese label per review item state.
  * @param state - open, fixed, or waived.
  * @returns the label a writer reads.
  */
