@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.14.0。
+> 最后更新：2026-10-25，对应 release v0.15.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -183,7 +183,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
   空字符串仍可用于清空；`novel_canon` 不带 `notes` 时沿用旧值），角色页把 `notes` 当「其他材料」
   显示并可编辑。教训写在这里是因为它还会再来：**这仓库里任何「整卡/整条目替换」的地方，新增字段
   都必须去接一遍**，`test/notes.test.ts` 的六条用例（走 HTTP + 真 store）就是照着这个形状写的。
-- **验证**：378 个用例（29 文件），`npm run check` 全绿；`verify` 报 `tools registered : 13`
+- **验证**：395 个用例（31 文件），`npm run check` 全绿；`verify` 报 `tools registered : 13`
   与 `client bundle : ./client.js 101760 bytes`。
 
 ### v0.13 面板重做外观：先把样式看见，再谈好看
@@ -249,12 +249,52 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 **教训**：新增字段的整卡替换要接住旧值——地点 `state` 是第二例。面板与工具共用同一段落盘代码，
 所以只要 `ProjectStore.upsertPlace` 是「整卡替换」，调用方就必须显式搬运 `state`。
 
+### v0.15 书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认
+
+用户的原话是「小说工坊增加导入功能，点击后可以导入 markdown 也可以是 txt 格式，然后会让你选择一个
+文件夹（跟新建一样）创建工作区，然后 AI 阅读导入对应正文、章卡、时间线、地点、剧情点，这些东西
+能够根据正文的发展实时更新」（m09675）。
+
+**关键判断**：宿主没法稳定地「新建会话后自动发第一条指令」——`UiWorkspaceService` 有
+`connectWorkspace`/`openSession`/`startSession`，但 `sessions.create(opts)` 不接受初始 prompt；
+`SessionFace.prompt(content, mode, signal, requestId)` 在，`sessions.sessionOf(actx)` 却要求
+retained Session scope（commands 插件里实测抛 `command.popupFor requires a retained Session scope`），
+`retainAgentScope` 只在宿主内部调用。所以这一版不赌「自动对 AI 说一句」，而是让**确定性机制**承担
+「随正文实时更新」：写一章的报告与每章的上下文包都会点出记录欠账。
+
+- **txt 也要能读**：`src/domain/import-scan.ts` 的 `splitManuscript(file: SourceFile): SourceFile[]`
+  按 `CHAPTER_LINE`（`第\s*([0-9０-９]+|[零〇一二三四五六七八九十百千两]+)\s*[章回节]`）与
+  `ENGLISH_CHAPTER_LINE`（`chapter \s+([0-9]+)`）切分整本书的 txt。**少于 2 个标题就原样返回**——
+  正文里提到「第一章」不该把文件切碎；同号标题只取第一个。`chineseNumber(text)` 支持汉字数字（无「万」）。
+- **一条路由做完建书 + 导入**：`src/panel/serve.ts` 的
+  `export async function importBook(deps: PanelDeps, body): Promise<PanelAnswer>`，
+  校验绝对路径与目录存在 → `readSources` + `planImport` → 没有章节时 **422** →
+  标题回退到 `basename(folder)` → 复用 `createBook` → `new ProjectStore(created.root)` → `applyImport`
+  → `rememberBook` → 返回 `ImportedManuscript & { title, existing, phase?, voiceless, report }`。
+  `POST /api/inkwell/import-book`；`/import` 仍是「往已有的书里追加」。
+- **记录欠账可见**：`src/domain/records.ts` 的 `recordCoverage(snapshot)` 收 `place.states[].chapter`、
+  故事点的 start/end、`anchor.chapter`、`span` 的**整段区间**、`recall` 的 chapter 与 eventChapter；
+  `chapterRanges([1,2,3,7])` → `第1–3、7章`；`describeCoverage` 空书时说「地点/故事点/时间线都还是空的」
+  并给三条具体调用，非空时点名「N 章没有留下任何记录」。
+  接到三处：`novel_check action="records"`（`all` 里是 info）、`novel_chapter` 写完的清单
+  （`recordHint`）、`novel_briefing` 的上下文包末尾（`【记录欠账】`）。
+- **面板**：`client.js` 新增 `ImportDialog`（先报扫描结果，扫不到章节时按钮禁用而不是让人点了才失败）、
+  `importBook(dir, title, targetWords)` 请求封装、书库顶部的「导入…」按钮；
+  成功后走 `openBookWorkspace(dir, root)` + `setNotice(importNote(...))`，与新建同一条落地路径。
+  没有宿主选择框的宿主上，「导入…」退回到浏览页的「建好之后导进来」勾选（两步等价）。
+- **测试**：`test/records.test.ts` 7 例、`test/manuscript-txt.test.ts` 8 例、
+  `test/panel-import.test.ts` 增 `/import-book` 两例（单文件 txt 建书 `written=2`、`phase=drafting`；无章号 422）。
+  全量 **395 个用例（31 文件）**。
+
+**教训**：`PHASES`/`Phase` 不在 `phase.ts` 里导出，从 `domain/types.ts` 拿；
+「实时更新」靠提示词不如靠工具输出里那句具体的欠账——模型会读工具结果，不一定会读文档。
+
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 378 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 395 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -293,7 +333,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 378 个用例全过（vitest，29 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**面板把会话钉到一本书**（`test/pin.test.ts`：403／400／404／405，以及「同一个 session 不带 root 也读到那本书」）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）、**时钟算术与时间窗比对**（`test/clock.test.ts`：中文时长区间、三种日期写法、算不出来返回 unknown、回忆与正文日期冲突）、**故事点与时间线两个工具的全部拒绝路径**（`test/story.test.ts`）
+- ✅ 395 个用例全过（vitest，31 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**面板把会话钉到一本书**（`test/pin.test.ts`：403／400／404／405，以及「同一个 session 不带 root 也读到那本书」）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）、**时钟算术与时间窗比对**（`test/clock.test.ts`：中文时长区间、三种日期写法、算不出来返回 unknown、回忆与正文日期冲突）、**故事点与时间线两个工具的全部拒绝路径**（`test/story.test.ts`）
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，10 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
   - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
@@ -396,7 +436,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 378 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 395 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。

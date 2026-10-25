@@ -251,6 +251,14 @@ Pick one and you get that book's tree:
   one checkbox — "导进来（85 章正文、6 张角色卡、6 卷大纲）", ticked by default —
   and creating the book imports it on the spot, reporting "导进来 85 章、35.1 万字".
   Unticked, you get an empty book as before.
+- **Importing an old manuscript is its own door (v0.15).** The shelf also has an
+  *导入…* button. Same host chooser, different question: the dialog lays out what the
+  folder holds (chapters, words, character cards, volumes), and one
+  `POST /api/inkwell/import-book` builds the book *and* fills it, then registers the
+  folder as a workspace and opens a chat session in it. Prose can be markdown, or a
+  single txt holding the whole book: headings like 第一章 / 第 1 章 / Chapter 1 split
+  it into chapters, and a file with fewer than two headings is left whole — that is
+  prose mentioning a chapter, not the book's structure.
 - **It refuses to guess.** A directory that already holds a book answers "《…》 is
   already here" with an *Open it* button instead of overwriting; a relative path
   is a 400 rather than something resolved against the host's cwd.
@@ -277,6 +285,9 @@ GET  /api/inkwell/entry?kind=&key=        # the page behind a row: character / w
 POST /api/inkwell/entry                   # { kind, key, fields } edit that character, place or body
 GET  /api/inkwell/roles                   # four agents, their routes, and what the host offers
 POST /api/inkwell/roles                   # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
+GET  /api/inkwell/scan?dir=<abs>          # read-only: what a manuscript folder holds
+POST /api/inkwell/import                  # { dir } put that manuscript into this book
+POST /api/inkwell/import-book             # { dir, title?, targetWords? } build the book and fill it
 ```
 
 The reads answer 405 to anything but GET. There are four writes — create a book,

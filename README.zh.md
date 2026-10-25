@@ -227,6 +227,11 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   勾选框「建好之后把这些稿件导进来（85 章正文、6 张角色卡、6 卷大纲）」，默认勾上；建完立刻导入，
   落点提示写「导进来 85 章、35.1 万字、6 张卡」。没勾就只建书。
 - **不含糊。** 目录里已经有书就报「已经有《…》」并给「打开这本书」，不覆盖；相对路径一律 400，绝不让宿主进程的 cwd 替用户猜。
+- **导入旧稿是一条独立的路**（v0.15）：书库顶上还有一个「导入…」。它同样先弹系统目录选择框，但问的是
+  「这个文件夹里的稿件」，弹窗先把扫描结果摊开（多少章、多少字、几张卡、几卷大纲），点
+  `导入并开始写` 之后由 `POST /import-book` 一次做完建书 + 导入，再把这个文件夹注册成工作区、
+  新开一个聊天会话切过去。正文可以是 md，也可以是一个装整本书的 txt——里面写着「第一章」「第 1 章」
+  「Chapter 1」就按标题拆章，只有一个标题的文件不拆（那是正文提到，不是书的结构）。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
 - **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 13 个工具，只是没有面板。
@@ -245,6 +250,9 @@ GET  /api/inkwell/entry?kind=&key=      # 一行背后的那一页：character�
 POST /api/inkwell/entry                 # { kind, key, fields } 改角色／设定／章节正文
 GET  /api/inkwell/roles                 # 四个智能体的当前路由 + 可选接口/模型/思考档位
 POST /api/inkwell/roles                 # { role, provider?, model?, reasoningEffort?, maxTokens?, reset? }
+GET  /api/inkwell/scan?dir=<绝对路径>       # 只读：这个文件夹里有什么稿件
+POST /api/inkwell/import                # { dir } 把稿子导进当前这本
+POST /api/inkwell/import-book           # { dir, title?, targetWords? } 建书 + 导入，一次做完
 ```
 
 `/snapshot`、`/books`、`/dirs`、`/entry`、`/roles` 的读法只认 GET，非 GET 一律 405；写有三扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
