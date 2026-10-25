@@ -1,6 +1,6 @@
 {
   "name": "dsh-inkwell",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "DeepSeek Harness 长篇小说的确定性约束内核：状态机闸门、事实账本、章纲合同、去套路扫描与预算内上下文包，外加右侧栏的小说工坊面板。零 token 校验。",
   "type": "module",
   "main": "lib/index.js",
@@ -32,6 +32,7 @@
     "test:watch": "vitest",
     "verify": "node scripts/verify-install.mjs",
     "preview": "node scripts/preview-panel.mjs",
+    "preview:timeline": "node scripts/preview-timeline.mjs",
     "check": "npm run typecheck && npm run test && npm run build && npm run verify",
     "prepare": "npm run build",
     "prepublishOnly": "npm run check"
