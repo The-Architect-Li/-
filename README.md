@@ -103,7 +103,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_chapter` | write, propose, commit, restore, read, list, review | wrong phase, unapproved contract, missing cast, stale revision, waive without a reason |
 | `novel_ledger` | record, query, audit facts | contradiction without an explicit `supersedes` |
 | `novel_briefing` | assemble the context pack | never; it reports instead |
-| `novel_check` | repetition, rhythm, tone, contract, timeline | never; it reports instead |
+| `novel_check` | repetition, rhythm, tone, contract, timeline, records, stale cards | never; it reports instead |
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief) | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
@@ -422,6 +422,37 @@ count as names too: a card named "Liu Ziling (online: Liu Gege)" answers to "Geg
 `## 经历` / `## 阶段` lines become stages; lines without a colon stay in the free-form notes field.
 Bracketed names in the heading become aliases, the card's name stays as written. Re-importing the
 same folder only fills fields that are still empty — it never overwrites what a human wrote.
+
+### The reviewer can see the previous chapter (v0.20)
+
+Consistency review could not actually cross chapters: the reviewer held the chapter under review,
+its outline contract and the relevant ledger facts — not one of the eighty chapters before it. "The
+wound was on his left shoulder last chapter" is not a matter of the model being clever; it needs the
+material.
+
+The window is: the last three chapters in full, the seven before them as recaps, all inside 12,000
+characters.
+
+```text
+reviewFullChapters: 3     # how many recent chapters arrive in full
+reviewRecapChapters: 7    # how many before those arrive as recaps
+reviewBudgetChars: 12000  # the ceiling over both
+```
+
+**When the budget runs out, the oldest chapter drops to a recap — not the nearest one.** The seam is
+where continuity breaks, so the chapter right before the scene loses nothing. Chapters beyond the
+window are named in the prompt ("the earlier N chapters are outside this review") — better an honest
+"not sure" than a guess.
+
+**Where a recap comes from.** The card's story summary first; without a card, the tail of the prose,
+marked "taken from the end of the prose, not a written recap" so the reviewer knows which it is.
+
+**Edit the prose and the card goes stale.** A card records the prose revision it was written from.
+Rewrite the prose afterwards and it shows up in three places: `novel_check action="cards"` names the
+chapter and both revisions, the chapter page shows a "card: stale" row, and the drawer row's chip
+reads "card stale" instead of "done". There is one fix — save the card again from the current prose.
+Editing outline fields (title, point of view, cast, beats, hooks) does not restamp it: those say what
+should happen, not what did.
 
 ## Non-goals
 

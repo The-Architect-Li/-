@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.19.0。
+> 最后更新：2026-10-25，对应 release v0.20.0。
 
 ## 一句话
 
@@ -11,7 +11,7 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 
 - 地址：https://github.com/The-Architect-Li/- （仓库名是 `-`，可改名）
 - 默认分支：`main`
-- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）
+- 已发 tag：`v0.1.0`（约束内核）、`v0.2.0`（指挥官流水线）、`v0.3.0`（多工作区 + 推理档位 + 可安装）、`v0.4.0`（小说工坊面板）、`v0.5.0`（抽屉树 + 面板建书）、`v0.5.1`（三条安装通道打通）、`v0.6.0`（面板里的智能体团队与模型选择）、`v0.6.1`（设置入口搬到抽屉树底部）、`v0.7.0`（详情页 + 打开即折叠）、`v0.8.0`（二级页就地编辑 + 章节预览）、`v0.9.0`（书库）、`v0.9.1`（点一行真的会开页）、`v0.9.2`（悬停／聚焦／键盘都看得见）、`v0.10.0`（审稿落盘、章节版本锁与回退、对话里换书、导出）、`v0.11.0`（面板新建一步到位：选目录、建书、注册工作区、新开会话）、`v0.12.0`（把已有稿件扫一遍导进来：正文 / 人物 / 大纲）、`v0.12.1`（导入的材料不再被下一次编辑吃掉）、`v0.13.0`（面板重做外观：设计令牌、字号层级、详情页分块、`npm run preview`）、`v0.14.0`（剧情设计收成四行：地点历史、故事点边界、时间线会算）、`v0.15.0`（书库里的「导入…」：一个文件夹一次读成书，md 与 txt 都认）、`v0.16.0`（导出到自选文件夹、删除一本书并先问要不要留底）、`v0.17.0`（正文可分卷：手动、自动、不分卷；长列表只画看得见的行）、`v0.17.1`（窗口看整个抽屉，不只看一层）、`v0.17.2`（列表不再在服务端截断）、`v0.18.0`（章卡是正文的总结：故事梗概、关键事件、场景）、`v0.19.0`（角色卡是档案：别称、性格、阶段、关系只存一侧、当前状态）、`v0.20.0`（审稿人带上前三章正文与更早七章梗概，章卡会标过期）
 - 提交历史按 conventional commits 拆开（feat/fix/test/docs/chore）
 - git 身份：`MegaLord <chinali521@outlook.com>`（全局已设）
 - 本地开发副本：`E:/dshplugin`
@@ -358,7 +358,43 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   （`scripts/verify-install.mjs` 这一版才开始报**真字节数**：它原来打的是 `bundle.length`，
   也就是 UTF-16 码元数，这份文件汉字多，于是长期少报约 4KB——131,140 是那个错的数。）
 
-### v0.19 角色卡是档案：多五个字段，关系只存一侧
+### v0.20 审稿人看得见前一章，章卡会过期
+
+一致性审核一直缺材料而不是缺提示：审稿人只拿到待审这一章的正文、章纲合同、相关账本事实与角色卡，
+前面八十章它一章没读过。这一版给它一个**有预算的窗口**，并且让「正文改了、章卡没改」这件事在
+三处显形。
+
+- **窗口**（`src/domain/review-window.ts`）：
+  `export interface ReviewWindowOptions { full: number; recap: number; budget: number }`、
+  `REVIEW_WINDOW_DEFAULTS = { full: 3, recap: 7, budget: 12_000 }`、
+  `export function buildReviewWindow(snapshot: Snapshot, drafts: readonly ChapterDraft[], target: number, options?: Partial<ReviewWindowOptions>): ReviewWindow`。
+  `ReviewWindow = { full: WindowChapter[]; recaps: WindowRecap[]; omitted: number; chars: number; report: string }`；
+  `WindowChapter = { number, title, words, text }`、`WindowRecap = { number, title, summary, stale, source: 'card' | 'tail' }`。
+  **从最新往回装**（`[...recent].reverse()`），超预算的那章降级成梗概而不是丢掉，装完再 `full.sort`
+  回升序——衔接处才是连续性断掉的地方，离得最近的那章不能少。
+- **渲染**（`src/roles.ts`）：
+  `export function renderReviewWindow(window: ReviewWindow): string[]`，两节
+  「## 前面几章的正文」+「## 更早几章的梗概」，过期梗概标「⚠ 正文改过，这条梗概可能过期」，
+  取末段的标「（取自正文末尾，不是人写的梗概）」，末尾一句「更早的 N 章不在这次审稿范围内」。
+- **接进提示词**：`buildReviewerPrompt` 多一个可选第 6 参 `window`；`src/tools/dispatch.ts` 在
+  `latestDraft` 之后构造窗口并传给 logic/character 两种审核，reviewer 的 report 里带 `window.report`。
+- **配置**（`src/config.ts` → `src/domain/types.ts` 的 `InkwellConfig`）：`reviewFullChapters`、
+  `reviewRecapChapters`、`reviewBudgetChars`（`Math.max(800, …)` 兜底）。
+- **章卡盖章**：`updateCard`（`src/domain/cards.ts`）在 `patch.summary/events/scene` 任一个被给到时
+  写 `cardRevision = chapter.revision ?? 1`；只改章纲字段不盖章（那是「应该发生什么」）。
+  `export function cardIsStale(plan, meta)` 比两个版本号；`export function staleCards(snapshot)` 按章号
+  升序列出过期的卡。
+- **三处显形**：`novel_check action="cards"`（`src/tools/check.ts`，`all` 里追加 `cards/stale` 条）、
+  章节页字段一栏（`src/panel/entry.ts`）、正文抽屉行标「卡过期」（`src/panel/tree.ts` 的 `chapterRow`）。
+- **测试**：`test/review-window.test.ts` 10 例（窗口装填、降级、过期标记、`describeRange`、`renderReviewWindow`）、
+  `test/review-context.test.ts` 3 例（真 harness 走 `novel_dispatch` 检查提示词里有没有前一章、13 章时
+  3 正文 + 7 梗概 + 2 未读、`novel_check action="cards"` 报过期并在重存后清空）、
+  `test/cards.test.ts` 加 2 例（盖章与只改节拍不盖章）、`test/panel.test.ts` 加 1 例（行标「卡过期」）。
+  全量 **462 个用例（39 文件）**。
+- **坑**：`novel_dispatch` 的审核要求待审章**有草稿**（`propose` 过），只 `write` 过不够；
+  写章节的测试正文必须出现章纲要求的角色（`contract/character-missing` 是 error 级）；
+  `ready()` 造书要 2 个角色才能进 outline / drafting。
+
 
 写角色以前只写「怎么写他」——说话方式、外貌、目标、秘密。写到第八十几章，要查的是「他是谁」：
 有没有别的叫法、脾气、走到今天经历了什么、跟谁是什么关系、现在在什么境地。
@@ -382,7 +418,7 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   `import-apply.ts` 对已有的卡只提交**空字段**，`relations`/`stages` 按左侧名字去重，重导不翻倍。
 - **测试**：`test/characters.test.ts` 12 例（含 `answersTo` 与别称反查）、`test/import.test.ts` 16 例
   （含括注变别称）、`test/entry.test.ts` 与 `test/panel.test.ts` 的角色页字段断言。全量
-  **447 个用例（37 文件）**。
+  **462 个用例（39 文件）**。
 - **真书核对**（`C:\Users\china\Downloads\check-cast.mjs`，调 `lib/domain/*`）：6 张卡的 `relations`
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
@@ -429,7 +465,7 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 447 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 462 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -555,11 +591,10 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.20 候选，按性价比排序）
+## 下一步（v0.21 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里点一次「分卷 → 自动划分」「先导出，再删除」与「在章节页写章卡」「角色页填关系与阶段」**：v0.16／v0.17／v0.18／v0.19 的链路在 HTTP 层与组件层都有测试
-   （`panel-deliver.test.ts`、`client-shelf.test.ts`、`volumes.test.ts`、`client-window.test.ts`、`cards.test.ts`、`characters.test.ts`），但从原生选择框点下去、导出成功、再真的删掉书这一步
-   只有他自己能验。
+0. **让用户在他的 Desktop 应用里看一眼「卡过期」**：v0.20 的三处提示（`novel_check action="cards"`、章节页一栏、抽屉行标）在测试里全走过，
+   但「改完正文再打开那一章，看到红的『卡过期』」只有他自己能验。同批还有 v0.16／v0.17／v0.18／v0.19 那四条链路。
 1. **把关系网接进上下文包**：角色卡现在有了 `relations` 与 `stages`，但 `src/domain/briefing.ts` 还只按出场人物列卡，不列「这个人和谁是什么关系」「他走到哪一段了」。接法：在本章出场人物的卡上取 `relations`，反查对方是否也在本章出场（在的话写「沈砚 与 阿鸢：彼此试探」），并取 `stages` 的最后一段当作「他现在在哪」。
 2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）。
 3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
@@ -571,7 +606,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 447 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 462 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
