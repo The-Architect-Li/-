@@ -126,5 +126,8 @@ for (const name of client.inject ?? []) {
 }
 
 console.log('client platform  :', client.platform)
-console.log('client bundle    :', bundleRel, `${bundle.length} bytes`)
+// `bundle.length` counts UTF-16 code units, and this bundle is full of Chinese
+// text: it read 131,140 for a file that is 135,071 bytes on disk. Byte length is
+// what anyone comparing against the download expects, so report that.
+console.log('client bundle    :', bundleRel, `${Buffer.byteLength(bundle, 'utf8')} bytes`)
 console.log('OK: built package mounts cleanly and advertises a loadable panel')

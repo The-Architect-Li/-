@@ -321,7 +321,9 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   `test/client-shelf.test.ts` 3 例（未勾选时「直接删除」`disabled === true`；文案含「删除后不能恢复」；
   `dir === ''` 时导出禁用、给了目录才可点且默认 `txt`）。为此 `client.js` 末尾多一个
   `exports.dialogs = { DeleteDialog, ExportDialog }`（与 `exports.tree` 同理，只给测试）。
-  全量 **406 个用例（33 文件）**，`client bundle` 131,140 字节。
+  全量 **406 个用例（33 文件）**，`client bundle` 135,071 字节。
+  （`scripts/verify-install.mjs` 这一版才开始报**真字节数**：它原来打的是 `bundle.length`，
+  也就是 UTF-16 码元数，这份文件汉字多，于是长期少报约 4KB——131,140 是那个错的数。）
 
 ## 怎么本地跑
 

@@ -27,6 +27,8 @@
 
 - 弹窗在窄侧栏里会被内容顶宽（`.iw-dialog` 是 flex 项，默认 `min-width: auto`），
   长路径能把弹窗顶出视口。加了 `min-width: 0`。
+- `npm run check` 报的 `client bundle … bytes` 其实是 UTF-16 码元数（`bundle.length`），
+  比磁盘上的字节数少约 4KB。改成 `Buffer.byteLength`，现在报的是真字节数。
 
 ### 说明
 
