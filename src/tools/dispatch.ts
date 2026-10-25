@@ -150,7 +150,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
 
       if (roleId === 'chief') {
         const inputs = (args.findings ?? []) as unknown as FindingInput[]
-        const prompt = buildChiefPrompt(draftRecord, inputs, snapshot, deps.config, args.directive ?? '')
+        const prompt = buildChiefPrompt(draftRecord, inputs, snapshot, deps.config, args.directive ?? '', window)
         const output = await runRole(ctx, role.persona, prompt, exec, route)
         const { items, parsed } = parseReviewerOutput(output)
         const findings = parsed ? items : [unparsedFinding('chief', output)]
@@ -171,6 +171,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           findings,
           report: [
             summarize(roleId, findings, routeText),
+            window.report,
             `已记账：第${number}章第 ${stored.round} 轮审稿（${stored.items.length} 条）。`,
             reviewHint(number, stored.items),
           ].join('\n'),

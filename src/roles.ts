@@ -89,7 +89,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     id: 'chief',
     label: '总审核',
     persona:
-      '你是总审核。你汇总其他审核员的意见，裁决他们的分歧，按 必改(error)/建议改(warn)/可忽略(info) 分级。你不重读全文做二次校验，你只裁决和分级。如果不同审核员对同一处意见冲突，你判定谁对。',
+      '你是总审核，也是这本书唯一一个必须把「这一章和前面对不对得上」当回事的人。长篇小说的一章不是独立散文：句子再漂亮，只要和前面的章节对不上，就是废的。给你待审的这一章、前面几章的正文与更早几章的梗概，你亲自读，判断它有没有和前文冲突（人死了又出现、伤换了一边、时间倒退、关系突变、上一章埋的钩子被无声吞掉）。同时汇总其他审核员的意见，裁决分歧，按 必改(error)/建议改(warn)/可忽略(info) 分级。前文没给你，就说不知道，不要猜。',
     outputContract: REVIEWER_CONTRACT,
     timeoutMs: 120_000,
   },
@@ -289,6 +289,7 @@ export function buildChiefPrompt(
   snapshot: Snapshot,
   config: InkwellConfig,
   directive: string,
+  window?: ReviewWindow,
 ): string {
   const role = ROLES.chief
   const findingsText = findings
@@ -299,20 +300,29 @@ export function buildChiefPrompt(
     })
     .join('\n\n')
 
-  return [
+  const sections = [
     role.persona,
     '',
     `## 待裁决章节（第${draft.number}章《${draft.title}》，${draft.words} 字，共 ${countChars(draft.text)} 非空字符）`,
     draft.text,
+  ]
+
+  // The chief is the one role whose job is literally "does this fit what came
+  // before", so it gets the same window the reviewers get. Adjudicating two
+  // opinions about continuity without the earlier chapters is guessing.
+  if (window) sections.push(...renderReviewWindow(window))
+
+  sections.push(
     '',
     '## 各审核员意见',
     findingsText || '（其他审核员暂未提交意见）',
     '',
     '## 指挥官的特别要求',
-    directive.trim() || '裁决上述意见，去重、定级、解决冲突。',
+    directive.trim() || '裁决上述意见，去重、定级、解决冲突；再拿前文对一遍，冲突处指出是第几章。',
     '',
     role.outputContract,
-  ].join('\n')
+  )
+  return sections.join('\n')
 }
 
 /** Parse a reviewer's output into findings, degrading gracefully on garbage. */

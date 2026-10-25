@@ -112,6 +112,36 @@ describe('reviewer window in the prompt', () => {
     expect(result.report).toContain('正文 第1–2章')
   })
 
+  it('gives the chief the same window, because continuity is its job', async () => {
+    await ready(h, 3)
+    await writeChapter(h, 1, '第一章的正文：沈砚说那船货昨夜进的港。')
+    await writeChapter(h, 2, '第二章的正文：沈砚翻到借方那栏，上面写着三个人的名字。')
+    const proposed = await h.call('novel_chapter', {
+      action: 'propose',
+      number: 3,
+      text: '第三章的正文：沈砚又问了一遍那船货是哪天到的。',
+    })
+    expect(proposed.ok).toBe(true)
+
+    const result = valueOf<{ findings: unknown[]; report: string }>(
+      await h.call('novel_dispatch', {
+        action: 'chief',
+        number: 3,
+        findings: [{ role: 'logic', items: [{ severity: 'warn', code: 'logic/repeat', message: '同一件事问了两遍', evidence: '第三章' }] }],
+      }),
+    )
+    expect(result.findings).toEqual([])
+
+    const prompt = promptText(h.subagents.calls.at(-1))
+    // The persona tells it to judge continuity, and the material is there to judge with.
+    expect(prompt).toContain('和前面的章节对不上')
+    expect(prompt).toContain('## 前面几章的正文')
+    expect(prompt).toContain('第一章的正文：沈砚说那船货昨夜进的港。')
+    expect(prompt).toContain('## 各审核员意见')
+    expect(prompt).toContain('同一件事问了两遍')
+    expect(result.report).toContain('正文 第1–2章')
+  })
+
   it('recaps the older chapters and states what it could not read', async () => {
     await ready(h, 13)
     for (let number = 1; number <= 12; number += 1) {
