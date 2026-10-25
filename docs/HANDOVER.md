@@ -120,14 +120,14 @@ dsh-inkwell（墨井）是 DeepSeek Harness 的长篇小说插件。它**不替�
 - **对话里换书**：`src/domain/home.ts`（`dshHome` / `inkwellStateDir` / `bookKey`）+ `src/domain/session-books.ts`（`sessionsFile()` = `<state>/sessions.json`、`readPins` / `pinBook` / `unpinBook` / `pinnedRoot` / `livePins` / `sameBook`，**全同步读写**——`storeFor` 在工具体与门禁里同步调用，不能 await）。`novel_project` 新增 `books` / `open` / `close`（`open` 接受 `root` 或书名片段 `book`，先试目录本身再试它的 `.novel`；成功就 `pinBook` 并把书 `rememberBook` 上书架）。`src/tools/deps.ts` 的 `storeFor` 顺序改为 pin > per-workspace cwd > baseStore。门禁里 `books/open/close` 无条件放行（注释：切书工具就是给指错地方的人用的）。
 - **导出**：`src/domain/export.ts`（纯函数：`safeFileName`、`chapterHeading`、`bookText`、`volumeFiles`、`canonMarkdown`、`contentsMarkdown`）+ `src/tools/export.ts`（`novel_export action="text"|"markdown"|"canon"`，`out` 缺省写 `<项目>/exports/`）。修掉两个真 bug：设定集的事实表原先筛反了（留下被推翻的旧事实）；空书会写出只含书名的文件。
 - **命名迁移**：`src/panel/library.ts` → `src/domain/shelf.ts`（工具侧也要读书架）；`dshHome()` / `bookKey()` 提到 `src/domain/home.ts`。
-- **验证**：295 个用例（22 个文件；新增 `test/reviews.test.ts` 11 例、`test/switching.test.ts` 11 例、`test/export.test.ts` 14 例，其余为既有用例的适配）。
+- **验证**：296 个用例（22 个文件；新增 `test/reviews.test.ts` 12 例、`test/switching.test.ts` 11 例、`test/export.test.ts` 14 例，其余为既有用例的适配）。其中一条专门守「v0.9 写的章节没有 `revision` 字段」：老章节读作第 1 版而不是第 0 版，面板回传的 1 能被接受——否则每一本旧书的编辑都会被「revision 必须是正整数」挡回去。
 
 ## 怎么本地跑
 
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 295 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 296 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -166,7 +166,7 @@ npm 走外网很慢（装 58 个包约 8 秒到几分钟不等），不是卡死
 ## 已验证到什么程度
 
 - ✅ 类型检查零错误（`tsc --noEmit`，strict）
-- ✅ 295 个用例全过（vitest，22 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
+- ✅ 296 个用例全过（vitest，22 个文件），含完整流水线端到端、双工作区互不干扰（走真实工具与真实门禁）、三态合并、推理档位透传、面板投影与抽屉树、面板路由（200/403/404/405、按会话分书、选目录建书、书库列表与目录消失）、详情页（角色/设定/章节、草稿轮次、404、400）、就地编辑（校验器、写路由、闸门 409）、团队路由（读/写/还原/顾问式校验/目录不可用降级）、书架（容错解析、去重、置顶、不重写、无 BOM）、**浏览器半边真的跑起来点的**（`test/client.test.ts` 用假 `__ModuleLoader__` + 桩 `React` 加载 `client.js`，断言点一行到达的是开页的回调）、模块装载形状、**审稿意见的 id 与结案状态**（`test/reviews.test.ts`）、**章节版本冲突与 restore 回退**（同文件，含 `force` 与「没有第 99 轮草稿」）、**换书的 pin 按会话隔离**（`test/switching.test.ts`）、**导出三条产物与空书拒绝**（`test/export.test.ts`）
 - ✅ `npm run verify`：用假上下文挂载 `lib/index.js`，10 工具 + 1 门禁 + 1 条面板路由 + 18 个配置键全部就位，并检查浏览器半边的声明与文件
 - ✅ **真实 DSH 实装**（v0.5.1 三条通道，每条都启动进程取过 `/api/inkwell`）：
   - 本地路径 `add E:\dshplugin` → `dsh-inkwell: link:E:/dshplugin`
@@ -261,7 +261,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 295 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 296 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架）+ `client.js`（浏览器半边：树、详情页编辑器、建书、设置、团队）+ `src/gate.ts`（门禁）。

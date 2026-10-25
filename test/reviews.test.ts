@@ -6,7 +6,7 @@
  *   was unanswerable a week later;
  * - two editors saving the same chapter silently ate each other's work.
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -186,5 +186,27 @@ describe('chapter versions', () => {
     const result = await harness.call('novel_chapter', { action: 'restore', number: 1, round: 99, force: true })
     expect(result.ok).toBe(false)
     expect(result.ok ? '' : result.error).toContain('没有第 99 轮草稿')
+  })
+
+  it('reads a chapter written before revisions existed as version 1, and lets it be edited', async () => {
+    // A book from v0.9 has chapter rows with no `revision` field at all. Handing
+    // the panel a revision of 0 would make every edit of an old book fail the
+    // "positive integer" check, so the legacy value has to be a usable one.
+    const store = new ProjectStore(harness.root)
+    const legacy = harness.root
+    const index = JSON.parse(await readFile(join(legacy, 'chapters', 'index.json'), 'utf8')) as {
+      number: number
+      revision?: number
+    }[]
+    for (const row of index) delete row.revision
+    await writeFile(join(legacy, 'chapters', 'index.json'), JSON.stringify(index, null, 2), 'utf8')
+
+    const metas = await store.chapters()
+    expect(metas[0]?.revision).toBe(1)
+
+    const write = await valueOf<{ report: string }>(
+      await harness.call('novel_chapter', { action: 'write', number: 1, text: `${GOOD_TEXT}旧书重写。`, revision: 1 }),
+    )
+    expect(write.report).toContain('第 2 版')
   })
 })

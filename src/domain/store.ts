@@ -236,10 +236,12 @@ export class ProjectStore {
   /** Chapter metadata, ordered by number. */
   async chapters(): Promise<ChapterMeta[]> {
     const list = await readJson<ChapterMeta[]>(join(this.root, INDEX_FILE), [])
-    // Chapters written before revisions existed read as 0, so the first write
-    // through this build claims revision 1 without a migration step.
+    // Chapters written before revisions existed read as 1, not 0: 0 is not a
+    // revision anyone can hand back — the panel would send it, and the write
+    // path would reject it as "not a positive integer". A legacy chapter is one
+    // version of itself, so the first write through this build makes it 2.
     return list
-      .map((item) => ({ ...item, revision: typeof item.revision === 'number' ? item.revision : 0 }))
+      .map((item) => ({ ...item, revision: typeof item.revision === 'number' ? item.revision : 1 }))
       .sort((a, b) => a.number - b.number)
   }
 
