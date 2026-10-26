@@ -154,6 +154,20 @@ place states and stages at once, and the character and place pages show the same
 line in the panel. A chapter nobody rewrote never reports anything: an unstamped
 record counts as revision 1.
 
+### The chapter page is the chapter (v0.29)
+
+The chapter page used to be a card: volume, POV, scene, outline state, word count,
+recap, "named in the text", beats — eight rows above the prose. You open a chapter to
+read and rewrite it, not to walk past its file first.
+
+The page now holds the title and the prose. Those rows did not vanish; they moved to
+their own page, 剧情设计 › 章卡, which also edits scene, recap and events.
+
+- The card page saves through `updateCard`, the same merge `novel_outline action="card"`
+  uses — revision stamp included, so rewriting the prose still makes the card say it is old.
+- The two drawers finally open two different pages; before v0.29 both opened the chapter.
+- Render any page from a real book: `npm run preview:entry -- <book-dir> <kind> <key>`.
+
 ### Places, story points, and the clock (v0.14)
 
 A long book does not fail because you cannot write; it fails because you cannot remember.
@@ -431,10 +445,11 @@ novel_outline action="card" number=1 \
 the card's names have to be the book's names, or search and the context pack will walk past
 that person for the rest of the book.
 
-The panel's chapter page edits the card next to the prose — recap, scene, events and the body
-in one submit; the prose is saved first (contract still applies), then the card. The page also
-carries a "named in the text" line: the people the prose actually calls by name. It disagrees
-with the promised cast often enough to be worth its own row.
+The panel keeps the card and the prose on two pages: 剧情设计 › 章卡 opens the card (POV, scene,
+recap, events, cast, beats, hooks) and the manuscript drawer opens the prose itself. The card page
+edits scene, recap and events through the same `updateCard` merge. It also carries a "named in the
+text" line: the people the prose actually calls by name. It disagrees with the promised cast often
+enough to be worth its own row.
 
 ### Character cards are a dossier (v0.19)
 

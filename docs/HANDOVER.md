@@ -1,7 +1,7 @@
 # 交接文档 · dsh-inkwell
 
 > 给下一位接手的人（或下一次会话）一份能冷启动的完整说明。
-> 最后更新：2026-10-25，对应 release v0.28.0。
+> 最后更新：2026-10-26，对应 release v0.29.0。
 
 ## 一句话
 
@@ -429,6 +429,16 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   全部解析出来（王上 8 条、刘紫灵 2 条、端木晨琳 3 条），刘紫灵的 `aliases` 为
   `刘格格、格格、刘紫灵`。
 
+### v0.29 正文页只有正文：卡搬到自己的页面
+
+用户原话：「正文编辑页里 这些都不要显示  正文就只有编辑和预览」——附图是正文页上方那八栏（分卷／视点／场景／章纲／字数／故事梗概／正文里出现了／必写节拍）。
+
+- **拆分**（`src/panel/entry.ts`）：`chapterPage(snapshot, key, rounds, root, body)` 现在只产 `title`／`subtitle`／`chip`／`breadcrumb` 与一个 `edit`（`inputs: [标题]` + `body: 正文`），`fields` 与 `lists` 都是空数组。新增 `cardPage(snapshot, key, rounds, root, body)`：`fields` = 视点／场景（+过期说明）／故事梗概，`lists` = 关键事件／出场人物（章纲）／正文里出现了／必写节拍／章末钩子，`edit.inputs` = `scene` / `story`（multiline）/ `events`（multiline）。**「最新一稿的自动发现」与「审稿（n/m 未结）」两栏随旧页一起下线**（`newestFindings` 已删）——审稿结论走 `novel_chapter action="review"` 与 `reviews/<nnn>.json`，页面不再复述。
+- **入口**（`src/panel/tree.ts`）：`PanelEntryKind` 加 `'card'`；剧情设计 › 章卡的每一行从 `kind: 'chapter'` 改为 `kind: 'card'`（两个抽屉以前通向同一页）。
+- **写入口**（`src/panel/edit.ts` 新增 `readCardPatch`、`src/panel/serve.ts` 新增分支）：`kind === 'card'` 时只收 `title/story/scene/events` 与 `revision`，调 `updateCard`（与 `novel_outline action="card"` 同一条合并路径，含 `cardRevision` 盖章）；`MissingPlanError` 时补壳章纲再写。`readEntry` 对 `card` 也读正文（供「正文里出现了」）与 drafts（供 chip），但**不跑 `gateToolCall`**——卡不是正文，没有落笔闸门。
+- **预览**（新建 `scripts/preview-entry.mjs`）：`npm run preview:entry -- <书目录> <kind> <key>`，加载真实 `lib/panel/entry.js` 与真实 `client.js` 的 `S`／CSS 渲染一页。真书核对：第 5 章 `chapter` 页 `fields 0 lists 0 inputs 1 prose 1811 chars`；`card` 页 `fields 视点/场景/故事梗概`、`lists 正文里出现了/必写节拍`、`inputs scene,story,events`。
+- **测试**：`test/entry.test.ts` 的 chapter 页断言改为「fields 与 lists 皆空、`edit.inputs` 只有 title」；新增 card 页两例（字段与列表、`正文里出现了` 只列正文真叫到的名字）；`test/panel.test.ts` 新增「serves a card page with the beats the outline promised」与「saves a card without touching the prose」。全量 **564 用例 / 50 文件**。
+
 ### v0.28 问一句，记一笔；记录会过期
 
 v0.27 记下了转变，入口却还是「你自己打四个参数」。这一版把「问」和「记」接成一条线，并把「记录过期」从章卡扩到地点状态与人物阶段。
@@ -631,7 +641,7 @@ v0.19 把关系当「一个人卡上的一句话」，然后发现它只装了�
 ```sh
 cd dsh-inkwell
 npm install                          # 无需任何 flag，见下文"依赖说明"
-npm run check                        # typecheck + 561 个测试 + build + 打包冒烟
+npm run check                        # typecheck + 564 个测试 + build + 打包冒烟
 ```
 
 装进真实 DSH（v0.3 起，用独立 profile 验证）：
@@ -757,9 +767,9 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 6. **新增"会拒绝"的规则，测试要断言拒绝的"理由"**，不只是 `ok===false`。
 7. **「哪本书」必须由调用上下文回答**——不要在挂载期把 root 拍成常量，那正是 v0.2 串书的根因。
 
-## 下一步（v0.29 候选，按性价比排序）
+## 下一步（v0.30 候选，按性价比排序）
 
-0. **让用户在他的 Desktop 应用里看一眼这几条新链路**：v0.27 的 `novel_canon action="shift"`、v0.28 的「审稿报告末尾那行 shift」与「记录过期」，都只有他自己点一次才算验过。同批还有 v0.16／v0.17／v0.22／v0.25 那几条。
+0. **让用户在他的 Desktop 应用里看一眼这几条新链路**：v0.29 的「正文页只剩正文 + 章卡独立页」、v0.27 的 `novel_canon action="shift"`、v0.28 的「审稿报告末尾那行 shift」与「记录过期」，都只有他自己点一次才算验过。同批还有 v0.16／v0.17／v0.22／v0.25 那几条。
 1. **把「问一句」也接到面板上**：v0.28 让审核报告末尾直接摆着一行 `novel_canon action="shift"`，但那一行仍然要你自己发。下一步可以在审核结果页给每条 `character/shift` 一个「是有意为之」按钮，点一下就等于发那行——写入口还是 `recordTurn`。
 2. **地点历史接进导入**：`import-scan.ts` 目前只把人物小节塞进 `notes`，地点从未从旧稿里被识别（旧稿的 `设定/` 下若有地点文档，现在无人认领）——注意 v0.28 起地点状态带 `revision`，导入时要按「没有正文」处理（不盖章）。
 3. **面板里批准章纲**：v0.5 开了「建书」，v0.6 开了「挑模型」，v0.8 开了「改已有条目」，v0.10 开了「改正文并结案审稿」，v0.12 开了「把旧稿拿进来」，v0.16 开了「导出与删书」，每一扇都等价于一个本来就存在的工具调用。再往前一步到「批准章纲」只剩一个障碍：批准需要理由，而理由要落进 `plans`。做法是让面板的批准表单必填一句理由，再走与 `novel_outline action="approve_chapter"` 相同的写入——**门禁的唯一性不是「只有工具能写」，而是「只有一条代码路径能写」**。
@@ -771,7 +781,7 @@ const result = await run.result     // { output: ContentBlock[], stopReason }
 
 ## 续作第一天做什么
 
-1. `git clone` 仓库，`npm install`，`npm run check` 确认 561 测试 + 打包冒烟全过。
+1. `git clone` 仓库，`npm install`，`npm run check` 确认 564 测试 + 打包冒烟全过。
 2. 起一个独立 profile 装本机副本：`dsh plugin --profile inkwell-verify add E:\dshplugin`，看 `node_modules/dsh-inkwell` 是不是 link，再跑 `node scripts/verify-install.mjs <profile>/node_modules/dsh-inkwell`。
 3. 想验证面板，得让 profile 的 `dsh.profile.bundles` 里同时有 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`（只有 base 的 profile 没有 `webServer`，面板路由不会挂），然后 `dsh --profile inkwell-verify --port <port>`，用启动日志里的 `?token=` 进 shell、再 `GET /api/inkwell`。**注意**：`package.json` 必须是无 BOM 的 UTF-8，PowerShell 的 `Set-Content -Encoding utf8` 会写 BOM，启动时报 `SyntaxError: Unexpected token '\uFEFF'`。
 4. 读 `docs/architecture.md`（含「根目录属于会话」「三态路由」「面板为什么不走 Remote」「书库：列表是提示，磁盘是事实」「面板写操作只开三扇门」「右侧栏只有一条」「入口形状是个陷阱」等节）+ `src/index.ts`（挂载）+ `src/domain/scope.ts`（哪本书）+ `src/domain/session-books.ts`（会话钉选）+ `src/domain/store.ts`（revision 与 reviews）+ `src/domain/save.ts`（正文的唯一落盘口）+ `src/domain/export.ts`（导出）+ `src/domain/import-scan.ts` / `manuscript.ts` / `import-apply.ts`（导入：纯函数计划 → 读盘 → 落盘）+ `src/panel/`（面板：model/tree/entry/edit/dirs/roles/catalog + serve）+ `src/domain/shelf.ts`（书架：`rememberBook` 与 `forgetBook`）+ `src/domain/volumes.ts`（分卷：成员映射、自动划分、壳章纲）+ `src/domain/cards.ts`（章卡：合并式更新、正文里点名的人）+ `client.js`（浏览器半边：树、详情页编辑器、建书、导入、导出、删除弹窗、设置、团队）+ `src/gate.ts`（门禁）。
