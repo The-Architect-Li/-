@@ -65,7 +65,7 @@ import type { CharacterCard, Finding, InkwellConfig, Phase } from '../domain/typ
 import { gateToolCall } from '../gate.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
-import { readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
+import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
   bookKey,
   describeBook,
@@ -1010,7 +1010,7 @@ export async function writeTeam(
  *
  * @param deps - route dependencies.
  * @param sessionId - the calling session, when known.
- * @param kind - `character`, `world`, or `chapter`.
+ * @param kind - `character`, `world`, `chapter`, `card`, `place`, `story`, or `timeline`.
  * @param key - the name, or the chapter number as a string.
  * @param root - an absolute project directory, when the browser named one.
  * @returns status and body.
@@ -1023,8 +1023,18 @@ export async function readEntry(
   root: string | undefined,
 ): Promise<PanelAnswer> {
   try {
-    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter' && kind !== 'place' && kind !== 'story' && kind !== 'timeline') {
-      throw new PanelInputError(`未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／place／story／timeline。`)
+    if (
+      kind !== 'character'
+      && kind !== 'world'
+      && kind !== 'chapter'
+      && kind !== 'card'
+      && kind !== 'place'
+      && kind !== 'story'
+      && kind !== 'timeline'
+    ) {
+      throw new PanelInputError(
+        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline。`,
+      )
     }
     if ((key === undefined || key === '') && kind !== 'timeline') {
       throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
@@ -1035,20 +1045,14 @@ export async function readEntry(
     }
     const snapshot = await store.snapshot()
     const number = Number(key)
-    const drafts: ChapterDrafts[] =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? [{ number, rounds: await store.draftsOf(number) }]
-        : []
+    // A card page needs the prose too: "正文里出现了" compares the outline's cast
+    // against what the chapter actually says.
+    const aboutChapter = (kind === 'chapter' || kind === 'card') && Number.isInteger(number) && number > 0
+    const drafts: ChapterDrafts[] = aboutChapter ? [{ number, rounds: await store.draftsOf(number) }] : []
     // The prose is the chapter page's main body, so it rides along with the page
     // rather than costing the browser a second request to show a preview.
-    const prose =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? (await store.chapter(number))?.text
-        : undefined
-    const reviewRounds =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? await store.reviews(number)
-        : []
+    const prose = aboutChapter ? (await store.chapter(number))?.text : undefined
+    const reviewRounds = kind === 'chapter' && aboutChapter ? await store.reviews(number) : []
     const entry = buildEntry(snapshot, kind as PanelEntryKind, key ?? '', drafts, store.root, prose, reviewRounds)
     if (entry === undefined) {
       return {
@@ -1107,8 +1111,18 @@ export async function writeEntry(
 ): Promise<PanelAnswer> {
   try {
     const kind = body.kind
-    if (kind !== 'character' && kind !== 'world' && kind !== 'chapter' && kind !== 'place' && kind !== 'story' && kind !== 'timeline') {
-      throw new PanelInputError(`未知的条目类型 ${String(kind)}，只支持 character／world／chapter／place／story／timeline。`)
+    if (
+      kind !== 'character'
+      && kind !== 'world'
+      && kind !== 'chapter'
+      && kind !== 'card'
+      && kind !== 'place'
+      && kind !== 'story'
+      && kind !== 'timeline'
+    ) {
+      throw new PanelInputError(
+        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline。`,
+      )
     }
     if (kind === 'timeline') {
       // The start is a setting, not an assertion about a chapter: it says where
@@ -1250,6 +1264,31 @@ export async function writeEntry(
         premise: edit.premise ?? existing.premise,
         notes: edit.notes ?? existing.notes,
       })
+    } else if (kind === 'card') {
+      // The card page owns the recap, the scene and the event list; the prose
+      // has its own page now. `updateCard` is the only writer, so a card edited
+      // here and one edited by `novel_outline action="card"` are the same merge
+      // — including the revision stamp that keeps `stale` honest.
+      const edit = readCardPatch(key, patch)
+      const card = {
+        ...(edit.title === undefined ? {} : { title: edit.title }),
+        ...(edit.story === undefined ? {} : { summary: edit.story }),
+        ...(edit.scene === undefined ? {} : { scene: edit.scene }),
+        ...(edit.events === undefined ? {} : { events: edit.events }),
+      }
+      if (Object.keys(card).length === 0) {
+        throw new PanelInputError('这张卡没有可保存的内容：故事梗概、场景、关键事件至少要填一项。')
+      }
+      try {
+        await updateCard(store, edit.number, card)
+      } catch (error) {
+        if (!(error instanceof MissingPlanError)) throw error
+        // An imported chapter can arrive without an outline. Give it the same
+        // empty shell the volume picker would, then write the card onto it.
+        const written = await store.chapter(edit.number)
+        await store.upsertPlan(shellPlan(edit.number, UNASSIGNED, written))
+        await updateCard(store, edit.number, card)
+      }
     } else {
       const edit = readChapterPatch(key, patch)
       // An imported chapter can arrive with a body but no outline — the book's
@@ -1328,18 +1367,10 @@ export async function writeEntry(
 
     const snapshot = await store.snapshot()
     const number = Number(key)
-    const drafts: ChapterDrafts[] =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? [{ number, rounds: await store.draftsOf(number) }]
-        : []
-    const prose =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? (await store.chapter(number))?.text
-        : undefined
-    const reviewRounds =
-      kind === 'chapter' && Number.isInteger(number) && number > 0
-        ? await store.reviews(number)
-        : []
+    const aboutChapter = (kind === 'chapter' || kind === 'card') && Number.isInteger(number) && number > 0
+    const drafts: ChapterDrafts[] = aboutChapter ? [{ number, rounds: await store.draftsOf(number) }] : []
+    const prose = aboutChapter ? (await store.chapter(number))?.text : undefined
+    const reviewRounds = kind === 'chapter' && aboutChapter ? await store.reviews(number) : []
     const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds)
     return { status: 200, body: { ok: true, data: entry ?? null } }
   } catch (error) {

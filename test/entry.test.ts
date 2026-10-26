@@ -146,7 +146,7 @@ describe('world page', () => {
 })
 
 describe('chapter page', () => {
-  it('describes a committed chapter with its outline', () => {
+  it('is the prose and nothing else', () => {
     const snapshot = book({
       volumes: [volume(1, '雾里的货单')],
       plans: [plan(1, { title: '裂缝', pov: '沈砚', characters: ['沈砚', '阿鸢'], beats: ['发现尸体', '改航向'], hooks: ['岸上有人等他'] })],
@@ -156,24 +156,58 @@ describe('chapter page', () => {
     expect(page?.title).toBe('第1章 裂缝')
     expect(page?.chip).toBe('已完成')
     expect(page?.subtitle).toBe('第1卷 雾里的货单 · 2140 字')
-    expect(page?.fields.find((field) => field.label === '字数')?.value).toBe('2140 字')
-    expect(page?.lists.map((list) => list.label)).toEqual(['出场人物（章纲）', '必写节拍', '章末钩子'])
+    // Everything about the chapter as a card lives on the card page. This page
+    // is where the prose is read and rewritten, and the author asked for these
+    // to stop being in the way of it.
+    expect(page?.fields).toEqual([])
+    expect(page?.lists).toEqual([])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['title'])
+    expect(page?.edit.body?.key).toBe('text')
   })
 
   it('counts drafts when nothing is committed yet', () => {
     const snapshot = book({ plans: [plan(2, { title: '过秤', approved: false })] })
     const page = buildEntry(snapshot, 'chapter', '2', [{ number: 2, rounds: [round(2, 900)] }], ROOT)
     expect(page?.chip).toBe('1 稿')
-    expect(page?.fields.find((field) => field.label === '章纲')?.value).toBe('待批准')
-    expect(page?.fields.find((field) => field.label === '字数')?.value).toBe('900 字（草稿）')
-    // The newest draft's findings are the reason the writer is on round two.
-    expect(page?.lists.find((list) => list.label === '最新一稿的自动发现')?.items).toEqual(['✗ 问题0', '✗ 问题1'])
+    expect(page?.subtitle).toBe('还没写')
   })
 
   it('returns undefined for a chapter that never existed', () => {
     const snapshot = book({ plans: [plan(1)], chapters: [written(1, '裂缝', 100)] })
     expect(buildEntry(snapshot, 'chapter', '9', [], ROOT)).toBeUndefined()
     expect(buildEntry(snapshot, 'chapter', '零', [], ROOT)).toBeUndefined()
+  })
+})
+
+describe('card page', () => {
+  it('holds the outline, the recap, and what the prose actually names', () => {
+    const snapshot = book({
+      characters: [card('沈砚', 'protagonist'), card('阿鸢', 'supporting')],
+      volumes: [volume(1, '雾里的货单')],
+      plans: [
+        plan(1, {
+          title: '裂缝',
+          pov: '沈砚',
+          scene: '码头',
+          summary: '沈砚在雨夜发现一具不该出现的尸体。',
+          events: ['发现尸体', '拿走空白放行单'],
+          characters: ['沈砚', '阿鸢'],
+          beats: ['发现尸体', '改航向'],
+          hooks: ['岸上有人等他'],
+        }),
+      ],
+      chapters: [written(1, '裂缝', 2140)],
+    })
+    const page = buildEntry(snapshot, 'card', '1', [{ number: 1, rounds: [] }], ROOT, '沈砚把头灯举高了些。')
+    expect(page?.kind).toBe('card')
+    expect(page?.title).toBe('第1章 裂缝')
+    expect(page?.breadcrumb).toEqual(['剧情设计', '章卡'])
+    expect(page?.fields.find((field) => field.label === '场景')?.value).toBe('码头')
+    expect(page?.fields.find((field) => field.label === '故事梗概')?.value).toBe('沈砚在雨夜发现一具不该出现的尸体。')
+    expect(page?.lists.map((list) => list.label)).toEqual(['关键事件', '出场人物（章纲）', '正文里出现了', '必写节拍', '章末钩子'])
+    // The outline promises 阿鸢; the prose so far only names 沈砚.
+    expect(page?.lists.find((list) => list.label === '正文里出现了')?.items).toEqual(['沈砚'])
+    expect(page?.edit.inputs.map((input) => input.key)).toEqual(['scene', 'story', 'events'])
   })
 })
 

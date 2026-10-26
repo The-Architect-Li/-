@@ -813,10 +813,42 @@ describe('panel entry route', () => {
     const { base, root } = await serveBook()
     const response = await fetch(`${base}${PANEL_PREFIX}/entry?kind=chapter&key=1&root=${encodeURIComponent(root)}`)
     expect(response.status).toBe(200)
-    const body = (await response.json()) as { data: { title: string; chip: string; lists: Array<{ label: string; items: string[] }> } }
+    const body = (await response.json()) as {
+      data: { title: string; chip: string; fields: unknown[]; lists: unknown[]; edit: { body?: { key: string } } }
+    }
     expect(body.data.title).toBe('第1章 裂缝')
     expect(body.data.chip).toBe('已完成')
+    // The chapter page is the prose and the two buttons; the card has its own.
+    expect(body.data.fields).toEqual([])
+    expect(body.data.lists).toEqual([])
+    expect(body.data.edit.body?.key).toBe('text')
+  })
+
+  it('serves a card page with the beats the outline promised', async () => {
+    const { base, root } = await serveBook()
+    const response = await fetch(`${base}${PANEL_PREFIX}/entry?kind=card&key=1&root=${encodeURIComponent(root)}`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: { lists: Array<{ label: string; items: string[] }> } }
     expect(body.data.lists.find((list) => list.label === '必写节拍')?.items).toEqual(['发现尸体', '改航向'])
+  })
+
+  it('saves a card without touching the prose', async () => {
+    const { base, root } = await serveBook()
+    const before = (await (
+      await fetch(`${base}${PANEL_PREFIX}/entry?kind=chapter&key=1&root=${encodeURIComponent(root)}`)
+    ).json()) as { data: { edit: { body?: { value: string } } } }
+    const response = await post(`${base}${PANEL_PREFIX}/entry?root=${encodeURIComponent(root)}`, {
+      kind: 'card',
+      key: '1',
+      fields: { story: '沈砚在雨夜发现一具不该出现的尸体。' },
+    })
+    expect(response.status).toBe(200)
+    const plans = await new ProjectStore(root).plans()
+    expect(plans[0]?.summary).toBe('沈砚在雨夜发现一具不该出现的尸体。')
+    const after = (await (
+      await fetch(`${base}${PANEL_PREFIX}/entry?kind=chapter&key=1&root=${encodeURIComponent(root)}`)
+    ).json()) as { data: { edit: { body?: { value: string } } } }
+    expect(after.data.edit.body?.value).toBe(before.data.edit.body?.value)
   })
 
   it('answers 404 for a row the book no longer has', async () => {

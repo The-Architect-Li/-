@@ -166,18 +166,6 @@ function chapterChip(plan: ChapterPlan | undefined, written: boolean, rounds: re
 }
 
 /**
- * Biggest findings on the newest draft, one line each.
- *
- * @param rounds - draft rounds for the chapter, oldest first.
- * @returns up to five `severity code: message` lines.
- */
-function newestFindings(rounds: readonly DraftRound[]): string[] {
-  const latest = rounds.at(-1)
-  if (latest === undefined) return []
-  return latest.autoFindings.slice(0, 5).map((finding) => `${finding.severity === 'error' ? '✗' : finding.severity === 'warn' ? '!' : '·'} ${finding.message}`)
-}
-
-/**
  * The character page.
  *
  * The four prose fields and the structural role are editable in the panel; the
@@ -369,11 +357,13 @@ function relationsPage(snapshot: Snapshot, root: string): EntryPayload {
 }
 
 /**
- * The chapter page: outline, state, the prose itself, and what the last draft
- * was told.
+ * The chapter page: the prose, and the two buttons that change it.
  *
- * The prose is the page's main body — a chapter page without the chapter in it
- * would be a spec sheet for something the reader cannot see.
+ * Everything else about a chapter — volume, point of view, scene, whether the
+ * outline was approved, the card — belongs to the card page (`kind: 'card'`).
+ * This page is where a chapter is read and rewritten, so a vertical stack of
+ * facts above the text is in the way of the only thing it is for. It used to
+ * carry all of them; the author said, looking at it, "这些都不要显示".
  *
  * @param snapshot - the book.
  * @param key - the chapter number as a string.
@@ -388,7 +378,6 @@ function chapterPage(
   rounds: readonly DraftRound[],
   root: string,
   body: string | undefined,
-  reviews: readonly ReviewRound[] = [],
 ): EntryPayload | undefined {
   const number = Number(key)
   if (!Number.isInteger(number) || number <= 0) return undefined
@@ -398,22 +387,10 @@ function chapterPage(
   const volume = plan === undefined ? undefined : snapshot.volumes.find((entry) => entry.number === plan.volume)
   const written = chapter !== undefined
   const chip = chapterChip(plan, written, rounds)
-  const findings = newestFindings(rounds)
-  // Reviewer notes are permanent now, so the page shows the ones nobody has
-  // answered yet. The rest stay in `reviews/` and in `novel_chapter review`.
-  const openItems = reviews.flatMap((round) => round.items).filter((item) => item.state === 'open')
-  const totalItems = reviews.reduce((sum, round) => sum + round.items.length, 0)
   // Once a chapter exists its own title wins: the outline names the chapter in
   // advance, but the thing you wrote is what you renamed. Before that, the
   // outline is the only name there is.
   const title = chapter?.title || plan?.title || ''
-  // A promised character who never walks on, and a walk-on nobody planned, are
-  // different facts; the card keeps the promise and this keeps the page.
-  const named = presentInText(body ?? '', snapshot.characters.map((item) => item.name))
-  // A card describes a body. Editing the body does not edit the card, so the
-  // page has to say when the two have come apart — otherwise the recap reads
-  // authoritative while describing text that no longer exists.
-  const stale = cardIsStale(plan, chapter)
   return {
     kind: 'chapter',
     title: `第${number}章 ${title}`.trim(),
@@ -422,15 +399,70 @@ function chapterPage(
       .join(' · '),
     chip,
     breadcrumb: ['正文', volume ? `第${volume.number}卷` : '未分卷'],
+    fields: [],
+    lists: [],
+    edit: {
+      inputs: [{ key: 'title', label: '标题', value: title }],
+      body: { key: 'text', label: '正文', value: body ?? '' },
+      ...(chapter === undefined ? {} : { revision: chapter.revision }),
+    },
+    root,
+  }
+}
+
+/**
+ * The card page: what this chapter is supposed to be, and what it turned out to
+ * be.
+ *
+ * The card is the reading of the prose (recap, events, scene) plus the promise
+ * made before it (beats, hooks, cast). Both are worth editing, and neither
+ * belongs above the prose on the chapter page — a writer opening chapter 40 to
+ * fix a sentence does not want six rows of facts first.
+ *
+ * @param snapshot - the book.
+ * @param key - the chapter number as a string.
+ * @param rounds - that chapter's draft rounds, for the state chip.
+ * @param root - project directory, for the footer.
+ * @param body - the committed prose, for "正文里出现了".
+ * @returns the page, or `undefined` when the chapter is unknown.
+ */
+function cardPage(
+  snapshot: Snapshot,
+  key: string,
+  rounds: readonly DraftRound[],
+  root: string,
+  body: string | undefined,
+): EntryPayload | undefined {
+  const number = Number(key)
+  if (!Number.isInteger(number) || number <= 0) return undefined
+  const plan = snapshot.plans.find((entry) => entry.number === number)
+  const chapter = snapshot.chapters.find((entry) => entry.number === number)
+  if (plan === undefined && chapter === undefined) return undefined
+  const volume = plan === undefined ? undefined : snapshot.volumes.find((entry) => entry.number === plan.volume)
+  const written = chapter !== undefined
+  const title = plan?.title || chapter?.title || ''
+  // A promised character who never walks on, and a walk-on nobody planned, are
+  // different facts; the card keeps the promise and this keeps the page.
+  const named = presentInText(body ?? '', snapshot.characters.map((item) => item.name))
+  // The card describes a body. Editing the body does not edit the card, so the
+  // page has to say when the two have come apart — otherwise the recap reads
+  // authoritative while describing text that no longer exists.
+  const stale = cardIsStale(plan, chapter)
+  return {
+    kind: 'card',
+    title: `第${number}章 ${title}`.trim(),
+    subtitle: [
+      volume ? `第${volume.number}卷 ${volume.title}` : '未分卷',
+      plan === undefined ? '还没有章纲' : plan.approved ? '章纲已批准' : '章纲待批准',
+      written ? `${chapter.words} 字` : '还没写',
+    ].join(' · '),
+    chip: stale ? '章卡过期' : undefined,
+    breadcrumb: ['剧情设计', '章卡'],
     fields: [
-      { label: '状态', value: chip },
-      { label: '分卷', value: volume ? `第${volume.number}卷 ${volume.title}` : '（未分卷）' },
       { label: '视点', value: plan?.pov || '（未定）' },
       { label: '场景', value: plan?.scene || '（未写）' },
-      { label: '章纲', value: plan === undefined ? '（没有章纲）' : plan.approved ? '已批准' : '待批准' },
-      { label: '字数', value: written ? `${chapter.words} 字` : rounds.length > 0 ? `${rounds.at(-1)?.words ?? 0} 字（草稿）` : '0 字' },
       ...(stale
-        ? [{ label: '章卡', value: `过期：卡写在第 ${plan?.cardRevision ?? 1} 版，正文现在是第 ${chapter?.revision ?? 1} 版。下面这四栏（故事梗概/关键事件/场景）说的是改之前的正文，重新保存一次就盖成当前版本。` }]
+        ? [{ label: '章卡', value: `过期：卡写在第 ${plan?.cardRevision ?? 1} 版，正文现在是第 ${chapter?.revision ?? 1} 版。下面这几栏说的是改之前的正文，重新保存一次就盖成当前版本。` }]
         : []),
       ...(plan?.summary ? [{ label: '故事梗概', value: plan.summary }] : []),
     ],
@@ -440,19 +472,13 @@ function chapterPage(
       ...(named.length > 0 ? [{ label: '正文里出现了', items: named }] : []),
       ...(plan?.beats.length ? [{ label: '必写节拍', items: plan.beats }] : []),
       ...(plan?.hooks.length ? [{ label: '章末钩子', items: plan.hooks }] : []),
-      ...(findings.length > 0 ? [{ label: '最新一稿的自动发现', items: findings }] : []),
-      ...(totalItems > 0
-        ? [{ label: `审稿（${openItems.length}/${totalItems} 条未结）`, items: openItems.slice(0, 6).map((item) => `[${item.severity}] ${item.message}　${item.id}`) }]
-        : []),
     ],
     edit: {
       inputs: [
-        { key: 'title', label: '标题', value: title },
         { key: 'scene', label: '场景', value: plan?.scene ?? '' },
         { key: 'story', label: '故事梗概', value: plan?.summary ?? '', multiline: true },
         { key: 'events', label: '关键事件（一行一件）', value: (plan?.events ?? []).join('\n'), multiline: true },
       ],
-      body: { key: 'text', label: '正文', value: body ?? '' },
       ...(chapter === undefined ? {} : { revision: chapter.revision }),
     },
     root,
@@ -690,5 +716,6 @@ export function buildEntry(
   if (kind === 'story') return storyPage(snapshot, key, root)
   if (kind === 'timeline') return timelinePage(snapshot, root)
   const rounds = drafts.find((entry) => entry.number === Number(key))?.rounds ?? []
-  return chapterPage(snapshot, key, rounds, root, body, reviews)
+  if (kind === 'card') return cardPage(snapshot, key, rounds, root, body)
+  return chapterPage(snapshot, key, rounds, root, body)
 }

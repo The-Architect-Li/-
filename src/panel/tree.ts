@@ -43,7 +43,15 @@ export interface PanelRow {
 }
 
 /** The kinds of thing a row can open. */
-export type PanelEntryKind = 'character' | 'world' | 'chapter' | 'place' | 'story' | 'timeline' | 'relations'
+export type PanelEntryKind =
+  | 'character'
+  | 'world'
+  | 'chapter'
+  | 'card'
+  | 'place'
+  | 'story'
+  | 'timeline'
+  | 'relations'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -231,7 +239,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
   const cards: PanelRow[] = snapshot.plans.map((plan) => ({
     id: `plot.card.${plan.number}`,
     label: `第${plan.number}章 ${plan.title}`.trim(),
-    kind: 'chapter',
+    kind: 'card',
     key: String(plan.number),
     chip: plan.approved ? '已批准' : '待批准',
     aside: `${plan.beats.length} 节拍`,

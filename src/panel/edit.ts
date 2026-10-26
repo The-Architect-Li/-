@@ -300,6 +300,54 @@ export function readChapterPatch(key: string, body: Record<string, unknown>): Ch
 const MAX_EVENT_CHARS = 400
 
 /**
+ * What a card page may change.
+ *
+ * The card is edited on its own page now (`kind: 'card'`), so it no longer
+ * arrives stapled to a chapter body. `title` is editable here too: renaming a
+ * chapter is an outline decision, and the card is where the outline is read.
+ */
+export interface CardPatch {
+  number: number
+  title?: string | undefined
+  story?: string | undefined
+  scene?: string | undefined
+  /** What happened, one line each. */
+  events?: string[] | undefined
+  /**
+   * The revision the editor was looking at, when it said.
+   *
+   * Stamping a card with the revision of the prose it describes is what lets
+   * `novel_check action="stale"` notice that the body moved on since.
+   */
+  revision?: number | undefined
+}
+
+/**
+ * Read a card edit posted by the panel.
+ *
+ * @param key - the chapter number, as the tree spells it.
+ * @param body - the `fields` object the browser sent.
+ * @returns the patch.
+ * @throws PanelInputError when the chapter number or a field is unusable.
+ */
+export function readCardPatch(key: string, body: Record<string, unknown>): CardPatch {
+  const number = Number(key)
+  if (!Number.isInteger(number) || number < 1) throw new PanelInputError('章号必须是正整数。')
+  const revision = body.revision === undefined ? undefined : Number(body.revision)
+  if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) {
+    throw new PanelInputError('revision 必须是正整数（页面打开时那一版的版本号）。')
+  }
+  return {
+    number,
+    title: readText(body, 'title', MAX_TITLE_CHARS, '标题'),
+    story: readText(body, 'story', MAX_STORY_CHARS, '故事梗概'),
+    scene: readText(body, 'scene', MAX_TITLE_CHARS, '场景'),
+    events: readLines(body, 'events', MAX_EVENT_CHARS, '关键事件'),
+    revision,
+  }
+}
+
+/**
  * Read a list typed as lines.
  *
  * The panel offers one textarea for "one thing per line" rather than a widget
