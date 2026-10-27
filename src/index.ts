@@ -13,6 +13,7 @@ import { gateToolCall, isInkwellTool } from './gate.ts'
 import { createPanelHandler, PANEL_PREFIX } from './panel/serve.ts'
 import type { LlmCatalogSource } from './panel/ports.ts'
 import { createDeps } from './tools/deps.ts'
+import { registerBackupTool } from './tools/backup.ts'
 import { registerBriefingTool } from './tools/briefing.ts'
 import { registerCanonTool } from './tools/canon.ts'
 import { registerChapterTool } from './tools/chapter.ts'
@@ -71,6 +72,7 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerImportTool(ctx, deps)
   registerStoryTool(ctx, deps)
   registerTimelineTool(ctx, deps)
+  registerBackupTool(ctx, deps)
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()

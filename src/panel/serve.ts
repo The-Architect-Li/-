@@ -48,6 +48,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { bookText, safeFileName, volumeFiles } from '../domain/export.ts'
+import { backupHome, describeBackup, listBackups, packageBook, restoreBook } from '../domain/backup.ts'
 import { setBookStart } from '../domain/book-start.ts'
 import { addAnchor, addAnchors } from '../domain/timeline-edit.ts'
 import { applyImport } from '../domain/import-apply.ts'
@@ -685,6 +686,87 @@ export async function removeBook(deps: PanelDeps, body: Record<string, unknown>)
   await forgetBook(libraryFile(), root)
   await rm(root, { recursive: true, force: true })
   return { status: 200, body: { ok: true, data: { root, title } } }
+}
+
+/**
+ * List, make, or restore a copy of one book.
+ *
+ * Restore goes through `restoreBook`, which takes a copy of the present state
+ * before writing anything — so the button that looks like a one-way door is not
+ * one. The panel is allowed to reach this because the domain module holds the
+ * whole rule: what goes into a copy, how many are kept, and that extras survive.
+ *
+ * @param deps - route dependencies.
+ * @param body - `{ root?, action: 'list'|'make'|'restore', name? }`.
+ * @param pinned - the book named in the query string, when the browser did.
+ * @returns the copies, and what a make or restore did.
+ */
+export async function backupBook(
+  deps: PanelDeps,
+  body: Record<string, unknown>,
+  pinned?: string,
+): Promise<PanelAnswer> {
+  const action = typeof body.action === 'string' ? body.action.trim() : 'list'
+  const named = typeof body.root === 'string' ? body.root.trim() : ''
+  const store = storeFor(deps, undefined, named === '' ? pinned : named)
+  if (!(await store.exists())) {
+    return { status: 404, body: { ok: false, error: { message: `这里不是一本书：${store.root}（没有 project.json）` } } }
+  }
+
+  if (action === 'list') {
+    const backups = (await listBackups(store.root)).map((entry) => ({
+      name: entry.name,
+      at: entry.at,
+      files: entry.files,
+      bytes: entry.bytes,
+      line: describeBackup(entry),
+    }))
+    return { status: 200, body: { ok: true, data: { root: store.root, backups, dir: backupHome(store.root) } } }
+  }
+
+  if (action === 'make') {
+    const made = await packageBook(store.root)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          root: store.root,
+          made: { name: made.entry.name, at: made.entry.at, files: made.entry.files },
+          pruned: made.pruned,
+        },
+      },
+    }
+  }
+
+  if (action !== 'restore') {
+    return { status: 400, body: { ok: false, error: { message: `不知道要做哪件事：${action}（list／make／restore）` } } }
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (name === '') {
+    return { status: 400, body: { ok: false, error: { message: '没有说回到哪一份：name 不能为空。' } } }
+  }
+  try {
+    const result = await restoreBook(store.root, name)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          root: store.root,
+          name: result.name,
+          written: result.written,
+          unchanged: result.unchanged.length,
+          extra: result.extra,
+          safety: result.safety?.name,
+        },
+      },
+    }
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : String(failure)
+    return { status: 400, body: { ok: false, error: { message } } }
+  }
 }
 
 /** What the create dialog did with the manuscript. */
@@ -1537,6 +1619,16 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await removeBook(deps, await readJson(req)))
+        return
+      }
+
+      if (path === '/backup') {
+        const root = url.searchParams.get('root') ?? undefined
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/backup 需要 POST' } } })
+          return
+        }
+        send(res, await backupBook(deps, await readJson(req), root))
         return
       }
 

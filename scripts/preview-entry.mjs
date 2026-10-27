@@ -89,13 +89,12 @@ const lists = page.lists
   .map((list) => `<div ${attr(S.entryListHead)}>${escape(list.label)}</div>${list.items.map((item) => `<div ${attr(S.entryItem)}>· ${escape(item)}</div>`).join('')}`)
   .join('')
 // The prose, drawn the way the panel draws it: one paragraph per line, indented.
+// No heading above it — on the chapter page the prose is the page.
 const proseBlock = (() => {
   const text = page.edit.body?.value ?? ''
   if (text.trim() === '') return ''
   const paragraphs = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
-  return `<div ${attr(S.entryListHead)}>${escape(page.edit.body?.label ?? '正文')}</div>${paragraphs
-    .map((line) => `<div ${attr(S.proseLine)}>${escape(line)}</div>`)
-    .join('')}`
+  return paragraphs.map((line) => `<div ${attr(S.proseLine)}>${escape(line)}</div>`).join('')
 })()
 
 const body = `<div ${attr(S.root)}>

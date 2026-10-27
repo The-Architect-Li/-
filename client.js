@@ -60,6 +60,7 @@ window.__ModuleLoader__.load({
     const API_IMPORT_BOOK = '/api/inkwell/import-book'
     const API_EXPORT = '/api/inkwell/export'
     const API_DELETE_BOOK = '/api/inkwell/delete-book'
+const API_BACKUP = '/api/inkwell/backup'
     const API_VOLUMES = '/api/inkwell/volumes'
 
     /** The one header a write request must carry (CSRF guard, host-side). */
@@ -353,6 +354,30 @@ window.__ModuleLoader__.load({
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ root, dir, format }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * List, make, or restore a copy of one book.
+     *
+     * Restore is the only destructive verb in the panel that knows it: it takes a
+     * copy of the present state first, so even this button can be undone.
+     *
+     * @param root - absolute project root of the book.
+     * @param action - `'list'`, `'make'`, or `'restore'`.
+     * @param name - the copy's file name, for `restore`.
+     * @returns whatever that action answered with.
+     */
+    async function backupBookAt(root, action, name) {
+      const response = await fetch(API_BACKUP, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify(name === undefined ? { root, action } : { root, action, name }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -1195,6 +1220,20 @@ window.__ModuleLoader__.load({
         overflow: 'hidden',
       },
       bookActions: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px 8px', gap: '10px' },
+      // Backups: a short list of copies, each with one quiet action.
+      backupList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        maxHeight: '220px',
+        overflowY: 'auto',
+        margin: '8px 0 2px',
+        border: '1px solid var(--iw-line)',
+        borderRadius: '10px',
+        padding: '4px 10px',
+      },
+      backupRow: { display: 'flex', alignItems: 'center', gap: '8px', minHeight: '28px' },
+      backupLine: { fontSize: '12px', color: 'var(--iw-fg-2)', fontVariantNumeric: 'tabular-nums' },
       linkButton: {
         border: 'none',
         background: 'none',
@@ -1740,7 +1779,7 @@ window.__ModuleLoader__.load({
      * @returns the library element.
      */
     function Library(props) {
-      const { sessionId, lastRoot, onOpen, onNew, onImport, onExport, onDelete, onSettings } = props
+      const { sessionId, lastRoot, onOpen, onNew, onImport, onExport, onBackup, onDelete, onSettings } = props
       const [state, setState] = useState({ status: 'loading' })
       const [tick, setTick] = useState(0)
 
@@ -1797,6 +1836,12 @@ window.__ModuleLoader__.load({
               'button',
               { type: 'button', className: 'iw-link', style: S.linkButton, onClick: () => onExport(book), title: '导出成 txt 或按卷的 markdown' },
               '导出',
+            ),
+            h('span', { style: { ...S.aside, padding: '0 2px' } }, '·'),
+            h(
+              'button',
+              { type: 'button', className: 'iw-link', style: S.linkButton, onClick: () => onBackup(book), title: '给整本书留一份副本，或者退回某一份' },
+              '备份',
             ),
             h('span', { style: { ...S.aside, padding: '0 2px' } }, '·'),
             h(
@@ -2330,6 +2375,90 @@ window.__ModuleLoader__.load({
             afterDelete
               ? '导出成功才会删除；导出失败就停在这里，书还在。'
               : '导出的文件进你刚选的文件夹，书本身不会变。同一个文件夹再导一次会覆盖同名文件。',
+          ),
+        ),
+      )
+    }
+
+    /**
+     * The backup window: what copies exist, make one, or go back to one.
+     *
+     * Restore reads as the scary button, so the dialog says the two things that
+     * make it safe before it is pressed: the current state is copied first, and
+     * files the copy never knew about are kept.
+     *
+     * @param props - the book, its copies, the busy/error state, and callbacks.
+     * @returns the modal overlay.
+     */
+    function BackupDialog(props) {
+      const { book, backups, dir, busy, error, notice, onMake, onRestore, onCancel } = props
+      return h(
+        'div',
+        {
+          className: 'iw-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onCancel()
+          },
+        },
+        h(
+          'div',
+          { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '备份这本书' },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            h('span', { style: S.bookIcon }, '⧉'),
+            h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '备份'),
+            h('span', { style: S.spacer }),
+          ),
+          h('div', { className: 'iw-dialogpath' }, dir === '' || dir === null ? book.root : dir),
+          backups.length === 0
+            ? h('div', { style: S.note }, '这本书还没有副本。打一份会把这本目录下的文件整份存起来——副本不在书里，书被搬走或删掉，副本还在。')
+            : h(
+                'div',
+                { style: S.backupList },
+                ...backups.map((copy) =>
+                  h(
+                    'div',
+                    { key: copy.name, style: S.backupRow },
+                    h('span', { style: S.backupLine }, copy.line),
+                    h('span', { style: S.spacer }),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'iw-link', style: S.linkButton,
+                        disabled: busy,
+                        onClick: () => onRestore(copy.name),
+                        title: copy.name,
+                      },
+                      '回到这一版',
+                    ),
+                  ),
+                ),
+              ),
+          notice ? h('div', { style: S.note }, notice) : null,
+          error ? h('div', { style: S.error }, error) : null,
+          h(
+            'div',
+            { style: S.actions },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn iw-primary',
+                style: S.primaryButton,
+                disabled: busy,
+                onClick: onMake,
+              },
+              busy ? '正在处理…' : '现在备份一次',
+            ),
+            h('span', { style: S.spacer }),
+            h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, disabled: busy, onClick: onCancel }, '关闭'),
+          ),
+          h(
+            'div',
+            { style: S.footer },
+            '回到某一版之前，会先把现在的样子存成一份 pre-restore 副本；那份副本里没有的文件不会被删，会留在报告里。',
           ),
         ),
       )
@@ -3268,8 +3397,9 @@ window.__ModuleLoader__.load({
               .filter((line) => line.trim() !== '')
               .map((line, index) => h('p', { key: `pp${index}`, style: S.proseLine }, line.trim()))
 
-      const prosePreview =
-        prose === null ? null : [h('div', { key: 'ph', style: S.entryListHead }, prose.label), ...paragraphs(prose.value)]
+      // No heading above the prose: on the chapter page the prose is the page,
+      // and a "正文" label over the only thing on screen is furniture.
+      const prosePreview = prose === null ? null : paragraphs(prose.value)
 
       const proseEditor =
         prose === null
@@ -3481,6 +3611,14 @@ window.__ModuleLoader__.load({
       const [deleteFor, setDeleteFor] = useState(null)
       const [deleting, setDeleting] = useState(false)
       const [deleteError, setDeleteError] = useState('')
+      // Backups of one book: the open dialog's book, its copies, and the receipt
+      // of whatever the last press did.
+      const [backupFor, setBackupFor] = useState(null)
+      const [backups, setBackups] = useState([])
+      const [backupDir, setBackupDir] = useState('')
+      const [backupBusy, setBackupBusy] = useState(false)
+      const [backupError, setBackupError] = useState('')
+      const [backupNotice, setBackupNotice] = useState('')
 
       // The interaction sheet goes in once, on first mount of any view: hover,
       // focus and pressed states cannot live in inline styles.
@@ -3732,6 +3870,81 @@ window.__ModuleLoader__.load({
         setDeleteFor(book)
       }, [])
 
+      // 备份 opens a list, because "back up now" alone would leave the writer
+      // without the thing the list is for: finding the copy to go back to.
+      const beginBackup = useCallback((book) => {
+        setBackupFor(book)
+        setBackupError('')
+        setBackupNotice('')
+        setBackups([])
+        setBackupDir('')
+        setBackupBusy(true)
+        backupBookAt(book.root, 'list')
+          .then((data) => {
+            setBackups(Array.isArray(data.backups) ? data.backups : [])
+            setBackupDir(typeof data.dir === 'string' ? data.dir : '')
+            setBackupBusy(false)
+          })
+          .catch((failure) => {
+            setBackupBusy(false)
+            setBackupError(String((failure && failure.message) || failure))
+          })
+      }, [])
+
+      const makeBackup = useCallback(() => {
+        const target = backupFor
+        if (target === null) return
+        setBackupBusy(true)
+        setBackupError('')
+        backupBookAt(target.book.root, 'make')
+          .then((data) => {
+            setBackupBusy(false)
+            setBackupNotice(`存好了：${data.made.name}（${data.made.files} 个文件）。`)
+            return backupBookAt(target.book.root, 'list').then((listed) => {
+              setBackups(Array.isArray(listed.backups) ? listed.backups : [])
+              setBackupDir(typeof listed.dir === 'string' ? listed.dir : '')
+            })
+          })
+          .catch((failure) => {
+            setBackupBusy(false)
+            setBackupError(String((failure && failure.message) || failure))
+          })
+      }, [backupFor])
+
+      const restoreBackup = useCallback(
+        (name) => {
+          const target = backupFor
+          if (target === null) return
+          setBackupBusy(true)
+          setBackupError('')
+          setBackupNotice('')
+          backupBookAt(target.book.root, 'restore', name)
+            .then((data) => {
+              setBackupBusy(false)
+              const written = Array.isArray(data.written) ? data.written.length : 0
+              const extra = Array.isArray(data.extra) ? data.extra.length : 0
+              setBackupNotice(
+                [
+                  `回到 ${name}：写了 ${written} 个文件。`,
+                  typeof data.safety === 'string' ? `恢复前的样子存成了 ${data.safety}。` : '',
+                  extra > 0 ? `另有 ${extra} 个文件那份副本里没有，没有删。` : '',
+                ]
+                  .filter((line) => line !== '')
+                  .join(''),
+              )
+              setNotice(`已回到 ${name}（写了 ${written} 个文件）`)
+              setTick((n) => n + 1)
+              // The page behind the dialog may be showing text that just changed.
+              setDetail(null)
+            })
+            .catch((failure) => {
+              setBackupBusy(false)
+              setBackupError(String((failure && failure.message) || failure))
+            })
+        },
+        [backupFor],
+      )
+
       const submitDelete = useCallback(() => {
         const target = deleteFor
         if (target === null) return
@@ -3917,6 +4130,23 @@ window.__ModuleLoader__.load({
                   setDeleteError('')
                 },
               }),
+          backupFor === null
+            ? null
+            : h(BackupDialog, {
+                book: backupFor.book,
+                backups,
+                dir: backupDir,
+                busy: backupBusy,
+                error: backupError,
+                notice: backupNotice,
+                onMake: makeBackup,
+                onRestore: restoreBackup,
+                onCancel: () => {
+                  setBackupFor(null)
+                  setBackupError('')
+                  setBackupNotice('')
+                },
+              }),
         ].filter((overlay) => overlay !== null)
         if (overlays.length === 0) return element
         return h('div', { style: { display: 'contents' } }, element, ...overlays)
@@ -3931,6 +4161,7 @@ window.__ModuleLoader__.load({
             onNew: () => beginCreate('library'),
             onImport: () => beginImport('library'),
             onExport: (book) => beginExport(book, false),
+            onBackup: beginBackup,
             onDelete: beginDelete,
             onSettings: () => setView('settings'),
           }),
@@ -4180,7 +4411,7 @@ window.__ModuleLoader__.load({
     // question must not be answerable without the confirming checkbox, and the
     // export must not run before a folder has been chosen. Both are state the
     // stub React can render once and inspect.
-    exports.dialogs = { DeleteDialog, ExportDialog, VolumesDialog }
+    exports.dialogs = { BackupDialog, DeleteDialog, ExportDialog, VolumesDialog }
 
     // The chapter picker is the only edit control in the panel that is not a
     // text box, so its "which chapters are picked" arithmetic lives here rather
