@@ -166,4 +166,34 @@ describe('the backup dialog', () => {
     expect(back.every((element) => element.props.disabled === true)).toBe(true)
     expect(buttons.some((element) => labelOf(element).includes('正在处理'))).toBe(true)
   })
+
+  it('survives a book it cannot name instead of taking the panel down', async () => {
+    const exports = await loadClient()
+    const dialogs = exports.dialogs as { BackupDialog: (props: Record<string, unknown>) => Element }
+    // 0.30.0 shipped with the overlay reading `.book` off a book, and the
+    // resulting throw blanked the whole pane. The dialog now says so instead.
+    const rendered = dialogs.BackupDialog({
+      book: undefined,
+      backups: [],
+      dir: '',
+      busy: false,
+      error: '',
+      notice: '',
+      onMake: () => undefined,
+      onRestore: () => undefined,
+      onCancel: () => undefined,
+    })
+    expect(textOf(rendered)).toContain('没拿到书的信息')
+  })
+})
+
+it('hands the backup dialog the book itself, not a wrapper', async () => {
+  // The overlay in `InkwellBody` and the callback that opens it must agree on
+  // the shape: reading `.book` off a book is what blanked the panel in 0.30.0.
+  const source = await readFile(SOURCE, 'utf8')
+  const start = source.indexOf('backupFor === null')
+  expect(start).toBeGreaterThan(0)
+  const block = source.slice(start, start + 400)
+  expect(block).toContain('book: backupFor,')
+  expect(block).not.toContain('backupFor.book')
 })

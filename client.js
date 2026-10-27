@@ -2392,6 +2392,26 @@ const API_BACKUP = '/api/inkwell/backup'
      */
     function BackupDialog(props) {
       const { book, backups, dir, busy, error, notice, onMake, onRestore, onCancel } = props
+      // A dialog that cannot name its book is a bug, but the panel behind it is
+      // somebody's work in progress: say so here instead of letting the throw
+      // take the whole pane down with it.
+      if (!book || typeof book.root !== 'string') {
+        return h(
+          'div',
+          { className: 'iw-backdrop' },
+          h(
+            'div',
+            { className: 'iw-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': '备份' },
+            h('div', { style: S.note }, '这个弹窗没拿到书的信息。关掉它，重开这本书再试一次。'),
+            h(
+              'div',
+              { style: S.actions },
+              h('span', { style: S.spacer }),
+              h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onCancel }, '关闭'),
+            ),
+          ),
+        )
+      }
       return h(
         'div',
         {
@@ -4133,7 +4153,10 @@ const API_BACKUP = '/api/inkwell/backup'
           backupFor === null
             ? null
             : h(BackupDialog, {
-                book: backupFor.book,
+                // `backupFor` is the book itself, not `{ book }` — the overlay
+                // once read `.book` off it and took the whole panel down with an
+                // undefined root.
+                book: backupFor,
                 backups,
                 dir: backupDir,
                 busy: backupBusy,
