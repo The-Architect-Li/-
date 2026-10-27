@@ -107,6 +107,7 @@ Each transition is gated by data, and a refusal names exactly what is missing.
 | `novel_roles` | inspect or set each role's model route and effort | set without a role |
 | `novel_dispatch` | spawn a role subagent (writer/logic/character/chief/keeper); a review returns `shifts` too | wrong phase, unapproved contract, no draft for a reviewer |
 | `novel_export` | whole book as txt, per-volume markdown, or the canon sheet | nothing written yet |
+| `novel_backup` | copies of the whole book: list / make / restore (the present is copied before a restore, and files the copy never knew about are kept) | not a book; restore without naming a copy |
 | `novel_import` | scan an existing manuscript (正文/人物/大纲) read-only, then apply; chapters already in the book are left alone | no such folder, relative path, a needed overwrite without `overwrite=true` |
 | `novel_story` | story points: add an arc, close it, ask which arc a chapter is in, list | an arc is still open, end before start |
 | `novel_timeline` | a start date, anchors, spans, "what day is chapter N", recalls, reading dates out of the prose | an unreadable date or duration; it refuses instead of guessing |
@@ -153,6 +154,25 @@ It reports "this record was read off revision N, the chapter is at M" for cards,
 place states and stages at once, and the character and place pages show the same
 line in the panel. A chapter nobody rewrote never reports anything: an unstamped
 record counts as revision 1.
+
+### Copies live outside the book (v0.30)
+
+The tools have written wrongly. Once a whole character card was rewritten (dropping
+imported material); once a place's per-chapter history was eaten. Both were found and
+fixed, and both say the same thing: one wrong keystroke moving a hundred thousand words
+to a different version is not a hypothetical.
+
+- **The copies are not in the book.** `~/.dsh/inkwell/backups/待定v2-3f9c1a7b/`. Inside
+  the book they would be packed into the next copy and would dirty the author's folder;
+  outside it they survive the book being moved or deleted.
+- **The present is copied first.** Every `restore` takes a `pre-restore-…` copy, so
+  "I restored the wrong one" has an answer too.
+- **A restore does not delete.** It writes the files the copy has; a chapter you wrote
+  afterwards is not in that copy, so it stays and is named in the report.
+- **The zip is an ordinary zip** (stored, CRC32, UTF-8 flag), so Explorer,
+  `Expand-Archive` and macOS all open it — measured on a real book: 97 files, 1139 KB,
+  85 chapters out.
+- Twenty ordinary copies are kept.
 
 ### The chapter page is the chapter (v0.29)
 
@@ -354,7 +374,7 @@ Pick one and you get that book's tree:
   resolves the book from the session's pin, else its `cwd`, so switching sessions
   switches books.
 - **Optional.** The route mounts through `ctx.inject(['webServer'])`; a headless
-  profile has no web server and still gets all thirteen tools.
+  profile has no web server and still gets all fourteen tools.
 
 The host routes, polled by the browser half:
 
@@ -375,6 +395,7 @@ POST /api/inkwell/import                  # { dir } put that manuscript into thi
 POST /api/inkwell/import-book             # { dir, title?, targetWords? } build the book and fill it
 POST /api/inkwell/export                  # { root, dir, format } write one book into a folder you chose
 POST /api/inkwell/delete-book             # { root } remove that book's .novel directory
+POST /api/inkwell/backup                  # { root, action, name? } list / make / restore one book's copies
 GET  /api/inkwell/volumes?root=<abs>      # which volume each chapter is in, and the ones in none
 POST /api/inkwell/volumes                 # { root, action: "assign"|"split", chapters?, volume?, perVolume? }
 ```

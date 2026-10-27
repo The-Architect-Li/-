@@ -101,7 +101,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 你：novel_ledger action="record" subject="沈砚" predicate="左眼颜色" value="黑" chapter=1 quote="他的左眼黑得像井"
 ```
 
-## 十三个工具
+## 十四个工具
 
 | 工具 | 作用 | 会拒绝你的情况 |
 |---|---|---|
@@ -115,6 +115,7 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
 | `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核/状态维护员）；审稿结果带 `shifts` | 阶段不对、章纲未批准、审核时无草稿 |
 | `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
+| `novel_backup` | 给整本书留副本：list / make / restore（恢复前先存当下，且不删副本里没有的文件） | 这里还不是一本书；restore 没说要回到哪一份 |
 | `novel_import` | scan 只读盘点已有稿件（正文/人物/大纲），apply 才写入；已存在的章默认不覆盖 | 目录不存在、不是绝对路径、同名章没给 overwrite |
 | `novel_story` | 故事点：add 开一段 / close 收尾 / at 查某章属于哪段 / list 全列 | 上一段没收尾就 add；结束章比开始章还早 |
 | `novel_timeline` | 时间线：start 钉起点 / anchor 钉日期 / span 记跨度 / scan 读正文找日期 / adopt 把它写进去 / at 问第 N 章哪天 / recall 记回忆 | 日期或时长解析不了、算不出来就报错，不猜 |
@@ -168,7 +169,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
 
 设计要点：审核只报告不改正文，全流水线只有写手动笔；确定性体检免费先跑（账本能拦的时间地点冲突不用花 token），模型审核只判代码判不了的（出戏、因果）；草稿和章节是两个状态，没点头不进 chapters。
 
-## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线 → v0.15 独立导入 → v0.16 导出与删除 → v0.17 分卷与虚拟列表 → v0.18 章卡是总结 → v0.19 角色卡是档案 → v0.20 卡过期与审稿窗口 → v0.21 关系是一张表 → v0.22 时间线是一条线 → v0.23 日期从正文里读 → v0.24 关系与地点进上下文包 → v0.25 批量打日期 → v0.26 问一句记一笔 → v0.28 记录会过期 → v0.29 正文页只有正文）
+## 右侧栏的小说工坊（v0.4 仪表盘 → v0.5 抽屉树 + 建书 → v0.6 团队与模型 → v0.7 详情页 → v0.8 就地编辑 → v0.9 书库 → v0.12 建书时导入旧稿 → v0.13 重做外观 → v0.14 地点/故事点/时间线 → v0.15 独立导入 → v0.16 导出与删除 → v0.17 分卷与虚拟列表 → v0.18 章卡是总结 → v0.19 角色卡是档案 → v0.20 卡过期与审稿窗口 → v0.21 关系是一张表 → v0.22 时间线是一条线 → v0.23 日期从正文里读 → v0.24 关系与地点进上下文包 → v0.25 批量打日期 → v0.26 问一句记一笔 → v0.28 记录会过期 → v0.29 正文页只有正文 → v0.30 副本）
 
 面板挂在 Web 界面右侧 Sidebar 里，作为一个 tab 类型（`ctx.sidebarRightTabs.register`），不是另开一列——右侧只有一条栏，抢占位置会把整栏挤走。
 
@@ -239,6 +240,10 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   「先导出，再删除」（导出成功才删；导出失败就停在那里，书还在），另一个入口要先勾
   「我确认不要这本书了，直接删除」。删除只删 `.novel` 那个目录，原稿文件夹不动；服务端也拒绝任何
   结尾不是 `.novel` 的路径，删书没有顺手动到原稿的机会。
+- **备份这本书**（v0.30）：书卡下面第三个「备份」，点开是一份副本列表——每一行是
+  `2026-10-27T19:36:05 · 97 个文件 · 1139 KB`，右边「回到这一版」。副本不在书里，在状态目录下按书分开
+  （`~/.dsh/inkwell/backups/待定v2-3f9c1a7b/`），所以书被搬走、被删掉，副本还在。恢复前会先给当下打一份
+  `pre-restore-` 副本；恢复只写副本里有的文件，副本里没有的文件留在原处并在报告里列出来。
 - **分卷是可以改的**（v0.17）：树头「分卷」按钮打开一个弹窗，两种用法——自动模式填「每卷几章」
   按一下就划好（`action: "split"`），手动模式列出全部章节、勾选后选「归到第几卷」或「未分卷」
   （`action: "assign"`，`volume: null` 就是拿回未分卷）。卷号只写回每章的章纲（`plan.volume`），
@@ -248,7 +253,7 @@ novel_roles action="set" role="writer" reasoningEffort=""        # 空字符串 
   「正文」下面三百章不会再是三百个节点，滚动条也回到一屏之内。
 - **零 token。** 快照由 `src/panel/model.ts`、页面由 `src/panel/entry.ts`、书库行由 `src/panel/library.ts` 从磁盘数据算得，不调模型。
 - **跟着会话走。** `perWorkspace` 开启时，面板按会话 `cwd` 定位书；切会话就换书。
-- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 13 个工具，只是没有面板。
+- **可以没有。** 路由经 `ctx.inject(['webServer'])` 挂载，headless profile 里没有 web 服务，插件照样装载 14 个工具，只是没有面板。
 
 宿主侧接口：
 
@@ -269,11 +274,12 @@ POST /api/inkwell/import                # { dir } 把稿子导进当前这本
 POST /api/inkwell/import-book           # { dir, title?, targetWords? } 建书 + 导入，一次做完
 POST /api/inkwell/export                # { root, dir, format } 把一本书导到你选的文件夹
 POST /api/inkwell/delete-book           # { root } 删掉这本书的 .novel 目录（先从书架摘掉）
+POST /api/inkwell/backup                # { root, action, name? } list／make／restore 一本书的副本
 GET  /api/inkwell/volumes?root=<绝对路径>  # 每章现在在第几卷，以及未分卷的那些
 POST /api/inkwell/volumes               # { root, action: "assign"|"split", chapters?, volume?, perVolume? }
 ```
 
-`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles`、`/volumes` 的读法只认 GET，非 GET 一律 405；写有六扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目、`/export` 导出、`/delete-book` 删书、`/volumes` 分卷，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。`/delete-book` 只接受结尾是 `.novel` 的绝对路径：删的是插件的书目录，不是你的原稿文件夹。`/volumes` 的 `action: "assign"` 里 `volume: null` 就是「拿回未分卷」；`"split"` 只写卷号，不删章节，也不会清掉上一轮划出来的卷。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
+`/snapshot`、`/books`、`/dirs`、`/entry`、`/roles`、`/volumes` 的读法只认 GET，非 GET 一律 405；写有七扇门：`/init` 建书、`/roles` 选模型、`/entry` 改一条已存在的条目、`/export` 导出、`/delete-book` 删书、`/backup` 副本、`/volumes` 分卷，且都必须带 `x-dsh-plugin: inkwell` 头——简单表单跨站提交带不上这个头。`/delete-book` 只接受结尾是 `.novel` 的绝对路径：删的是插件的书目录，不是你的原稿文件夹。`/backup` 的 `action: "restore"` 会先给当下打一份 `pre-restore-` 副本，且不删副本里没有的文件。`/volumes` 的 `action: "assign"` 里 `volume: null` 就是「拿回未分卷」；`"split"` 只写卷号，不删章节，也不会清掉上一轮划出来的卷。推进阶段、批准章纲、定稿、记账本事实仍然只有工具能做：「谁能改」还是那一个门禁。已经不存在的东西 `/entry` 返回 404 而不是空白页：挂着一张旧树时，该被告知刷新。
 
 ### 设置 → 智能体团队（v0.6）
 
@@ -440,6 +446,18 @@ novel_check action="stale"
 ```
 
 一次报全「这条记录写在第 N 版正文上，现在是第 M 版」。角色页与地点页上也会多出一行「记录过期」，不用等你想起去查。没改过的章永远不会误报——没盖过版本号的记录按第 1 版算。
+
+## 副本在书外（v0.30）
+
+工具会写错。它以前把整张角色卡重写过一次（丢掉导入的材料），把地点的按章状态吃掉过一次——都是发现后修好的，但两件事都说明「按错一个键，几十万字换了个版本」不是假想。
+
+现在每本书都能打副本：`novel_backup action="make"`，或者面板书卡下面的「备份」。
+
+- **副本不在书里**：`~/.dsh/inkwell/backups/待定v2-3f9c1a7b/`。放书里的话下一次备份会把它一起打包，也会弄脏你的文件夹；书被搬走或删掉，副本还在。
+- **恢复前先存当下**：每次 `restore` 都先打一份 `pre-restore-…`，所以「恢复错了」也有退路。
+- **恢复不删东西**：只写副本里有的文件。你后来新写的第 86 章不在副本里，它不会被删掉，只在报告里被点名列出来。
+- **zip 是普通 zip**：自己写的（store 不压缩 + CRC32 + UTF-8 标志），Windows 资源管理器、`Expand-Archive`、macOS 都能直接打开——真机验过，97 个文件、1139 KB、解出 85 章。
+- 普通备份保留最新 20 份。
 
 ## 正文页只有正文（v0.29）
 
