@@ -108,29 +108,29 @@ describe('the writer brief', () => {
   })
 })
 
-describe('creating a chapter by hand', () => {
-  /** Walk a book to drafting, the shortest legal path the gate accepts. */
-  async function drafting(harness: Harness): Promise<void> {
-    valueOf(await harness.call('novel_project', { action: 'init', title: '雾港' }))
-    valueOf(await harness.call('novel_project', {
-      action: 'premise',
-      premise: '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4),
-    }))
-    valueOf(await harness.call('novel_project', { action: 'advance' }))
-    valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '沈砚', role: 'protagonist', voice: '短句' }))
-    valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '阿鸢', role: 'supporting', voice: '快' }))
-    valueOf(await harness.call('novel_canon', { action: 'upsert_world', name: '雾港', kind: '地点', detail: '终年起雾' }))
-    valueOf(await harness.call('novel_project', { action: 'advance' }))
-    valueOf(await harness.call('novel_outline', { action: 'add_volume', number: 1, title: '入港' }))
-    valueOf(await harness.call('novel_outline', { action: 'approve_volume', number: 1 }))
-    valueOf(await harness.call('novel_outline', {
-      action: 'add_chapter', number: 1, pov: '沈砚', characters: ['沈砚'],
-      beats: ['沈砚发现船底藏着尸体', '阿鸢承认改过航向'],
-    }))
-    valueOf(await harness.call('novel_outline', { action: 'approve_chapter', number: 1 }))
-    valueOf(await harness.call('novel_project', { action: 'advance' }))
-  }
+/** Walk a book to drafting, the shortest legal path the gate accepts. */
+async function drafting(harness: Harness): Promise<void> {
+  valueOf(await harness.call('novel_project', { action: 'init', title: '雾港' }))
+  valueOf(await harness.call('novel_project', {
+    action: 'premise',
+    premise: '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4),
+  }))
+  valueOf(await harness.call('novel_project', { action: 'advance' }))
+  valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '沈砚', role: 'protagonist', voice: '短句' }))
+  valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '阿鸢', role: 'supporting', voice: '快' }))
+  valueOf(await harness.call('novel_canon', { action: 'upsert_world', name: '雾港', kind: '地点', detail: '终年起雾' }))
+  valueOf(await harness.call('novel_project', { action: 'advance' }))
+  valueOf(await harness.call('novel_outline', { action: 'add_volume', number: 1, title: '入港' }))
+  valueOf(await harness.call('novel_outline', { action: 'approve_volume', number: 1 }))
+  valueOf(await harness.call('novel_outline', {
+    action: 'add_chapter', number: 1, pov: '沈砚', characters: ['沈砚'],
+    beats: ['沈砚发现船底藏着尸体', '阿鸢承认改过航向'],
+  }))
+  valueOf(await harness.call('novel_outline', { action: 'approve_chapter', number: 1 }))
+  valueOf(await harness.call('novel_project', { action: 'advance' }))
+}
 
+describe('creating a chapter by hand', () => {
   it('refuses before drafting, naming what is missing', async () => {
     const base = await book()
     const response = await write(base, '/chapter-plan', {})
@@ -214,5 +214,23 @@ describe('creating canon by hand', () => {
     const base = await book()
     const response = await write(base, '/new', { kind: 'character', fields: { name: '阿鸢', role: '神仙' } })
     expect(response.status).toBe(400)
+  })
+})
+
+describe('a writing note reaches the writer', () => {
+  it('shows up in the brief the panel hands out', async () => {
+    const base = await book()
+    await drafting(harness!)
+    await write(base, '/entry', {
+      kind: 'skill',
+      key: '开篇钩子',
+      text: '# 开篇钩子\n\n前三句里必须有一个问题。',
+    })
+
+    const response = await write(base, '/card', { number: 1 })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as { data: { text: string } }
+    expect(payload.data.text).toContain('写作笔记')
+    expect(payload.data.text).toContain('前三句里必须有一个问题')
   })
 })

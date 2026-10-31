@@ -19,6 +19,7 @@ import { describeWindow, resolveTimeline, windowAt } from './clock.ts'
 import { activeEntries } from './ledger.ts'
 import { describeRelation, relationsOf } from './relations.ts'
 import { countChars, tailOf } from './text.ts'
+import type { SkillExcerpt } from './skills.ts'
 
 /** One candidate block of the pack. */
 export interface BriefingSection {
@@ -171,6 +172,7 @@ function collectSections(
   drafts: ChapterDraft[],
   chapter: number,
   config: InkwellConfig,
+  skills: readonly SkillExcerpt[] = [],
 ): BriefingSection[] {
   const plan: ChapterPlan | undefined = snapshot.plans.find((item) => item.number === chapter)
   const previous = drafts.filter((item) => item.number < chapter).sort((a, b) => b.number - a.number)
@@ -213,6 +215,19 @@ function collectSections(
       ? castNames.map((name) => formatCharacter(snapshot, name)).join('\n')
       : '（还没有角色卡，先补齐再动笔）',
   })
+
+  if (skills.length > 0) {
+    sections.push({
+      name: '写作笔记',
+      priority: 4,
+      chars: 0,
+      kept: true,
+      content: [
+        '这本书自己的手法（不是设定，是「怎么写」）：',
+        ...skills.map((note) => `### ${note.title}\n${note.text}`),
+      ].join('\n\n'),
+    })
+  }
 
   sections.push({
     name: '上一章结尾',
@@ -293,8 +308,9 @@ export function buildBriefing(
   drafts: ChapterDraft[],
   chapter: number,
   config: InkwellConfig,
+  skills: readonly SkillExcerpt[] = [],
 ): BriefingResult {
-  const candidates = collectSections(snapshot, drafts, chapter, config).sort(
+  const candidates = collectSections(snapshot, drafts, chapter, config, skills).sort(
     (a, b) => a.priority - b.priority,
   )
 

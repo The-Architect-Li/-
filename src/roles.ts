@@ -7,6 +7,7 @@
  * role is a prompt edit, not a bundle republish.
  */
 import { buildBriefing } from './domain/briefing.ts'
+import type { SkillExcerpt } from './domain/skills.ts'
 import { mergeField } from './domain/fields.ts'
 import { activeEntries, factsAbout, formatFact } from './domain/ledger.ts'
 import { countChars } from './domain/text.ts'
@@ -200,9 +201,10 @@ export function buildWriterPrompt(
   chapter: number,
   config: InkwellConfig,
   directive: string,
+  skills: readonly SkillExcerpt[] = [],
 ): string {
   const plan = snapshot.plans.find((item) => item.number === chapter)
-  const pack = buildBriefing(snapshot, drafts, chapter, config)
+  const pack = buildBriefing(snapshot, drafts, chapter, config, skills)
   return [
     `${ROLES.writer.persona}`,
     '',

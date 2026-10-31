@@ -83,7 +83,7 @@ import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelS
 import type { LlmCatalogSource } from './ports.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
-import { listSkills, readSkill, writeSkill } from '../domain/skills.ts'
+import { listSkills, readSkill, skillExcerpts, writeSkill } from '../domain/skills.ts'
 import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
 import { buildWriterPrompt } from '../roles.ts'
 import { skillPage } from './entry.ts'
@@ -1392,7 +1392,7 @@ export async function cardRoute(
     if (!snapshot.plans.some((plan) => plan.number === number)) {
       throw new PanelInputError(`第${number}章还没有章纲，写不出派单书。先 novel_outline add_chapter。`, 409)
     }
-    const text = buildWriterPrompt(snapshot, await store.allChapters(), number, deps.config, '')
+    const text = buildWriterPrompt(snapshot, await store.allChapters(), number, deps.config, '', await skillExcerpts(store.root))
     return { status: 200, body: { ok: true, data: { number, text } } }
   } catch (error) {
     return failure(error)

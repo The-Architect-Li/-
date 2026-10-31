@@ -32,6 +32,13 @@ export interface SkillNote {
   chars: number
 }
 
+/** One note as the context pack quotes it: a title and the head of the body. */
+export interface SkillExcerpt {
+  name: string
+  title: string
+  text: string
+}
+
 /** Strip anything that would change which file we are talking about. */
 export function normaliseSkillName(raw: string): string {
   const clean = String(raw ?? '')
@@ -96,6 +103,33 @@ export async function writeSkill(root: string, name: string, text: string): Prom
   await writeFile(temp, body, 'utf8')
   await rename(temp, file)
   return { name: clean, title: titleOf(clean, body), chars: body.length }
+}
+
+/**
+ * Every note, trimmed to a readable head, for the context pack.
+ *
+ * A note is a rule, not a chapter: the head is where the rule is stated, and
+ * the rest is usually examples. Six hundred characters is enough to carry
+ * "第一句必须留一个问题" and the two lines that qualify it, and it keeps six
+ * notes inside a budget that also has to hold the cast and the contract.
+ *
+ * @param root - project directory.
+ * @param perNote - characters kept from each note.
+ * @returns one excerpt per note, in list order.
+ */
+export async function skillExcerpts(root: string, perNote = 600): Promise<SkillExcerpt[]> {
+  const notes = await listSkills(root)
+  const out: SkillExcerpt[] = []
+  for (const note of notes) {
+    const text = (await readSkill(root, note.name)) ?? ''
+    const body = text.replace(/^#\s.*(\r?\n)?/, '').trim()
+    out.push({
+      name: note.name,
+      title: note.title,
+      text: body.length > perNote ? `${body.slice(0, perNote)}…` : body,
+    })
+  }
+  return out
 }
 
 /** Delete one note. Returns whether there was one to delete. */

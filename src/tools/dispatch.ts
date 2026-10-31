@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { countChars } from '../domain/text.ts'
+import { skillExcerpts } from '../domain/skills.ts'
 import { buildReviewWindow } from '../domain/review-window.ts'
 import type { ToolDeps } from './deps.ts'
 import {
@@ -151,7 +152,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       // spawn. Useful when the author wants to hand the job to another session,
       // keep the brief, or read what the writer is about to be told.
       if (args.action === 'card') {
-        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '')
+        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '', await skillExcerpts(store.root))
         return {
           role: 'writer',
           number,
@@ -170,7 +171,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       const routeText = describeRoute(route)
 
       if (roleId === 'writer') {
-        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '')
+        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '', await skillExcerpts(store.root))
         const text = await runRole(ctx, role.persona, prompt, exec, route)
         const words = countChars(text)
         return {
