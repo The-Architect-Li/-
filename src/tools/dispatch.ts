@@ -11,7 +11,7 @@ import {
   buildChiefPrompt,
   buildKeeperPrompt,
   buildReviewerPrompt,
-  buildWriterPrompt,
+  buildWriterBrief,
   describeRoute,
   parseKeeperOutput,
   parseReviewerOutput,
@@ -152,7 +152,14 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       // spawn. Useful when the author wants to hand the job to another session,
       // keep the brief, or read what the writer is about to be told.
       if (args.action === 'card') {
-        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '', await skillExcerpts(store.root))
+        const brief = buildWriterBrief({
+          snapshot,
+          drafts,
+          chapter: number,
+          config: deps.config,
+          directive: args.directive ?? '',
+          skills: await skillExcerpts(store.root),
+        })
         return {
           role: 'writer',
           number,
@@ -161,8 +168,9 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           report: [
             `派单书 · 第${number}章（写给写手；复制下面全文即可，不会真的派出）`,
             `模型：${describeRoute(resolveRoleRoute('writer', deps.config, snapshot.project.roles))}`,
+            ...(brief.warnings.length > 0 ? ['', '【注意：这几项没能进包】', ...brief.warnings.map((line) => `- ${line}`)] : []),
             '',
-            prompt,
+            brief.text,
           ].join('\n'),
         }
       }
@@ -171,8 +179,15 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       const routeText = describeRoute(route)
 
       if (roleId === 'writer') {
-        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '', await skillExcerpts(store.root))
-        const text = await runRole(ctx, role.persona, prompt, exec, route)
+        const brief = buildWriterBrief({
+          snapshot,
+          drafts,
+          chapter: number,
+          config: deps.config,
+          directive: args.directive ?? '',
+          skills: await skillExcerpts(store.root),
+        })
+        const text = await runRole(ctx, role.persona, brief.text, exec, route)
         const words = countChars(text)
         return {
           role: roleId,
@@ -181,6 +196,7 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           words,
           report: [
             `写手已交稿（${words} 字，模型 ${routeText}）。`,
+            ...(brief.warnings.length > 0 ? ['', '【这一章有几项要求没能进包】', ...brief.warnings.map((line) => `- ${line}`)] : []),
             '下一步：novel_chapter action="propose" 把稿子落成草稿并跑自动体检，再派审核。',
           ].join('\n'),
         }

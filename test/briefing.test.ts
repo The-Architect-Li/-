@@ -141,6 +141,30 @@ describe('buildBriefing', () => {
     expect(result.markdown).toContain('说话方式')
   })
 
+  it('says so when the notes did not fully fit, instead of dropping them quietly', () => {
+    // The failure this guards: the author writes a rule, believes it is in force,
+    // and the writer never saw it. Silence is the wrong answer.
+    const notes = Array.from({ length: 6 }, (_, index) => ({
+      name: `note-${index}`,
+      title: `笔记${index}`,
+      text: '这一条很长的规则，用来把预算挤满。'.repeat(40),
+    }))
+    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig({ briefingBudgetChars: 900 }), notes)
+    expect(result.warnings.join('\n')).toContain('写作笔记')
+    expect(result.warnings.join('\n')).toContain('没能完整进包')
+  })
+
+  it('stays quiet when everything fit', () => {
+    const result = buildBriefing(
+      snapshot(),
+      drafts(),
+      3,
+      resolveConfig(),
+      [{ name: '开篇钩子', title: '开篇钩子', text: '前三句里必须有一个问题。' }],
+    )
+    expect(result.warnings).toEqual([])
+  })
+
   it('warns when there is no outline instead of inventing one', () => {
     const state = snapshot()
     state.plans = []

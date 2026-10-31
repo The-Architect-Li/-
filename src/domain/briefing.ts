@@ -37,6 +37,14 @@ export interface BriefingResult {
   sections: BriefingSection[]
   totalChars: number
   budgetChars: number
+  /**
+   * Plain sentences about rules that did not make it in.
+   *
+   * A section that gets squeezed out used to disappear without a word, and the
+   * author went on believing the style rule applied. Silence is the one answer
+   * this must never give.
+   */
+  warnings: string[]
 }
 
 function formatCharacter(snapshot: Snapshot, name: string): string {
@@ -316,6 +324,10 @@ export function buildBriefing(
 
   let remaining = config.briefingBudgetChars
   const kept: BriefingSection[] = []
+  /** What did not fit, in the sections' own words. */
+  const warnings: string[] = []
+  /** Style rules that never reached the writer, which is the one thing that must be said out loud. */
+  const lostNotes: string[] = []
   for (const section of candidates) {
     if (section.chars <= remaining) {
       kept.push({ ...section, kept: true })
@@ -328,11 +340,24 @@ export function buildBriefing(
     const allowance = Math.max(remaining, floor)
     if (allowance < 120) {
       kept.push({ ...section, kept: false, content: '' })
+      if (section.name === '写作笔记') lostNotes.push('整段')
+      else warnings.push(`「${section.name}」没有装进这一章的包（预算不够）。`)
       continue
     }
     const cut = section.content.slice(0, allowance)
     kept.push({ ...section, kept: true, content: `${cut}\n…（已截断，原文 ${section.chars} 字）`, chars: countChars(cut) })
+    if (section.name === '写作笔记') lostNotes.push(`只装进前 ${allowance} 字，原文 ${section.chars} 字`)
     remaining = Math.max(0, remaining - allowance)
+  }
+
+  // Notes are rules the author expects the writer to follow. Saying nothing when
+  // they did not fit reads as "the rule is in effect" — the exact misunderstanding
+  // `写作笔记` exists to prevent.
+  if (lostNotes.length > 0) {
+    warnings.push(
+      `写作笔记没能完整进包（${lostNotes.join('；')}）。这一章写手只看到了一部分手法要求，`
+        + '剩下那部分是它自己发挥。要么把笔记写短一点（每篇 600 字以内），要么把 briefingBudgetChars 调大。',
+    )
   }
 
   const markdown = kept
@@ -345,5 +370,6 @@ export function buildBriefing(
     sections: kept,
     totalChars: kept.reduce((sum, section) => sum + section.chars, 0),
     budgetChars: config.briefingBudgetChars,
+    warnings,
   }
 }

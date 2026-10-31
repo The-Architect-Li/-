@@ -67,6 +67,7 @@ export function registerBriefingTool(ctx: Context, deps: ToolDeps): void {
         ),
         report: [
           `第${chapter}章上下文包：${result.totalChars}/${result.budgetChars} 字。`,
+          ...(result.warnings.length > 0 ? ['', '【没装进去的】', ...result.warnings.map((line) => `- ${line}`)] : []),
           '',
           result.markdown,
           ...owed,

@@ -219,6 +219,39 @@ export function buildWriterPrompt(
 }
 
 /**
+ * The writer's prompt plus what the pack could not fit.
+ *
+ * Separate from {@link buildWriterPrompt} because the prompt is handed to a
+ * child that has no way to report back what it never received, while the
+ * warnings belong to whoever asked for the dispatch — the author.
+ *
+ * @param args - same arguments as {@link buildWriterPrompt}.
+ * @returns the prompt, and one sentence per rule that did not make it in.
+ */
+export function buildWriterBrief(args: {
+  snapshot: Snapshot
+  drafts: ChapterDraft[]
+  chapter: number
+  config: InkwellConfig
+  directive: string
+  skills: readonly SkillExcerpt[]
+}): { text: string; warnings: string[] } {
+  const pack = buildBriefing(args.snapshot, args.drafts, args.chapter, args.config, args.skills)
+  const text = [
+    `${ROLES.writer.persona}`,
+    '',
+    '## 本章上下文包',
+    pack.markdown,
+    '',
+    '## 你的任务',
+    args.directive.trim() || '按上下文包和章纲合同写本章正文。',
+    '',
+    ROLES.writer.outputContract,
+  ].join('\n')
+  return { text, warnings: pack.warnings }
+}
+
+/**
  * Build a reviewer's self-contained prompt. The draft text and the relevant
  * canon are embedded so the reviewer needs no parent context and no tools.
  */

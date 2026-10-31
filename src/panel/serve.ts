@@ -85,7 +85,7 @@ import type { PanelEntryKind } from './tree.ts'
 import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
 import { listSkills, readSkill, skillExcerpts, writeSkill } from '../domain/skills.ts'
 import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
-import { buildWriterPrompt } from '../roles.ts'
+import { buildWriterBrief } from '../roles.ts'
 import { skillPage } from './entry.ts'
 
 /** Route prefix the browser half fetches under. */
@@ -1392,8 +1392,22 @@ export async function cardRoute(
     if (!snapshot.plans.some((plan) => plan.number === number)) {
       throw new PanelInputError(`第${number}章还没有章纲，写不出派单书。先 novel_outline add_chapter。`, 409)
     }
-    const text = buildWriterPrompt(snapshot, await store.allChapters(), number, deps.config, '', await skillExcerpts(store.root))
-    return { status: 200, body: { ok: true, data: { number, text } } }
+    const brief = buildWriterBrief({
+      snapshot,
+      drafts: await store.allChapters(),
+      chapter: number,
+      config: deps.config,
+      directive: '',
+      skills: await skillExcerpts(store.root),
+    })
+    // The warnings ride on top of the card, not below it: this panel is read as
+    // "what will the writer be told", and a rule that did not fit changes that
+    // answer enough that it belongs before the text.
+    const text =
+      brief.warnings.length === 0
+        ? brief.text
+        : ['【注意：这几项没能进这一章的包】', ...brief.warnings.map((line) => `- ${line}`), '', '───', '', brief.text].join('\n')
+    return { status: 200, body: { ok: true, data: { number, text, warnings: brief.warnings } } }
   } catch (error) {
     return failure(error)
   }
