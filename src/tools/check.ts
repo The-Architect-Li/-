@@ -8,6 +8,7 @@ import { chapterRanges, describeCoverage, recordCoverage } from '../domain/recor
 import { checkRelations } from '../domain/relations.ts'
 import { scanChapter } from '../domain/scan.ts'
 import { staleRecords } from '../domain/staleness.ts'
+import { STALE_AFTER, openThreads, staleThreads } from '../domain/threads.ts'
 import type { Finding } from '../domain/types.ts'
 import { auditLedger } from './ledger.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
@@ -30,8 +31,8 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       action: {
         type: 'string',
         required: true,
-        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'stale', 'relations', 'all'],
-        description: '检查类型',
+        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'stale', 'relations', 'threads', 'all'],
+        description: '检查类型；threads 报「埋了超过 30 章还没收」的伏笔',
       },
       number: { type: 'number', description: '章号；all 时可省略，省略则检查全书' },
     },
@@ -55,6 +56,13 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
 
       if (args.action === 'ledger' || args.action === 'all') {
         findings.push(...auditLedger(snapshot.ledger, drafts.length))
+      }
+
+      if (args.action === 'all') {
+        // Part of the full pass: a promise nobody remembers to keep is exactly
+        // the kind of thing a full pass exists to surface.
+        const last = snapshot.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+        findings.push(...staleThreads(snapshot.threads ?? (await store.threads()), last))
       }
 
       const targets = args.number !== undefined
@@ -164,6 +172,43 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
                 '',
                 '改法：读一遍正文，novel_outline action="card" 重写 story/events/scene（只改你给的字段）；或者如果你确认卡里写的仍然对，也照样重写一次把它盖成当前版本。',
               ].join('\n'),
+        }
+      }
+
+      if (args.action === 'threads') {
+        const threads = await store.threads()
+        const last = snapshot.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+        if (threads.length === 0) {
+          return {
+            errors: 0,
+            warnings: 0,
+            report: [
+              '这本书还没记过伏笔，所以查不出什么。',
+              '埋的时候：novel_ledger action="plant" label="那封没拆的信" chapter=N quote="原文那一句"',
+            ].join('\n'),
+          }
+        }
+        const stale = staleThreads(threads, last)
+        const open = openThreads(threads).length
+        if (stale.length === 0) {
+          return {
+            errors: 0,
+            warnings: 0,
+            report: `伏笔 ${threads.length} 条，还欠着 ${open} 条，都在 ${STALE_AFTER} 章以内，没有拖太久。`,
+          }
+        }
+        return {
+          errors: 0,
+          warnings: stale.length,
+          report: [
+            `还欠着 ${open} 条伏笔，其中 ${stale.length} 条超过 ${STALE_AFTER} 章没动：`,
+            '',
+            formatFindings(stale),
+            '',
+            '收掉：novel_ledger action="pay" id="t-0001" chapter=N',
+            '不要了：novel_ledger action="drop" id="t-0001" value="为什么"',
+            '一直挂着不是错，只是你要知道自己还欠着——读者记着的，你会忘。',
+          ].join('\n'),
         }
       }
 

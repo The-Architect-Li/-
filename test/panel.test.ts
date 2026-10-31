@@ -269,7 +269,7 @@ describe('panel tree', () => {
       '/nowhere',
     ).sections
     const plot = sections.find((section) => section.id === 'plot')
-    expect(plot?.rows.map((row) => row.label)).toEqual(['地点', '故事点', '时间线', '章卡'])
+    expect(plot?.rows.map((row) => row.label)).toEqual(['地点', '故事点', '时间线', '章卡', '伏笔'])
     const places = plot?.rows.find((row) => row.label === '地点')
     expect(places?.count).toBe(1)
     expect(places?.children?.[0]?.kind).toBe('place')
@@ -348,7 +348,7 @@ describe('panel tree', () => {
     expect(sections.map((section) => section.id)).toEqual(['world', 'cast', 'plot', 'text'])
     expect(sections.map((section) => section.count)).toEqual([0, 0, 0, 0])
     // 人物设计 gained 「关系一览」 in v0.21, so the empty cast drawer is 6 rows.
-    expect(sections.map((section) => section.rows.length)).toEqual([0, 6, 4, 0])
+    expect(sections.map((section) => section.rows.length)).toEqual([0, 6, 5, 0])
   })
 })
 

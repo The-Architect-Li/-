@@ -361,6 +361,9 @@ export interface ChapterPlan {
   cardRevision?: number
 }
 
+export type { Thread } from './threads.ts'
+import type { Thread } from './threads.ts'
+
 /** One asserted fact about the story world, tied to the chapter that asserts it. */
 export interface LedgerEntry {
   id: string
@@ -511,6 +514,14 @@ export interface Snapshot {
   plans: ChapterPlan[]
   ledger: LedgerEntry[]
   chapters: ChapterMeta[]
+  /**
+   * Promises the book has made: planted, paid, or dropped.
+   *
+   * Optional for the same reason `ChapterMeta.revision` is: a hand-built
+   * snapshot in a test or a script need not invent one, and every reader
+   * treats absent as "this book keeps no thread ledger yet".
+   */
+  threads?: Thread[]
 }
 
 /** Resolved, fully-defaulted plugin configuration. */

@@ -12,6 +12,7 @@
  */
 import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
 import { kindOf } from '../domain/kinds.ts'
+import { STALE_AFTER, ageInChapters, stateOf } from '../domain/threads.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { cardIsStale } from '../domain/review-window.ts'
 
@@ -54,6 +55,7 @@ export type PanelEntryKind =
   | 'timeline'
   | 'relations'
   | 'kind'
+  | 'threads'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -311,6 +313,11 @@ function plotSection(snapshot: Snapshot): PanelSection {
     tone: point.closed ? 'done' : 'todo',
   }))
 
+  const threads = snapshot.threads ?? []
+  const lastWritten = snapshot.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+  const openCount = threads.filter((thread) => stateOf(thread) === 'open').length
+  const overdue = threads.filter((thread) => stateOf(thread) === 'open' && ageInChapters(thread, lastWritten) >= STALE_AFTER).length
+
   const resolution = resolveTimeline(snapshot.timeline, Math.max(1, snapshot.chapters.length, ...snapshot.plans.map((plan) => plan.number)))
   const now = windowAt(resolution, Math.max(1, snapshot.chapters.length))
   const clockCount = snapshot.timeline.anchors.length + snapshot.timeline.spans.length + (snapshot.timeline.recalls ?? []).length
@@ -328,7 +335,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
   return {
     id: 'plot',
     label: '剧情设计',
-    count: snapshot.places.length + snapshot.storyPoints.length + clockCount + snapshot.plans.length,
+    count: snapshot.places.length + snapshot.storyPoints.length + clockCount + snapshot.plans.length + threads.length,
     rows: [
       {
         id: 'plot.places',
@@ -358,6 +365,18 @@ function plotSection(snapshot: Snapshot): PanelSection {
         label: '章卡',
         count: snapshot.plans.length,
         children: capped(cards, snapshot.plans.length, MAX_ROWS, 'plot.card'),
+      },
+      {
+        id: 'plot.threads',
+        label: '伏笔',
+        kind: 'threads',
+        key: 'threads',
+        count: threads.length,
+        aside: threads.length === 0 ? '还没记' : `欠着 ${openCount} 条`,
+        // A promise left hanging too long is the one state worth colouring: it
+        // is the only row here that can be wrong without anything looking odd.
+        ...(overdue > 0 ? { chip: `${overdue} 条拖太久`, tone: 'warn' as const } : {}),
+        tone: threads.length === 0 ? ('muted' as const) : undefined,
       },
     ],
   }

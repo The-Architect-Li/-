@@ -22,6 +22,7 @@ import { answersTo } from '../domain/characters.ts'
 import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { buildSpine, whenLabel } from '../domain/spine.ts'
+import { STALE_AFTER, ageInChapters, stateOf } from '../domain/threads.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
@@ -746,6 +747,75 @@ function kindPage(snapshot: Snapshot, kind: string, root: string): EntryPayload 
   }
 }
 
+/**
+ * The thread page: what this book still owes its reader.
+ *
+ * Read-only on purpose. Paying a thread off is a claim about prose —「第 200 章
+ * 拆了那封信」— and the place to make it is the chapter it happened in, through
+ * a tool that records the chapter number. A checkbox here would let the panel
+ * say a promise was kept without anything in the book saying so.
+ *
+ * @param snapshot - the book.
+ * @param root - project directory, for the footer.
+ * @returns the page.
+ */
+function threadsPage(snapshot: Snapshot, root: string): EntryPayload {
+  const threads = snapshot.threads ?? []
+  const last = snapshot.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+  const open = threads.filter((thread) => stateOf(thread) === 'open')
+  const settled = threads.filter((thread) => stateOf(thread) !== 'open').sort((a, b) => a.planted - b.planted)
+  return {
+    kind: 'threads',
+    title: '伏笔',
+    subtitle: threads.length === 0 ? '还没记过' : `欠着 ${open.length} 条 · 已有结果 ${settled.length} 条`,
+    chip: open.some((thread) => ageInChapters(thread, last) >= STALE_AFTER) ? '有拖太久的' : undefined,
+    breadcrumb: ['剧情设计', '伏笔'],
+    fields: [{ label: '全书进度', value: last === 0 ? '还没写正文' : `已写到第 ${last} 章` }],
+    lists: [
+      ...(open.length > 0
+        ? [
+            {
+              label: '还欠着的（埋得越久越靠前）',
+              items: [...open]
+                .sort((a, b) => ageInChapters(b, last) - ageInChapters(a, last))
+                .map((thread) => {
+                  const age = ageInChapters(thread, last)
+                  const flag = age >= STALE_AFTER ? `　⚠ ${age} 章没动` : `　${age} 章前`
+                  return `第${thread.planted}章「${thread.label}」${flag}${thread.quote === '' ? '' : `｜「${thread.quote.slice(0, 30)}」`}`
+                }),
+            },
+          ]
+        : []),
+      ...(settled.length > 0
+        ? [
+            {
+              label: '已经有结果的',
+              items: settled.map((thread) =>
+                stateOf(thread) === 'paid'
+                  ? `✓ 第${thread.planted}章「${thread.label}」→ 第${thread.paid}章收${thread.payoff ? `（${thread.payoff}）` : ''}`
+                  : `× 第${thread.planted}章「${thread.label}」→ 放弃了${thread.notes ? `（${thread.notes}）` : ''}`,
+              ),
+            },
+          ]
+        : []),
+      ...(threads.length === 0
+        ? [
+            {
+              label: '怎么记一条',
+              items: [
+                'novel_ledger action="plant" label="那封没拆的信" chapter=38 quote="她把信塞进袖子，没有拆。"',
+                '收的时候：novel_ledger action="pay" id="t-0001" chapter=200',
+                '不打算收了：novel_ledger action="drop" id="t-0001" value="为什么不收"',
+              ],
+            },
+          ]
+        : []),
+    ],
+    edit: { inputs: [] },
+    root,
+  }
+}
+
 export function buildEntry(
   snapshot: Snapshot,
   kind: PanelEntryKind,
@@ -760,6 +830,7 @@ export function buildEntry(
   if (kind === 'relations') return relationsPage(snapshot, root)
   if (kind === 'world') return worldPage(snapshot, key, root)
   if (kind === 'kind') return kindPage(snapshot, key, root)
+  if (kind === 'threads') return threadsPage(snapshot, root)
   if (kind === 'place') return placePage(snapshot, key, root)
   if (kind === 'story') return storyPage(snapshot, key, root)
   if (kind === 'timeline') return timelinePage(snapshot, root)

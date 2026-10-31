@@ -29,6 +29,7 @@ import type {
 import { migrateRelations, normaliseRelations, settleRelations } from './relations.ts'
 import { countChars } from './text.ts'
 import { chapterHistoryName, recordHistory } from './history.ts'
+import type { Thread } from './threads.ts'
 
 /** The file whose presence marks a directory as an Inkwell project. */
 export const PROJECT_FILE = 'project.json'
@@ -41,6 +42,7 @@ const TIMELINE_FILE = 'timeline/clock.json'
 const VOLUMES_FILE = 'outline/volumes.json'
 const PLANS_FILE = 'outline/chapters.json'
 const LEDGER_FILE = 'ledger/facts.json'
+const THREADS_FILE = 'ledger/threads.json'
 const INDEX_FILE = 'chapters/index.json'
 
 /** Raised when an operation needs a project that does not exist yet. */
@@ -329,6 +331,26 @@ export class ProjectStore {
     return list
   }
 
+  /** Every promise the book has made, settled or not. */
+  async threads(): Promise<Thread[]> {
+    return readJson<Thread[]>(join(this.root, THREADS_FILE), [])
+  }
+
+  /**
+   * Replace the whole thread list.
+   *
+   * Whole-list rather than per-item because a thread's lifecycle is one small
+   * set the author looks at together: paying one off while another is planted
+   * is two writes to the same dozen lines, and a partial list on disk is worse
+   * than either.
+   *
+   * @param list - the threads to store.
+   */
+  async writeThreads(list: readonly Thread[]): Promise<void> {
+    await mkdir(dirname(join(this.root, THREADS_FILE)), { recursive: true })
+    await writeJson(join(this.root, THREADS_FILE), list)
+  }
+
   /** The whole fact ledger, including superseded entries. */
   async ledger(): Promise<LedgerEntry[]> {
     return readJson<LedgerEntry[]>(join(this.root, LEDGER_FILE), [])
@@ -482,6 +504,7 @@ export class ProjectStore {
       volumes: await this.volumes(),
       plans: await this.plans(),
       ledger: await this.ledger(),
+      threads: await this.threads(),
       chapters: await this.chapters(),
     }
   }

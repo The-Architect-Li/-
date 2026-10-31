@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { activeEntries, checkLedgerWrite, formatFact } from '../domain/ledger.ts'
 import { foldKey } from '../domain/text.ts'
+import { describeThreads, dropThread, payThread, plantThread } from '../domain/threads.ts'
 import type { Finding, LedgerEntry } from '../domain/types.ts'
 import { formatFindings, type ToolDeps } from './deps.ts'
 
@@ -90,13 +91,13 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_ledger',
     description:
-      '事实账本。record 记录一条确定的事实（subject 主体、predicate 属性、value 值、chapter 出现在第几章、quote 原文依据）；与已有设定冲突时会被拒绝，除非用 supersedes 指名替换哪一条；query 查某个主体的所有有效设定；check 全量体检。写完一章就把新设定记进来。',
+      '事实账本。record 记录一条确定的事实（subject 主体、predicate 属性、value 值、chapter 出现在第几章、quote 原文依据）；与已有设定冲突时会被拒绝，除非用 supersedes 指名替换哪一条；query 查某个主体的所有有效设定；check 全量体检。写完一章就把新设定记进来。plant/pay/drop/threads 管的是另一类账：欠读者的伏笔——第 38 章埋了一封信，第 200 章拆开，或者永远忘了。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['record', 'query', 'check'],
-        description: 'record 记录 / query 查询 / check 体检',
+        enum: ['record', 'query', 'check', 'plant', 'pay', 'drop', 'threads'],
+        description: 'record 记事实 / query 查事实 / check 体检 / plant 埋一条伏笔 / pay 收一条伏笔 / drop 放弃一条（不再提醒）/ threads 列出全部伏笔',
       },
       subject: { type: 'string', description: '主体：角色名、地点名，或「世界」' },
       predicate: { type: 'string', description: '属性，如「左眼颜色」「佩刀」「与主角的关系」' },
@@ -104,6 +105,8 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
       chapter: { type: 'number', description: '这条设定出现在第几章；设定阶段用 0' },
       quote: { type: 'string', description: '原文依据，摘一句正文' },
       supersedes: { type: 'string', description: '要替换的旧条目 id，如 f-0003' },
+      label: { type: 'string', description: 'plant 时：这一条伏笔是什么，一句话（如「那封没拆的信」）' },
+      id: { type: 'string', description: 'pay 或 drop 时：伏笔 id，如 t-0003' },
     },
     output: {
       schema: {
@@ -122,6 +125,60 @@ export function registerLedgerTool(ctx: Context, deps: ToolDeps): void {
     async execute(args, exec) {
       const store = deps.storeFor(exec)
       const entries = await store.ledger()
+
+      if (args.action === 'plant') {
+        const thread = await plantThread(store, {
+          label: args.label ?? args.value ?? '',
+          chapter: Number(args.chapter ?? 0),
+          ...(args.quote === undefined ? {} : { quote: args.quote }),
+          ...(args.predicate === undefined ? {} : { notes: args.predicate }),
+        })
+        return {
+          action: args.action,
+          id: thread.id,
+          count: (await store.threads()).length,
+          conflicts: [],
+          report: `埋下 ${thread.id}：第${thread.planted}章「${thread.label}」。收的时候：novel_ledger action="pay" id="${thread.id}" chapter=N。`,
+        }
+      }
+
+      if (args.action === 'pay') {
+        const id = (args.id ?? '').trim()
+        if (id === '') throw new Error('pay 需要 id：哪一条伏笔收掉了。')
+        const thread = await payThread(store, id, Number(args.chapter ?? 0), args.value)
+        return {
+          action: args.action,
+          id: thread.id,
+          count: (await store.threads()).length,
+          conflicts: [],
+          report: `收掉 ${thread.id}「${thread.label}」：第${thread.planted}章埋，第${thread.paid}章收${thread.payoff === undefined ? '' : `（${thread.payoff}）`}。`,
+        }
+      }
+
+      if (args.action === 'drop') {
+        const id = (args.id ?? '').trim()
+        if (id === '') throw new Error('drop 需要 id：放弃哪一条。')
+        const thread = await dropThread(store, id, args.value)
+        return {
+          action: args.action,
+          id: thread.id,
+          count: (await store.threads()).length,
+          conflicts: [],
+          report: `放弃 ${thread.id}「${thread.label}」，以后不再提醒。这不是"收掉了"——它只是不再欠着了。`,
+        }
+      }
+
+      if (args.action === 'threads') {
+        const all = await store.threads()
+        const last = (await store.chapters()).reduce((max, chapter) => Math.max(max, chapter.number), 0)
+        return {
+          action: args.action,
+          id: '',
+          count: all.length,
+          conflicts: [],
+          report: describeThreads(all, last),
+        }
+      }
 
       if (args.action === 'record') {
         const chapter = args.chapter
