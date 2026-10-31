@@ -57,6 +57,7 @@ window.__ModuleLoader__.load({
     const API_CARD = '/api/inkwell/card'
     const API_CHAPTER_PLAN = '/api/inkwell/chapter-plan'
     const API_NEW = '/api/inkwell/new'
+    const API_PENDING = '/api/inkwell/pending'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -834,6 +835,36 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** What a subagent proposed and the book has not accepted yet. */
+    async function loadPending(sessionId, root) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_PENDING}?${params.join('&')}`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Approve or reject the queue: `action` is 'approve' or 'reject'. */
+    async function settlePending(sessionId, root, action, all) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_PENDING}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ action, all }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** Where a role's effective route comes from, as the team page labels it. */
@@ -4595,6 +4626,61 @@ const API_BACKUP = '/api/inkwell/backup'
 
       const sections = Array.isArray(data.sections) ? data.sections : []
 
+      // What a subagent read but the book has not accepted. It sits above the
+      // drawers, because leaving it in the transcript means it never gets
+      // approved — and an unapproved record is the same as no record.
+      const pendingBanner =
+        !data.pending || data.pending === 0
+          ? null
+          : h(
+              'div',
+              {
+                style: {
+                  margin: '6px 8px 0', padding: '7px 9px', borderRadius: '8px',
+                  border: '1px solid rgba(127,127,127,.3)', background: 'transparent',
+                },
+              },
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+                h('span', { style: { fontSize: '12px', fontWeight: '500' } }, `${data.pending} 条待确认`),
+                h('span', { style: S.spacer }),
+                h(
+                  'button',
+                  {
+                    type: 'button', className: 'iw-btn', style: S.iconButton,
+                    onClick: () => {
+                      settlePending(sessionId, root, 'approve', true)
+                        .then((result) => {
+                          setNotice(`收下 ${result.applied} 条${result.skipped > 0 ? `，${result.skipped} 条没写成` : ''}。`)
+                          refresh()
+                        })
+                        .catch((failure) => setNotice(String((failure && failure.message) || failure)))
+                      return undefined
+                    },
+                  },
+                  '全收',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button', className: 'iw-btn', style: S.iconButton,
+                    onClick: () => {
+                      settlePending(sessionId, root, 'reject', true)
+                        .then((result) => {
+                          setNotice(`丢掉 ${result.skipped} 条，书里没动。`)
+                          refresh()
+                        })
+                        .catch((failure) => setNotice(String((failure && failure.message) || failure)))
+                      return undefined
+                    },
+                  },
+                  '全丢',
+                ),
+              ),
+              h('div', { style: { ...S.aside, padding: '2px 0 0' } }, '读完一章的提案，确认后才写进书里'),
+            )
+
       // One manual way in: a chapter with no beats, approved, ready to type.
       // The route refuses before drafting and says what is missing — the same
       // sentence the model would get from the gate.
@@ -4730,6 +4816,7 @@ const API_BACKUP = '/api/inkwell/backup'
               addTitle: '新建',
             }),
           ),
+        pendingBanner,
         h('div', { style: S.spacerBlock }),
         h(
           'div',

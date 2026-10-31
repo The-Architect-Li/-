@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { countChars } from '../domain/text.ts'
 import { runRole } from '../spawn.ts'
+import { describePending, pushPending } from '../domain/pending.ts'
 import { buildReviewWindow } from '../domain/review-window.ts'
 import type { ToolDeps } from './deps.ts'
 import {
@@ -224,16 +225,26 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
         )
         const output = await runRole(ctx, role.persona, prompt, exec, route)
         const { items, parsed } = parseKeeperOutput(output)
-        const lines = items.map((item) => `- [${item.kind}] ${item.subject}${item.key ? `·${item.key}` : ''}：${item.value}${item.quote ? `｜「${item.quote}」` : ''}`)
+        // Straight into the queue, not into the transcript alone. A proposal
+        // that only exists as chat text has to be retyped into five different
+        // tools by hand, and what actually happens then is that nobody files it.
+        const queued = items.length === 0 ? { added: [], duplicates: 0 } : await pushPending(store.root, items, number, roleId)
+        const lines = queued.added.map((item) => `- ${describePending(item)}`)
         return {
           role: roleId,
           number,
           proposals: items,
           report: [
-            `状态维护员看完了第${number}章（模型 ${routeText}）：${items.length} 条建议。${parsed ? '' : '（它没按 JSON 输出，下面是没解析出来的原文，别直接用）'}`,
-            ...(lines.length > 0 ? lines : ['- 这一章没有需要记的新东西。']),
-            '',
-            '下一步：逐条决定要不要落盘——事实用 novel_ledger record，地点用 novel_canon upsert_place，阶段用 novel_canon upsert_character，日期用 novel_timeline anchor，章卡用 novel_outline card。它只提案，写不写由你。',
+            `状态维护员看完了第${number}章（模型 ${routeText}）：${items.length} 条建议，${queued.added.length} 条进了待审队列。${parsed ? '' : '（它没按 JSON 输出，下面这些没解析出来，别直接用）'}`,
+            ...(lines.length > 0 ? lines : ['- 没有新的要记的东西。']),
+            ...(queued.duplicates > 0 ? [`（${queued.duplicates} 条队列里已经有了，跳过）`] : []),
+            ...(queued.added.length > 0
+              ? [
+                  '',
+                  '还没有写进书里。下一条命令看全部：novel_pending action="list"',
+                  '要收就一次收完：novel_pending action="approve" all=true —— 或者先看一眼，用 ids="p-0003,p-0004" 只收那几条。',
+                ]
+              : []),
           ].join('\n'),
         }
       }

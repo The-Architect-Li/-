@@ -111,16 +111,49 @@ describe('dispatching the keeper', () => {
     await h.cleanup()
   })
 
-  it('proposes records and never writes them', async () => {
+  it('queues its proposals and writes nothing into the book', async () => {
     const answer = await h.call('novel_dispatch', { action: 'keeper', number: 1 })
     const result = valueOf<{ proposals: { kind: string }[]; report: string }>(answer)
     expect(result.proposals.map((item) => item.kind)).toEqual(['ledger', 'place'])
-    expect(result.report).toContain('[ledger] 沈砚·左手')
-    expect(result.report).toContain('它只提案，写不写由你')
-    // Nothing landed in the ledger as a side effect of asking.
+    expect(result.report).toContain('[事实] 沈砚·左手')
+    expect(result.report).toContain('进了待审队列')
+
+    // The proposal waits in the queue…
+    const queued = await h.call('novel_pending', { action: 'list' })
+    expect(valueOf<{ waiting: number }>(queued).waiting).toBe(2)
+
+    // …and nothing landed in the ledger as a side effect of asking. This is the
+    // whole point of the queue: reading a chapter must not edit the book.
     const facts = await h.call('novel_ledger', { action: 'query', subject: '沈砚' })
     expect(facts.ok).toBe(true)
     expect(valueOf<{ report: string }>(facts).report).not.toContain('写不了字')
+  })
+
+  it('turns its proposals into book changes only after approval', async () => {
+    // The whole point of the queue: the keeper reads and proposes, a person
+    // decides, and only then does the book change.
+    await h.call('novel_dispatch', { action: 'keeper', number: 1 })
+    const before = valueOf<{ report: string }>(await h.call('novel_ledger', { action: 'query', subject: '沈砚' }))
+    expect(before.report).not.toContain('写不了字')
+
+    const approved = await h.call('novel_pending', { action: 'approve', all: true })
+    expect(valueOf<{ applied: number }>(approved).applied).toBe(2)
+
+    const after = valueOf<{ report: string }>(await h.call('novel_ledger', { action: 'query', subject: '沈砚' }))
+    expect(after.report).toContain('写不了字')
+    const canon = valueOf<{ report: string }>(await h.call('novel_canon', { action: 'list' }))
+    expect(canon.report).toContain('雾港旧码头')
+
+    // Approved items leave the queue; nothing is left to re-approve.
+    expect(valueOf<{ waiting: number }>(await h.call('novel_pending', { action: 'list' })).waiting).toBe(0)
+  })
+
+  it('keeps a rejected proposal out of the book', async () => {
+    await h.call('novel_dispatch', { action: 'keeper', number: 1 })
+    await h.call('novel_pending', { action: 'reject', all: true })
+    const facts = valueOf<{ report: string }>(await h.call('novel_ledger', { action: 'query', subject: '沈砚' }))
+    expect(facts.report).not.toContain('写不了字')
+    expect(valueOf<{ waiting: number }>(await h.call('novel_pending', { action: 'list' })).waiting).toBe(0)
   })
 
   it('reads the state, not the earlier prose', async () => {

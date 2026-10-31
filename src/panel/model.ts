@@ -80,6 +80,8 @@ export interface PanelSnapshot {
   volumeCount: number
   /** Premise length in characters, so the panel can show canon readiness. */
   premiseChars: number
+  /** Proposals waiting for a yes. Zero means the keeper has nothing pending. */
+  pending: number
   /** When the project record last changed. */
   updatedAt: string | null
   /** The four drawers the panel draws: world, cast, plot, manuscript. */
@@ -172,6 +174,7 @@ export function buildPanelSnapshot(
   config: InkwellConfig,
   drafts: readonly ChapterDrafts[],
   root: string,
+  pending = 0,
 ): PanelSnapshot {
   const { project, plans, chapters, ledger } = snapshot
   const next = nextPhase(project.phase)
@@ -200,6 +203,7 @@ export function buildPanelSnapshot(
     worldCount: snapshot.world.length,
     volumeCount: snapshot.volumes.length,
     premiseChars: countChars(project.premise),
+    pending,
     updatedAt: project.updatedAt ?? null,
     sections: buildSections(snapshot, new Map(drafts.map((entry) => [entry.number, entry.rounds]))),
   }
@@ -225,6 +229,7 @@ export function emptyPanelSnapshot(root: string): PanelSnapshot {
     worldCount: 0,
     volumeCount: 0,
     premiseChars: 0,
+    pending: 0,
     updatedAt: null,
     sections: [],
   }

@@ -66,6 +66,8 @@ import { CHARACTER_ROLES, type CharacterCard, type CharacterRole, type Finding, 
 import { gateToolCall } from '../gate.ts'
 import { atLeast, blockersFor } from '../domain/phase.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
+import { PENDING_LABEL, describePending, readPending, removePending } from '../domain/pending.ts'
+import { applyPendingBatch } from '../domain/approve.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
@@ -291,7 +293,7 @@ export async function readPanel(
     for (const chapter of snapshot.chapters) numbers.add(chapter.number)
     for (const plan of snapshot.plans) numbers.add(plan.number)
     const drafts = await readDrafts(store, [...numbers].sort((a, b) => a - b))
-    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root)
+    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root, (await readPending(store.root)).length)
     return { status: 200, body: { ok: true, data } }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -1404,6 +1406,108 @@ export async function cardRoute(
   }
 }
 
+/**
+ * What is waiting for a yes, as the album panel shows it.
+ *
+ * The queue is the one place where a subagent's reading can become a fact, so
+ * the panel must be able to show it without a round trip through the chat.
+ * Grouped by the chapter it was read out of, because that is the unit the author
+ * just wrote.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the items with the line that justifies each one.
+ */
+export async function pendingRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) return { status: 200, body: { ok: true, data: { items: [] } } }
+    const items = await readPending(store.root)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          items: items.map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            kindLabel: PENDING_LABEL[item.kind] ?? item.kind,
+            subject: item.subject,
+            key: item.key,
+            value: item.value,
+            chapter: item.chapter,
+            quote: item.quote,
+            line: describePending(item),
+          })),
+        },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * Approve or reject what is waiting.
+ *
+ * `all` is the common path on purpose: reviewing ten proposals one at a time is
+ * the same friction that made the old copy-them-by-hand flow useless.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ action: 'approve' | 'reject', all?: boolean, ids?: string[] }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns what landed.
+ */
+export async function settlePendingRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const action = String(body.action ?? '')
+    if (action !== 'approve' && action !== 'reject') {
+      throw new PanelInputError('action 只能是 approve 或 reject。')
+    }
+    const all = await readPending(store.root)
+    const wanted = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === 'string') : []
+    const picked = body.all === true ? all : all.filter((item) => wanted.includes(item.id))
+    if (picked.length === 0) {
+      return { status: 200, body: { ok: true, data: { applied: 0, skipped: 0, waiting: all.length } } }
+    }
+    if (action === 'reject') {
+      await removePending(store.root, picked.map((item) => item.id))
+      return { status: 200, body: { ok: true, data: { applied: 0, skipped: picked.length, waiting: all.length - picked.length } } }
+    }
+    const result = await applyPendingBatch(store, picked)
+    const done = result.applied.map((item) => item.id)
+    if (done.length > 0) await removePending(store.root, done)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          applied: result.applied.length,
+          skipped: result.skipped.length,
+          waiting: all.length - done.length,
+          lines: result.applied.map((item) => item.line),
+          failures: result.skipped.map((item) => item.line),
+        },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function readEntry(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2038,6 +2142,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await addChapterRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/pending') {
+        if (isRead) {
+          send(res, await pendingRoute(deps, url.searchParams.get('session') ?? undefined, url.searchParams.get('root') ?? undefined))
+          return
+        }
+        send(
+          res,
+          await settlePendingRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

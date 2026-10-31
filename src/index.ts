@@ -22,6 +22,7 @@ import { registerDispatchTool } from './tools/dispatch.ts'
 import { registerExportTool } from './tools/export.ts'
 import { registerImportTool } from './tools/import.ts'
 import { registerArchiveTool } from './tools/archive.ts'
+import { registerPendingTool } from './tools/pending.ts'
 import { registerLedgerTool } from './tools/ledger.ts'
 import { registerOutlineTool } from './tools/outline.ts'
 import { registerProjectTool } from './tools/project.ts'
@@ -72,6 +73,7 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerExportTool(ctx, deps)
   registerImportTool(ctx, deps)
   registerArchiveTool(ctx, deps)
+  registerPendingTool(ctx, deps)
   registerStoryTool(ctx, deps)
   registerTimelineTool(ctx, deps)
   registerBackupTool(ctx, deps)
