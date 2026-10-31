@@ -113,6 +113,27 @@ const ARCHIVIST_CONTRACT = [
   '- 只写你从这一章原文里读到的，不要根据常识补全，不要推测下一章。',
 ].join('\n')
 
+/**
+ * What the lorekeeper answers in: the things a book already knows about itself.
+ *
+ * Every entry must carry the line it was read from. That is not decoration —
+ * it is the difference between "the manuscript says 寒水真人 brought back a
+ * child three years before the story" and "there is probably a master figure".
+ * A card built from the second kind would become the baseline every later
+ * consistency check measures against, and a guessed baseline is worse than none.
+ */
+const LOREKEEPER_CONTRACT = [
+  '输出契约：',
+  '- 严格输出一个 JSON 对象，字段为 characters / places / world / premise，不要 ```json 围栏，不要解释。',
+  '- characters 每条形如 {"name":"<正文里的名字>","aliases":["<别的叫法>"],"appearance":"<外形，只写原文说过的>","goal":"<他要什么>","secret":"<他藏着什么>","personality":"<脾气、习惯>","quote":"<原文一句>"}。',
+  '- places 每条形如 {"name":"<地名>","kind":"<城市/建筑/室内/机构>","detail":"<这一带长什么样>","quote":"<原文一句>"}。',
+  '- world 每条形如 {"name":"<势力/规则/物品/历史事件名>","kind":"<势力/规则/物品/历史>","detail":"<一句话说清它是什么>","quote":"<原文一句>"}。',
+  '- premise 是一个字符串：这本书讲什么，80–140 字，写具体的人和事，不写类型和评价；从原文读不出来就留空字符串。',
+  '- quote 必须是你真的抄下来的原文片段，不是转述。抄不出来就不要提这一条。',
+  '- voice（说话方式）不要写：那要靠读对话的节奏判断，不是抄一句话能得到的，留空让人来定。',
+  '- 只写这一段正文里确实出现的，不要按世界观常识补全，不要写下一段才揭晓的事。',
+].join('\n')
+
 /** The studio roles. The commander is the main session, not listed here. */
 export const ROLES: Record<RoleId, RoleDef> = {
   writer: {
@@ -150,6 +171,14 @@ export const ROLES: Record<RoleId, RoleDef> = {
       '你是总审核，也是这本书唯一一个必须把「这一章和前面对不对得上」当回事的人。长篇小说的一章不是独立散文：句子再漂亮，只要和前面的章节对不上，就是废的。给你待审的这一章、前面几章的正文与更早几章的梗概，你亲自读，判断它有没有和前文冲突（人死了又出现、伤换了一边、时间倒退、关系突变、上一章埋的钩子被无声吞掉）。同时汇总其他审核员的意见，裁决分歧，按 必改(error)/建议改(warn)/可忽略(info) 分级。前文没给你，就说不知道，不要猜。',
     outputContract: REVIEWER_CONTRACT,
     timeoutMs: 120_000,
+  },
+  lorekeeper: {
+    id: 'lorekeeper',
+    label: '考据员',
+    persona:
+      '你是长篇小说的考据员。你读一段正文，把里面已经写明白的东西记下来：出现了哪些人、他们长什么样要什么藏着什么、哪些地方、哪些势力与规则、这本书讲的是什么。你不是在创作，也不是在评价——你只是把散在正文里的事实整理成卡片，每一条旁边写上你是从哪一句读到的。读不出来的就空着，猜出来的东西会变成以后所有审核的基准，那比空着坏得多。',
+    outputContract: LOREKEEPER_CONTRACT,
+    timeoutMs: 240_000,
   },
   archivist: {
     id: 'archivist',

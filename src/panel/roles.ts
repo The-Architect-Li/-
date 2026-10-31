@@ -46,6 +46,7 @@ const DUTY: Record<RoleId, string> = {
   chief: '汇总裁决：把两位审核员的意见分级并裁决分歧。',
   keeper: '只提案：读完这一章，列出该记进账本/地点/阶段/日期/章卡的增量。',
   archivist: '只写卡：读一章正文，写出梗概、关键事件、场景、出场人物、章末钩子。',
+  lorekeeper: '只考据：读正文抽出人物、地点、世界观与立意，每条带原文引用。',
 }
 
 /** Longest value one route field may carry. */

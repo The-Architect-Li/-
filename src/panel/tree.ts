@@ -186,6 +186,19 @@ function castSection(snapshot: Snapshot): PanelSection {
         tone: edges === 0 ? 'muted' : 'todo',
       },
       ...groups,
+      // A book with chapters and no cards is a book that was imported, and the
+      // author is about to conclude this drawer is broken. One row that says
+      // where they come from, in the place they are looking.
+      ...(snapshot.characters.length === 0 && snapshot.chapters.length > 0
+        ? [
+            {
+              id: 'cast.empty',
+              label: '这个抽屉是空的，但书里有正文',
+              aside: '让考据员读一遍',
+              tone: 'muted' as const,
+            },
+          ]
+        : []),
     ],
   }
 }

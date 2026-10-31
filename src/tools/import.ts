@@ -115,8 +115,15 @@ export function registerImportTool(ctx: Context, deps: ToolDeps): void {
       if (applied.written > 0) {
         lines.push(
           '',
-          `这 ${applied.written} 章还没有章卡：梗概、关键事件、出场人物、章末钩子都空着，所以前情摘要与人物出场读不到东西。`,
-          '让档案员读一遍补上：novel_archive action="plan" 先看缺多少，再 action="apply" 一批一批写（默认 8 章一批，每批都会说还剩多少）。',
+          '还缺两样东西，它们都在正文里，但还没被读出来：',
+          '',
+          `① 设定：人物卡 ${plan.cast.length} 张、世界观 ${plan.volumes.length > 0 ? '有卷纲' : '空'}、地点 0 个。人物设计抽屉现在是空的，这不代表你的书里没有人——代表还没人读过它。`,
+          '   novel_archive action="lore" —— 考据员读正文，抽出人物、地点、势力与规则，每条都附原文引用；只填空字段，绝不覆盖你写过的；voice 不会自动生成（那要靠你定）。',
+          '',
+          `② 章卡：${applied.written} 章的梗概、关键事件、出场人物、章末钩子都空着，前情摘要读不到东西。`,
+          '   novel_archive action="apply" —— 档案员一章一章读，一批默认 8 章，每批都会说还剩多少。',
+          '',
+          '两个都跑完，这本书才真的"进系统"了：审核能对照人物卡挑毛病，简报能带上前情，面板上每一栏都有东西。',
         )
       }
       lines.push('另外：novel_check action="all" 看看这些老章节自己的问题。')
