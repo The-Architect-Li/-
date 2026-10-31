@@ -123,19 +123,81 @@ function capped(rows: PanelRow[], total: number, cap: number, prefix: string): P
  * @returns the drawer.
  */
 function worldSection(snapshot: Snapshot): PanelSection {
-  const rows: PanelRow[] = snapshot.world.map((entry, index) => ({
-    id: `world.${index}`,
-    label: entry.name,
-    kind: 'world',
-    key: entry.name,
-    ...(entry.kind ? { aside: entry.kind } : {}),
-  }))
+  const groups = groupByKind(snapshot.world)
+  // One kind is not a grouping, it is a heading nobody asked for — and the
+  // default kind covers every book that never set one, so grouping there would
+  // wrap the whole drawer in a single row called 「设定」.
+  const rows: PanelRow[] =
+    groups.length <= 1
+      ? snapshot.world.map((entry, index) => worldRow(entry, `world.${index}`, true))
+      : groups.map((group) => ({
+          id: `world.kind.${group.kind}`,
+          label: group.label,
+          count: group.entries.length,
+          children: capped(
+            group.entries.map((entry, index) => worldRow(entry, `world.kind.${group.kind}.${index}`, false)),
+            group.entries.length,
+            MAX_ROWS,
+            `world.kind.${group.kind}`,
+          ),
+        }))
   return {
     id: 'world',
     label: '世界观',
     count: snapshot.world.length,
-    rows: capped(rows, snapshot.world.length, MAX_ROWS, 'world'),
+    rows: capped(rows, rows.length, MAX_ROWS, 'world'),
   }
+}
+
+/**
+ * One world entry as a row.
+ *
+ * @param entry - the entry.
+ * @param id - stable row id.
+ * @param showKind - true in the flat list, where the kind is the only clue.
+ *   Inside a group it is the heading, and repeating it on every row is noise.
+ * @returns the row.
+ */
+function worldRow(entry: Snapshot['world'][number], id: string, showKind: boolean): PanelRow {
+  return {
+    id,
+    label: entry.name,
+    kind: 'world',
+    key: entry.name,
+    ...(showKind && entry.kind ? { aside: entry.kind } : {}),
+  }
+}
+
+/** The kind a world entry falls under, when it never said. */
+const WORLD_UNFILED = '未分类'
+
+/**
+ * Group world entries by the kind their author gave them.
+ *
+ * Deliberately not a fixed taxonomy. A cultivation novel has 宗门 and 功法; a
+ * city novel has 公司 and 街区; a mystery has 案件 and 势力. Hard-coding a list
+ * would fit one genre and misfile every other, so the kinds come from the
+ * entries themselves and the biggest group sorts first — that is almost always
+ * the one the author is working in.
+ *
+ * @param entries - every world entry.
+ * @returns the groups, largest first, then by name so the order is stable.
+ */
+function groupByKind(entries: Snapshot['world']): { kind: string; label: string; entries: Snapshot['world'] }[] {
+  const byKind = new Map<string, Snapshot['world']>()
+  for (const entry of entries) {
+    const kind = entry.kind.trim() === '' ? WORLD_UNFILED : entry.kind.trim()
+    const list = byKind.get(kind) ?? []
+    list.push(entry)
+    byKind.set(kind, list)
+  }
+  return [...byKind.entries()]
+    .map(([kind, list]) => ({
+      kind,
+      label: kind,
+      entries: [...list].sort((a, b) => a.name.localeCompare(b.name, 'zh')),
+    }))
+    .sort((a, b) => b.entries.length - a.entries.length || a.label.localeCompare(b.label, 'zh'))
 }
 
 /**

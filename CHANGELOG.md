@@ -7,6 +7,12 @@
 
 ### Fixed
 
+- **世界观按类别折起来**：以前 12 条设定平铺成一列，右边每行挂一个「宗门／物品／规则」，看久了
+  分不清哪条属于哪类。现在按 `kind` 分组，一个类别一行、可折叠、带条数，组内按名字排。
+  类别来自书本身而不是固定清单——修仙有宗门与功法，都市有公司与街区，写死一张表只会合一种题材、
+  冤枉其它所有题材。条目最多的那组排在最前（通常正是你在写的那类），没有 `kind` 的进「未分类」。
+  整本书只有一种类别时不分组：一个标题裹住全部内容，只是多了一层要点开的东西。
+
 - **派不出子智能体（`ctx.subagents.start is not a function`）**：这不是插件的 bug，是宿主接口换代。
   新版 DSH 的 `ctx.subagents` 只有 `startActivation(spec)`，没有 `start(name, request)`；provider 名字
   也从 `spawn` 变成 `subagent-spawn-in-process`，persona 从请求字段挪进了 preset。

@@ -161,6 +161,49 @@ describe('panel tree', () => {
     expect(found.get('text')?.count).toBe(1)
   })
 
+  it('groups the world drawer by kind as the book actually uses them', () => {
+    // The kinds are the author's, not a fixed taxonomy: a 修仙 book has 宗门 and
+    // 功法, a 都市 book has 公司 and 街区. Hard-coding a list would fit one genre
+    // and misfile every other.
+    const sections = buildPanelSnapshot(
+      book({
+        world: [
+          place('妙玉宫', '宗门'),
+          place('食佛门', '宗门'),
+          place('血魔宫', '宗门'),
+          place('补天丹', '物品'),
+          place('修仙七境', '规则'),
+        ],
+      }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const world = sections.find((section) => section.id === 'world')
+    const groups = (world?.rows ?? []).map((row) => ({ label: row.label, count: row.count, children: (row.children ?? []).map((child) => child.label) }))
+    // Biggest group first — the one being worked in stays on top — then by name.
+    expect(groups[0]).toEqual({ label: '宗门', count: 3, children: ['妙玉宫', '食佛门', '血魔宫'] })
+    expect(groups.slice(1).map((group) => group.label).sort()).toEqual(['物品', '规则'])
+  })
+
+  it('leaves a one-kind book flat instead of wrapping it in a heading', () => {
+    const sections = buildPanelSnapshot(book({ world: [place('雾港'), place('老码头')] }), config, [], '/nowhere').sections
+    const world = sections.find((section) => section.id === 'world')
+    expect(world?.rows.map((row) => row.label)).toEqual(['雾港', '老码头'])
+    expect(world?.rows.every((row) => row.children === undefined)).toBe(true)
+  })
+
+  it('puts entries with no kind under 未分类', () => {
+    const sections = buildPanelSnapshot(
+      book({ world: [place('雾港', ''), place('漕帮', '势力')] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const world = sections.find((section) => section.id === 'world')
+    expect((world?.rows ?? []).map((row) => row.label).sort()).toEqual(['势力', '未分类'])
+  })
+
   it('groups the cast by structural role, with an overview row first', () => {
     const sections = buildPanelSnapshot(
       book({ characters: [card('沈砚', 'protagonist'), card('阿鸢', 'supporting'), card('老周', 'supporting')] }),
