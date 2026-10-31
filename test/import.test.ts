@@ -70,7 +70,9 @@ describe('planChapters', () => {
       source('正文/设定草稿.md', '随手记的东西。'),
     ])
     expect(chapters[0]!.text).toBe('凌晨一点零七分。')
-    expect(chapters[0]!.summary).toBe('凌晨一点零七分。')
+    // No card is invented from the prose: `novel_archive` writes it from the
+    // text with a model, and a placeholder here would look like a real recap.
+    expect(chapters[0]!.summary).toBe('')
     expect(ignored).toEqual(['设定草稿.md'])
   })
 })

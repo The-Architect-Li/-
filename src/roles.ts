@@ -95,7 +95,25 @@ const KEEPER_CONTRACT = [
   '- 没有该记的东西就输出 []。记多了比记漏了更坏。',
 ].join('\n')
 
-/** The four studio roles. The commander is the main session, not listed here. */
+/**
+ * What the archivist answers in: one JSON object per chapter it was given.
+ *
+ * The fields are the chapter card's own fields, not a free summary, because the
+ * card is what later chapters are briefed from. A recap written for a human and
+ * a recap written for the writer are not the same text, and only the second one
+ * is worth the tokens.
+ */
+const ARCHIVIST_CONTRACT = [
+  '输出契约：',
+  '- 严格输出一个 JSON 数组，一章一个对象，不要 ```json 围栏，不要解释。',
+  '- 每个对象形如：{"number":<章号>,"summary":"<这一章发生了什么，80–160 字>","events":["<按顺序，一件事一行>"],"scene":"<主场景的地点名词>","characters":["<这一章真正有台词或推动情节的人>"],"hook":"<章末留下的问题，没有就留空字符串>"}。',
+  '- summary 写「发生了什么」，不写评价、不写「本章」、不引用原文句子；后面的人靠它记住情节。',
+  '- events 只写推进了剧情的事，三到六条；把「她走进房间」这种不算事件的删掉。',
+  '- characters 用正文里的名字原样写，不要改称呼，不要补上没出现的人。',
+  '- 只写你从这一章原文里读到的，不要根据常识补全，不要推测下一章。',
+].join('\n')
+
+/** The studio roles. The commander is the main session, not listed here. */
 export const ROLES: Record<RoleId, RoleDef> = {
   writer: {
     id: 'writer',
@@ -132,6 +150,14 @@ export const ROLES: Record<RoleId, RoleDef> = {
       '你是总审核，也是这本书唯一一个必须把「这一章和前面对不对得上」当回事的人。长篇小说的一章不是独立散文：句子再漂亮，只要和前面的章节对不上，就是废的。给你待审的这一章、前面几章的正文与更早几章的梗概，你亲自读，判断它有没有和前文冲突（人死了又出现、伤换了一边、时间倒退、关系突变、上一章埋的钩子被无声吞掉）。同时汇总其他审核员的意见，裁决分歧，按 必改(error)/建议改(warn)/可忽略(info) 分级。前文没给你，就说不知道，不要猜。',
     outputContract: REVIEWER_CONTRACT,
     timeoutMs: 120_000,
+  },
+  archivist: {
+    id: 'archivist',
+    label: '档案员',
+    persona:
+      '你是长篇小说的档案员。你只读一章正文，把它变成一张章卡：这一章发生了什么（梗概）、按顺序发生了哪几件事（关键事件）、主要发生在哪（场景）、谁真的出场并推动了情节（人物）、结尾留了什么（钩子）。你不评价文笔，不改稿，不猜下一章。你写的梗概是给后面的章节当记忆用的——所以写事实，写具体的人做了什么，不写「气氛压抑」这种谁也记不住的话。',
+    outputContract: ARCHIVIST_CONTRACT,
+    timeoutMs: 180_000,
   },
   keeper: {
     id: 'keeper',

@@ -24,7 +24,6 @@
  * - `大纲/全书大纲.md` gives the premise (the `一句话立意` line), one volume per
  *   `## 卷…` heading, and one chapter plan per `- 第N章 标题：一句话` line.
  */
-import { deriveSummary } from './save.ts'
 import { countChars, splitParagraphs } from './text.ts'
 import type { ChapterPlan, CharacterCard, CharacterRelation, CharacterRole, CharacterStage, VolumeOutline } from './types.ts'
 
@@ -151,7 +150,11 @@ export function planChapters(files: readonly SourceFile[]): {
         title,
         text,
         words: countChars(text),
-        summary: deriveSummary(text),
+        // Deliberately empty, not `deriveSummary`: the last paragraph of a
+        // downloaded txt is a sentence and a row of dashes, and a chapter card
+        // that looks filled but says nothing is worse than one that says
+        // nothing. `novel_archive` fills these from the prose, with a model.
+        summary: '',
         source: file.path,
       }
       const previous = best.get(number)

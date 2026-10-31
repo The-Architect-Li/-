@@ -498,7 +498,15 @@ const API_BACKUP = '/api/inkwell/backup'
       if (imported.volumes > 0) parts.push(`${imported.volumes} 卷大纲`)
       if (imported.skipped > 0) parts.push(`跳过 ${imported.skipped} 章（书里已有）`)
       const sentence = parts.length > 0 ? `已${parts.join('、')}。` : '这个文件夹里没有可导入的稿件。'
-      return note ? `${sentence} ${note}` : sentence
+      // A book that arrives with prose and no cards cannot answer a single
+      // question about itself. Say where the cards come from, in the same
+      // breath as the count — a separate instruction nobody reads is the same
+      // as no instruction.
+      const cards =
+        imported.written > 0 && (imported.plans || 0) === 0
+          ? '章卡还是空的，说一句「给这本书建章卡」让我派档案员来读。'
+          : ''
+      return [sentence, cards, note].filter(Boolean).join(' ')
     }
 
     /**

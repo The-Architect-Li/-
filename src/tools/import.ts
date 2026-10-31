@@ -108,8 +108,18 @@ export function registerImportTool(ctx: Context, deps: ToolDeps): void {
       const lines = [
         `导入完成：${applied.written} 章${applied.skipped > 0 ? `（跳过 ${applied.skipped} 章，已存在）` : ''}、${plan.cast.length} 张角色卡、${plan.volumes.length} 卷、${plan.plans.length} 条章纲。`,
         `正文共 ${wordsText(applied.words)}，写在 ${join(store.root, 'chapters')}。`,
-        '下一步：novel_check action="all" 看看这些老章节自己的问题；briefing 现在有前情可取了。',
       ]
+      // An imported book has prose and no memory. Saying so here is the whole
+      // difference between "I imported my novel" and "I imported 521 files that
+      // the checker cannot say anything about".
+      if (applied.written > 0) {
+        lines.push(
+          '',
+          `这 ${applied.written} 章还没有章卡：梗概、关键事件、出场人物、章末钩子都空着，所以前情摘要与人物出场读不到东西。`,
+          '让档案员读一遍补上：novel_archive action="plan" 先看缺多少，再 action="apply" 一批一批写（默认 8 章一批，每批都会说还剩多少）。',
+        )
+      }
+      lines.push('另外：novel_check action="all" 看看这些老章节自己的问题。')
       if (applied.phase === 'drafting') {
         lines.push(
           `阶段：这本书已经有正文，阶段直接落在「drafting」，不必从 premise 重走一遍——现在可以接着写第 ${plan.chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0) + 1} 章。`,

@@ -61,10 +61,11 @@ describe('plugin module shape', () => {
     } as unknown as Context
 
     expect(() => inkwell.apply(ctx, {})).not.toThrow()
-    expect(tools.size).toBe(14)
+    expect(tools.size).toBe(15)
     expect([...tools.keys()]).toContain('novel_backup')
     expect([...tools.keys()]).toContain('novel_export')
     expect([...tools.keys()]).toContain('novel_import')
+    expect([...tools.keys()]).toContain('novel_archive')
     expect([...tools.keys()]).toContain('novel_story')
     expect([...tools.keys()]).toContain('novel_timeline')
   })

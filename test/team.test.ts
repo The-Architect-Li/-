@@ -123,7 +123,7 @@ describe('catalog', () => {
 describe('role views', () => {
   it('reports no override as inheriting the session model', () => {
     const views = roleViews(resolveConfig({}))
-    expect(views.map((view) => view.id)).toEqual(['writer', 'logic', 'character', 'chief', 'keeper'])
+    expect(views.map((view) => view.id)).toEqual(['writer', 'logic', 'character', 'chief', 'keeper', 'archivist'])
     expect(views[0]?.source).toBe('inherit')
     expect(views[0]?.effective).toBe('继承当前会话模型')
   })
@@ -277,7 +277,7 @@ describe('team routes', () => {
       expect(answer.status).toBe(200)
       const data = answer.body as { ok: boolean; data: { noBook: boolean; roles: unknown[]; catalogUnavailable: boolean } }
       expect(data.data.noBook).toBe(true)
-      expect(data.data.roles).toHaveLength(5)
+      expect(data.data.roles).toHaveLength(6)
       expect(data.data.catalogUnavailable).toBe(true)
     } finally {
       await rm(dir, { recursive: true, force: true })
@@ -342,7 +342,7 @@ describe('team routes', () => {
       const read = await fetch(`${base}/roles`)
       expect(read.status).toBe(200)
       const payload = (await read.json()) as { data: { roles: unknown[]; providers: { id: string }[] } }
-      expect(payload.data.roles).toHaveLength(5)
+      expect(payload.data.roles).toHaveLength(6)
       expect(payload.data.providers.map((entry) => entry.id)).toEqual(['zai'])
 
       const noHeader = await fetch(`${base}/roles`, { method: 'POST', body: JSON.stringify({ role: 'writer', model: 'glm-4' }) })

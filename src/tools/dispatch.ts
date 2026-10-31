@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { countChars } from '../domain/text.ts'
+import { runRole } from '../spawn.ts'
 import { buildReviewWindow } from '../domain/review-window.ts'
 import type { ToolDeps } from './deps.ts'
 import {
@@ -315,35 +316,6 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       }
     },
   }))
-}
-
-/** Spawn a one-shot child and return its final assistant text. */
-async function runRole(
-  ctx: Context,
-  persona: string,
-  promptText: string,
-  exec: { agent?: unknown; signal: AbortSignal },
-  route: ReturnType<typeof resolveRoleRoute>,
-): Promise<string> {
-  const agent = exec.agent
-  if (!agent) {
-    throw new Error('dispatch 必须在会话中调用：当前没有可用的 parent agent。')
-  }
-  const run = await ctx.subagents.start('spawn', {
-    label: 'inkwell-dispatch',
-    prompt: [{ type: 'text', text: promptText }],
-    parent: agent as never,
-    signal: exec.signal,
-    persona,
-    toolFilter: { allow: [] },
-    agentOptions: route,
-  })
-  const result = await run.result
-  await run.dispose().catch(() => undefined)
-  return result.output
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
 }
 
 function summarize(roleId: RoleId, findings: ReviewerFinding[], routeText: string): string {
