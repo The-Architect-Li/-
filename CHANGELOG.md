@@ -3,6 +3,25 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+
+- **`novel_skill`（第 15 个工具）**：这本书自己的写作手法笔记，存 `<root>/skills/<名字>.md`。
+  它不是设定（不是世界里的东西），也不是章纲（不属于某一章）——是「这本书想被怎么写」。
+  和 canon 分开存，覆盖前自动留一版。
+- **单份文件的历史**：`<root>/.history/<类别>/<名字>/` 存最近几版（正文 5 版、设定与技能 20 版）。
+  以前只有整书备份，一个 `world.json` 写坏了要退 99 个文件；现在
+  `novel_backup action="history" target="canon:world"` 看版本，`action="revert"` 只退这一个文件。
+  正文、角色卡/世界/地点、技能四类覆盖都会自动记账；空文件和内容没变的不记。
+- **`novel_dispatch action="card"`**：不派子智能体，只把写手那张派单书原样返回，
+  方便复制到别的会话、留档，或者先看看写手会读到什么。
+
+### Notes
+
+- 工具数 14 → 15，`verify-install` 与插件形状测试同步更新。
+- 测试 587 → 607。
+
 ## [0.30.1] - 2026-10-27
 
 点书卡的「备份」把整个面板打成白屏。原因是浮层和打开它的回调对不上形状：`beginBackup` 存的是**书本身**，浮层却读 `backupFor.book`——`undefined.book.root` 抛出去，React 把整棵子树卸载，于是不只是弹窗没了，整个小说工坊都没了，重开也一样（面板挂回去还是同一个渲染错误）。

@@ -86,7 +86,7 @@ plugin.apply(ctx, { root: '.novel' })
 const names = [...tools.keys()].sort()
 const expected = [
   'novel_briefing', 'novel_canon', 'novel_chapter', 'novel_check', 'novel_dispatch',
-  'novel_ledger', 'novel_outline', 'novel_project', 'novel_roles',
+  'novel_ledger', 'novel_outline', 'novel_project', 'novel_roles', 'novel_skill',
 ]
 
 console.log('plugin name      :', plugin.name)

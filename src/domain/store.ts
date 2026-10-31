@@ -27,6 +27,8 @@ import type {
   RelationFile,
 } from './types.ts'
 import { migrateRelations, normaliseRelations, settleRelations } from './relations.ts'
+import { countChars } from './text.ts'
+import { chapterHistoryName, recordHistory } from './history.ts'
 
 /** The file whose presence marks a directory as an Inkwell project. */
 export const PROJECT_FILE = 'project.json'
@@ -159,6 +161,19 @@ export class ProjectStore {
     await writeJson(this.projectPath, next)
   }
 
+  /**
+   * Keep the file's current text in history before it is replaced.
+   *
+   * Every overwrite in this class goes through here, which is the whole point:
+   * one place to change when the retention rule changes, and no write path that
+   * quietly forgets to leave a way back.
+   */
+  private async snapshotFile(relPath: string, kind: 'canon' | 'chapter', name: string): Promise<void> {
+    const text = await readFile(join(this.root, relPath), 'utf8').catch(() => '')
+    if (text.trim() === '' || text.trim() === '[]') return
+    await recordHistory(this.root, kind, name, text).catch(() => {})
+  }
+
   /** All character cards. */
   async characters(): Promise<CharacterCard[]> {
     return readJson<CharacterCard[]>(join(this.root, CHARACTERS_FILE), [])
@@ -171,6 +186,7 @@ export class ProjectStore {
     if (index >= 0) list[index] = card
     else list.push(card)
     list.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    await this.snapshotFile(CHARACTERS_FILE, 'canon', 'characters')
     await writeJson(join(this.root, CHARACTERS_FILE), list)
     return list
   }
@@ -187,6 +203,7 @@ export class ProjectStore {
     if (index >= 0) list[index] = entry
     else list.push(entry)
     list.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    await this.snapshotFile(WORLD_FILE, 'canon', 'world')
     await writeJson(join(this.root, WORLD_FILE), list)
     return list
   }
@@ -203,6 +220,7 @@ export class ProjectStore {
     if (index >= 0) list[index] = card
     else list.push(card)
     list.sort((a, b) => a.firstChapter - b.firstChapter || a.name.localeCompare(b.name, 'zh'))
+    await this.snapshotFile(PLACES_FILE, 'canon', 'places')
     await writeJson(join(this.root, PLACES_FILE), list)
     return list
   }
@@ -376,6 +394,7 @@ export class ProjectStore {
       throw new ChapterConflictError(draft.number, options.baseRevision, current)
     }
     const file = this.chapterPath(draft.number)
+    await this.snapshotFile(join('chapters', `${chapterKey(draft.number)}.md`), 'chapter', chapterHistoryName(draft.number))
     await mkdir(dirname(file), { recursive: true })
     const temp = `${file}.${process.pid}.tmp`
     await writeFile(temp, `${draft.text.trim()}\n`, 'utf8')
@@ -393,6 +412,50 @@ export class ProjectStore {
     index.sort((a, b) => a.number - b.number)
     await writeJson(join(this.root, INDEX_FILE), index)
     return meta
+  }
+
+  /**
+   * Put a stored revision of a chapter back.
+   *
+   * Not a compare-and-swap on purpose: the caller just read this version out of
+   * history and means to overwrite what is on disk. The revision still goes up,
+   * so an editor holding the old number finds out on its next save instead of
+   * silently winning.
+   *
+   * @param number - chapter number.
+   * @param text - the body to restore.
+   * @returns the metadata as written.
+   */
+  async restoreChapterText(number: number, text: string): Promise<ChapterMeta> {
+    const existing = await this.chapter(number)
+    const base: ChapterDraft = existing ?? {
+      number,
+      title: `第${number}章`,
+      words: countChars(text),
+      summary: '',
+      writtenAt: new Date().toISOString(),
+      revision: 0,
+      text,
+    }
+    return this.writeChapter({ ...base, text, words: countChars(text) })
+  }
+
+  /**
+   * Put a stored revision of a canon file back.
+   *
+   * The text is parsed before it touches the disk: restoring a file that is not
+   * JSON would turn every later read into a crash, and the one thing a recovery
+   * path must not do is break the book further.
+   */
+  async writeCanonRaw(name: 'characters' | 'world' | 'places' | 'relations', text: string): Promise<void> {
+    const rel = name === 'characters' ? CHARACTERS_FILE : name === 'world' ? WORLD_FILE : name === 'places' ? PLACES_FILE : RELATIONS_FILE
+    JSON.parse(text)
+    await this.snapshotFile(rel, 'canon', name)
+    const file = join(this.root, rel)
+    await mkdir(dirname(file), { recursive: true })
+    const temp = `${file}.${process.pid}.tmp`
+    await writeFile(temp, text.endsWith('\n') ? text : `${text}\n`, 'utf8')
+    await rename(temp, file)
   }
 
   /** Every chapter body, ordered by number. */

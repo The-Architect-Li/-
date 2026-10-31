@@ -113,9 +113,10 @@ premise ──→ canon ──→ outline ──→ drafting ──→ review �
 | `novel_briefing` | 预算内装配上下文包 | 不会拒绝，会说「这章还没有章纲」 |
 | `novel_check` | 确定性体检（零 token），contract / scan / ledger / timeline / records / cards / stale / relations | 不会拒绝，只报告 |
 | `novel_roles` | 查看/设置各角色用的模型与推理档位 | set 缺 role |
-| `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核/状态维护员）；审稿结果带 `shifts` | 阶段不对、章纲未批准、审核时无草稿 |
+| `novel_dispatch` | 按角色派子智能体（写手/逻辑审核/角色一致性/总审核/状态维护员）；`card` 不派，只把写手那张派单书交给你复制 | 阶段不对、章纲未批准、审核时无草稿 |
 | `novel_export` | 导出整本 txt / 按卷 markdown / 设定集 | 还没有落盘的正文 |
-| `novel_backup` | 给整本书留副本：list / make / restore（恢复前先存当下，且不删副本里没有的文件） | 这里还不是一本书；restore 没说要回到哪一份 |
+| `novel_backup` | 整书副本 list / make / restore（恢复前先存当下，且不删副本里没有的文件）；单份文件的历史 `history` 与回退 `revert`（`target="chapter:7"` / `"canon:characters"` / `"skill:开篇钩子"`） | 这里还不是一本书；restore 没说要回到哪一份；target 写成别的形状 |
+| `novel_skill` | 这本书自己的写作手法笔记：list / read / write / delete；覆盖前自动留一版 | 名字为空；读不存在的笔记；单篇超过 20000 字 |
 | `novel_import` | scan 只读盘点已有稿件（正文/人物/大纲），apply 才写入；已存在的章默认不覆盖 | 目录不存在、不是绝对路径、同名章没给 overwrite |
 | `novel_story` | 故事点：add 开一段 / close 收尾 / at 查某章属于哪段 / list 全列 | 上一段没收尾就 add；结束章比开始章还早 |
 | `novel_timeline` | 时间线：start 钉起点 / anchor 钉日期 / span 记跨度 / scan 读正文找日期 / adopt 把它写进去 / at 问第 N 章哪天 / recall 记回忆 | 日期或时长解析不了、算不出来就报错，不猜 |

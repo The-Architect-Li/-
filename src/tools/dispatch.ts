@@ -42,13 +42,13 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_dispatch',
     description:
-      '小说工坊流水线：按角色派一个子智能体干活，等它结果回来。writer=写手出初稿（返回正文文本）；logic=逻辑审核、character=角色一致性审核（返回带证据的 findings 数组）；chief=总审核（需要把前面各审核的 findings 传进 findings 参数，返回裁决后的清单）。模型由 novel_roles 配置，每次调用自动带上，你不用管。',
+      '小说工坊流水线：按角色派一个子智能体干活，等它结果回来。writer=写手出初稿（返回正文文本）；logic=逻辑审核、character=角色一致性审核（返回带证据的 findings 数组）；chief=总审核（需要把前面各审核的 findings 传进 findings 参数，返回裁决后的清单）；card=不派，只把写手那张派单书原样给你（复制到别的会话、存档、或先看看它会读到什么）。模型由 novel_roles 配置，每次调用自动带上，你不用管。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['writer', 'logic', 'character', 'chief', 'keeper'],
-        description: '派哪个角色',
+        enum: ['writer', 'logic', 'character', 'chief', 'keeper', 'card'],
+        description: '派哪个角色；card 不派，只生成一张写手派单书（纯文本，可以复制到别处）',
       },
       number: { type: 'number', required: true, description: '章号' },
       directive: { type: 'string', description: '指挥官给这次派发的具体要求；不填则按章纲合同来' },
@@ -146,6 +146,26 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
       }
 
       const drafts = await store.allChapters()
+
+      // `card` stops here: it is the writer's prompt as a document, not a
+      // spawn. Useful when the author wants to hand the job to another session,
+      // keep the brief, or read what the writer is about to be told.
+      if (args.action === 'card') {
+        const prompt = buildWriterPrompt(snapshot, drafts, number, deps.config, args.directive ?? '')
+        return {
+          role: 'writer',
+          number,
+          text: '',
+          words: 0,
+          report: [
+            `派单书 · 第${number}章（写给写手；复制下面全文即可，不会真的派出）`,
+            `模型：${describeRoute(resolveRoleRoute('writer', deps.config, snapshot.project.roles))}`,
+            '',
+            prompt,
+          ].join('\n'),
+        }
+      }
+
       const route = resolveRoleRoute(roleId, deps.config, snapshot.project.roles)
       const routeText = describeRoute(route)
 

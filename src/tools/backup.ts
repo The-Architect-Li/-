@@ -9,6 +9,9 @@ import {
   restoreBook,
   type BackupEntry,
 } from '../domain/backup.ts'
+import { join } from 'node:path'
+import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
+import { writeSkill } from '../domain/skills.ts'
 import type { ToolDeps } from './deps.ts'
 
 /**
@@ -42,17 +45,25 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_backup',
     description:
-      '给整本书留一份副本，或者把书退回某一份副本。list 看有哪些副本（时间、文件数、大小）；make 现在打一份（只留最近 20 份，副本放在 dsh 的状态目录下，不在书里）；restore 回到某一份——恢复前会先自动存一份当下的状态（pre-restore-），所以恢复本身也能撤销；备份里没有的文件不会被删，只在报告里列出来。',
+      '给整本书留一份副本，或者把书退回某一份副本；也管单份文件的历史。list 看有哪些整书副本；make 现在打一份（只留最近 20 份，副本放在 dsh 的状态目录下，不在书里）；restore 回到某一份整书副本——恢复前会先自动存一份当下的状态，所以恢复本身也能撤销；history 看某一份文件的历史版本（target="chapter:7" / "canon:characters" / "skill:开篇钩子"）；revert 把那一个文件退回某一版，其余文件不动。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['list', 'make', 'restore'],
-        description: 'list 列表 / make 现在备份 / restore 回到某一份',
+        enum: ['list', 'make', 'restore', 'history', 'revert'],
+        description: 'list 整书副本列表 / make 备份 / restore 回到副本 / history 单文件历史 / revert 单文件回退',
       },
       name: {
         type: 'string',
-        description: 'restore 用：副本的文件名（novel_backup action="list" 里有）',
+        description: 'restore 用：整书副本的文件名（action="list" 里有）',
+      },
+      target: {
+        type: 'string',
+        description: 'history / revert 用：要动哪一份，写成「类别:名字」，例如 chapter:7、canon:characters、canon:world、canon:places、skill:开篇钩子',
+      },
+      rev: {
+        type: 'string',
+        description: 'revert 用：历史版本号（action="history" 里列出来的那个）',
       },
     },
     output: {
@@ -65,6 +76,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
           pruned: { type: 'array', items: { type: 'string' } },
           written: { type: 'array', items: { type: 'string' } },
           extra: { type: 'array', items: { type: 'string' } },
+          history: { type: 'array', items: { type: 'string' } },
           report: { type: 'string' },
         },
       },
@@ -77,6 +89,65 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
       const dir = backupHome(store.root)
       const existing: BackupEntry[] = await listBackups(store.root)
 
+      if (args.action === 'history') {
+        const { kind, name } = parseTarget(args.target ?? '')
+        const entries = await listHistory(store.root, kind, name)
+        const lines =
+          entries.length === 0
+            ? [`${kind}:${name} 还没有历史版本：它只被写过一次，或者每次写的内容都一样。`, `历史存在书里：${join(store.root, '.history')}。`]
+            : [
+                `${kind}:${name} 的历史（最新在前，共 ${entries.length} 版）：`,
+                '',
+                ...entries.map((entry) => `- ${entry.rev}｜${entry.bytes} 字节｜${entry.at}`),
+                '',
+                '退回去：novel_backup action="revert" target=… rev=…',
+              ]
+        return {
+          backup: '',
+          backups: existing.map((entry) => entry.name),
+          pruned: [],
+          written: [],
+          extra: [],
+          history: entries.map((entry) => entry.rev),
+          report: lines.join('\n'),
+        }
+      }
+
+      if (args.action === 'revert') {
+        const { kind, name } = parseTarget(args.target ?? '')
+        const entries = await listHistory(store.root, kind, name)
+        const rev = (args.rev ?? '').trim()
+        if (rev === '') {
+          const newest = entries[0]
+          if (newest === undefined) throw new Error(`${kind}:${name} 没有历史版本，退不了。`)
+          throw new Error(`revert 要说回到哪一版。最新的是 ${newest.rev}；全部用 action="history"。`)
+        }
+        const text = await readHistory(store.root, kind, name, rev)
+        if (kind === 'chapter') {
+          await store.restoreChapterText(Number(name), text)
+        } else if (kind === 'canon') {
+          if (!['characters', 'world', 'places', 'relations'].includes(name)) {
+            throw new Error(`canon 只认 characters / world / places / relations，不认「${name}」。`)
+          }
+          await store.writeCanonRaw(name as 'characters' | 'world' | 'places' | 'relations', text)
+        } else {
+          await writeSkill(store.root, name, text)
+        }
+        return {
+          backup: '',
+          backups: existing.map((entry) => entry.name),
+          pruned: [],
+          written: [name],
+          extra: [],
+          history: (await listHistory(store.root, kind, name)).map((entry) => entry.rev),
+          report: [
+            `已经把 ${kind}:${name} 退回 ${rev}（${text.length} 字）。`,
+            '退回前的这一版也进了历史，所以退错了还能再退回来。',
+            '整书备份没有动；要连别的文件一起回，用 action="restore"。',
+          ].join('\n'),
+        }
+      }
+
       if (args.action === 'list') {
         const lines =
           existing.length === 0
@@ -86,7 +157,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
                 '',
                 ...existing.map((entry) => `- ${describeBackup(entry)}（${entry.name}）`),
               ]
-        return { backup: '', backups: existing.map((entry) => entry.name), pruned: [], written: [], extra: [], report: lines.join('\n') }
+        return { backup: '', backups: existing.map((entry) => entry.name), pruned: [], written: [], extra: [], history: [], report: lines.join('\n') }
       }
 
       if (args.action === 'make') {
@@ -103,6 +174,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
           pruned: made.pruned,
           written: [],
           extra: [],
+          history: [],
           report: lines.join('\n'),
         }
       }
@@ -120,6 +192,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
         pruned: [],
         written: result.written,
         extra: result.extra,
+        history: [],
         report: restoreReport(result).join('\n'),
       }
     },
