@@ -1092,3 +1092,63 @@ describe('panel entry route', () => {
     })
   }
 })
+
+describe('team route: choosing a model needs a book', () => {
+  let server: Server | undefined
+  let harness: Harness | undefined
+
+  afterEach(async () => {
+    server?.close()
+    server = undefined
+    if (harness) {
+      await harness.cleanup()
+      harness = undefined
+    }
+  })
+
+  async function listen(): Promise<string> {
+    harness ??= await createHarness()
+    const route = harness.routes.find((entry) => entry.path === PANEL_PREFIX)
+    if (route === undefined) throw new Error('the plugin registered no panel route')
+    const created = createServer((req, res) => void route.handler(req, res))
+    server = created
+    await new Promise<void>((done) => created.listen(0, '127.0.0.1', () => done()))
+    const address = created.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    return `http://127.0.0.1:${address.port}`
+  }
+
+  function post(base: string, body: unknown): Promise<Response> {
+    return fetch(`${base}${PANEL_PREFIX}/roles`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it('refuses with a reason when no book is open, instead of pretending to save', async () => {
+    const base = await listen()
+    const response = await post(base, { role: 'character', provider: 'deepseek-account', model: '' })
+    expect(response.status).toBe(409)
+    const payload = (await response.json()) as { error: { message: string } }
+    expect(payload.error.message).toContain('新建一本')
+  })
+
+  it('stores the provider once a book exists, and reports it back', async () => {
+    const base = await listen()
+    await harness!.call('novel_project', { action: 'init', title: '雾港' })
+
+    const response = await post(base, { role: 'character', provider: 'deepseek-account', model: '' })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as {
+      data: { roles: Array<{ id: string; override: { provider?: string } | null; source: string }> }
+    }
+    const character = payload.data.roles.find((role) => role.id === 'character')
+    expect(character?.override?.provider).toBe('deepseek-account')
+    expect(character?.source).toBe('book')
+
+    const read = await fetch(`${base}${PANEL_PREFIX}/roles`)
+    const again = (await read.json()) as { data: { roles: Array<{ id: string; override: { provider?: string } | null }> } }
+    expect(again.data.roles.find((role) => role.id === 'character')?.override?.provider).toBe('deepseek-account')
+  })
+})

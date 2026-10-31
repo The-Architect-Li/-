@@ -2982,6 +2982,10 @@ const API_BACKUP = '/api/inkwell/backup'
       const [state, setState] = useState({ status: 'loading' })
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
+      // Per-role failure text. The banner at the top is off-screen while the
+      // author is working down the list, and "nothing happened" was how a 409
+      // read from there — so the reason goes where the control is.
+      const [roleError, setRoleError] = useState({})
 
       useEffect(() => {
         const controller = new AbortController()
@@ -3000,9 +3004,13 @@ const API_BACKUP = '/api/inkwell/backup'
         (role, body) => {
           setBusy(role)
           setError('')
+          setRoleError((current) => ({ ...current, [role]: '' }))
           saveRole(sessionId, root, { role, ...body })
             .then((data) => setState({ status: 'ready', data }))
-            .catch((failure) => setError(String((failure && failure.message) || failure)))
+            .catch((failure) => {
+              const message = String((failure && failure.message) || failure)
+              setRoleError((current) => ({ ...current, [role]: message }))
+            })
             .finally(() => setBusy(''))
         },
         [sessionId, root],
@@ -3106,7 +3114,21 @@ const API_BACKUP = '/api/inkwell/backup'
         { style: S.root },
         head,
         data.noBook
-          ? h('div', { style: S.note }, '这本书还没有项目文件。先在面板里新建一本，再回来配模型。')
+          ? h(
+              'div',
+              { style: S.roleCard },
+              h('div', { style: S.roleHead }, h('span', { style: S.roleName }, '还没有打开一本书')),
+              h(
+                'div',
+                { style: S.roleDuty },
+                '模型是每本书自己的设置，所以得先有一本书。回书库选一本，或者新建一本——建好之后再回来，这里的下拉框才会真的写进那本书。',
+              ),
+              h(
+                'div',
+                { style: { ...S.fieldRow, marginTop: 8 } },
+                h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: onBack }, '回书库'),
+              ),
+            )
           : null,
         error ? h('div', { style: S.error }, error) : null,
         h(
@@ -3120,7 +3142,7 @@ const API_BACKUP = '/api/inkwell/backup'
           ),
           h('div', { style: S.roleDuty }, '和你对话的那个模型：取上下文包、派活、把审核意见转述给你。它不在这里配，因为它在你的会话设置里。'),
         ),
-        ...roles.map((role) =>
+        ...(data.noBook ? [] : roles).map((role) =>
           h(
             'div',
             { key: role.id, style: S.roleCard, className: 'iw-card' },
@@ -3148,6 +3170,7 @@ const API_BACKUP = '/api/inkwell/backup'
             h('div', { style: S.fieldRow }, h('span', { style: S.fieldName }, '接口'), providerOptions(role)),
             h('div', { style: S.fieldRow }, h('span', { style: S.fieldName }, '模型'), modelOptions(role)),
             effortOptions(role),
+            roleError[role.id] ? h('div', { style: S.error }, roleError[role.id]) : null,
             h('div', { style: S.roleEffective }, role.effective),
           ),
         ),
