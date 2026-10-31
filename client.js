@@ -52,6 +52,9 @@ window.__ModuleLoader__.load({
     const API_DIRS = '/api/inkwell/dirs'
     const API_INIT = '/api/inkwell/init'
     const API_ROLES = '/api/inkwell/roles'
+    const API_HISTORY = '/api/inkwell/history'
+    const API_REVERT = '/api/inkwell/revert'
+    const API_CARD = '/api/inkwell/card'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -675,6 +678,73 @@ const API_BACKUP = '/api/inkwell/backup'
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify(body),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** The history coordinate for a page: chapters and notes are per name, canon is per file. */
+    function historyTargetOf(kind, key) {
+      if (kind === 'chapter') return `chapter:${key}`
+      if (kind === 'skill') return `skill:${key}`
+      if (kind === 'character') return 'canon:characters'
+      if (kind === 'world') return 'canon:world'
+      if (kind === 'place') return 'canon:places'
+      if (kind === 'relations') return 'canon:relations'
+      return ''
+    }
+
+    /**
+     * The last few versions of one file.
+     *
+     * @param sessionId - the calling session.
+     * @param root - the book, when the panel pinned one.
+     * @param target - `kind:name`.
+     * @param signal - aborts when the page closes.
+     * @returns `{ target, entries }`.
+     */
+    async function loadHistory(sessionId, root, target, signal) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      if (target) params.push(`target=${encodeURIComponent(target)}`)
+      const response = await fetch(`${API_HISTORY}?${params.join('&')}`, { headers: { accept: 'application/json' }, signal })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Put one file back to a stored version. */
+    async function revertVersion(sessionId, root, target, rev) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_REVERT}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ target, rev }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** The writer's brief for one chapter, without spawning anyone. */
+    async function loadCard(sessionId, root, number) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_CARD}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -3300,6 +3370,12 @@ const API_BACKUP = '/api/inkwell/backup'
       const [saving, setSaving] = useState(false)
       const [error, setError] = useState('')
       const [mode, setMode] = useState('preview')
+      // One inline drawer at a time: history or the writer's brief. A modal
+      // would cover the page the author is comparing against.
+      const [panel, setPanel] = useState('none')
+      const [panelData, setPanelData] = useState(null)
+      const [panelBusy, setPanelBusy] = useState('')
+      const [panelError, setPanelError] = useState('')
 
       useEffect(() => {
         const controller = new AbortController()
@@ -3308,6 +3384,9 @@ const API_BACKUP = '/api/inkwell/backup'
         setDraft({})
         setError('')
         setMode('preview')
+        setPanel('none')
+        setPanelData(null)
+        setPanelError('')
         loadEntry(sessionId, root, target.kind, target.key, controller.signal)
           .then((data) => setState({ status: 'ready', data }))
           .catch((failure) => {
@@ -3321,6 +3400,47 @@ const API_BACKUP = '/api/inkwell/backup'
       const inputs = data && data.edit && Array.isArray(data.edit.inputs) ? data.edit.inputs : []
       const prose = data && data.edit && data.edit.body ? data.edit.body : null
       const editable = inputs.length > 0 || prose !== null
+
+      // Where this page's versions live. Canon history is per file, not per
+      // entry: restoring `characters` puts back every card in it, which is what
+      // the label on the panel says out loud.
+      const historyTarget = historyTargetOf(target.kind, target.key)
+      const isChapter = target.kind === 'chapter'
+
+      const openHistory = async () => {
+        if (panel === 'history') { setPanel('none'); return }
+        setPanel('history'); setPanelError(''); setPanelData(null)
+        try {
+          setPanelData(await loadHistory(sessionId, root, historyTarget))
+        } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
+      }
+
+      const openCard = async () => {
+        if (panel === 'card') { setPanel('none'); return }
+        setPanel('card'); setPanelError(''); setPanelData(null)
+        try {
+          setPanelData(await loadCard(sessionId, root, Number(target.key)))
+        } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
+      }
+
+      const revertTo = async (rev) => {
+        setPanelBusy(rev); setPanelError('')
+        try {
+          setPanelData(await revertVersion(sessionId, root, historyTarget, rev))
+          const fresh = await loadEntry(sessionId, root, target.kind, target.key)
+          setState({ status: 'ready', data: fresh })
+          if (onChanged) await onChanged()
+        } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
+        finally { setPanelBusy('') }
+      }
+
+      const copyCard = async () => {
+        const text = panelData && panelData.text ? panelData.text : ''
+        try {
+          await navigator.clipboard.writeText(text)
+          setPanelError('已复制')
+        } catch (_) { setPanelError('复制失败，手动选中') }
+      }
 
       /** Start editing from the values the page was loaded with. */
       function beginEdit() {
@@ -3379,6 +3499,12 @@ const API_BACKUP = '/api/inkwell/backup'
         h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
         h('span', { style: S.bookTitle }, (data && data.title) || target.label || ''),
         h('span', { style: S.spacer }),
+        data && historyTarget
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openHistory }, panel === 'history' ? '收起' : '历史')
+          : null,
+        data && isChapter
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openCard }, panel === 'card' ? '收起' : '派单书')
+          : null,
         data && editable
           ? editing
             ? h(
@@ -3427,6 +3553,60 @@ const API_BACKUP = '/api/inkwell/backup'
       )
 
       const notice = data.blocked ? h('div', { style: S.blocked }, data.blocked) : null
+
+      const historyPanel =
+        panel !== 'history'
+          ? null
+          : h(
+              'div',
+              { style: { margin: '0 10px 8px', border: '1px solid rgba(127,127,127,.28)', borderRadius: '8px', padding: '8px 10px' } },
+              h('div', { style: { ...S.aside, padding: '0 0 6px' } }, `${historyTarget} 的历史版本（最新的在上面）`),
+              panelError ? h('div', { style: S.error }, panelError) : null,
+              panelData === null
+                ? h('div', { style: S.note }, '正在读取…')
+                : (panelData.entries || []).length === 0
+                  ? h('div', { style: S.note }, '还没有历史版本：它只被写过一次，或者每次写的内容都一样。')
+                  : (panelData.entries || []).map((entry) =>
+                      h(
+                        'div',
+                        { key: entry.rev, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' } },
+                        h('span', { style: { ...S.aside, padding: 0, flex: 1 } }, `${entry.at.replace('T', ' ').slice(0, 19)} · ${entry.bytes} 字节`),
+                        h(
+                          'button',
+                          {
+                            type: 'button', className: 'iw-btn', style: S.iconButton,
+                            disabled: panelBusy === entry.rev,
+                            onClick: () => revertTo(entry.rev),
+                          },
+                          panelBusy === entry.rev ? '…' : '回到这版',
+                        ),
+                      ),
+                    ),
+              h('div', { style: { ...S.editHint, paddingTop: '6px' } }, '回退前的这一版也会进历史，退错了还能再退回来。'),
+            )
+
+      const cardPanel =
+        panel !== 'card'
+          ? null
+          : h(
+              'div',
+              { style: { margin: '0 10px 8px', border: '1px solid rgba(127,127,127,.28)', borderRadius: '8px', padding: '8px 10px' } },
+              h('div', { style: { ...S.aside, padding: '0 0 6px' } }, '给写手的派单书 · 复制到对话或存档，不会真的派出'),
+              panelError ? h('div', { style: S.error }, panelError) : null,
+              panelData === null
+                ? h('div', { style: S.note }, '正在生成…')
+                : h('pre', {
+                    style: {
+                      margin: 0, maxHeight: '240px', overflow: 'auto', fontSize: '10.5px', lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+                    },
+                  }, panelData.text || ''),
+              h(
+                'div',
+                { style: { display: 'flex', gap: '6px', paddingTop: '6px' } },
+                h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: copyCard, disabled: panelData === null }, '复制'),
+              ),
+            )
 
       // Chapter prose: the page's main body. Preview renders one paragraph per
       // block; editing swaps in a box, and the count under it is the same
@@ -3529,6 +3709,8 @@ const API_BACKUP = '/api/inkwell/backup'
         crumbLine,
         heading,
         notice,
+        historyPanel,
+        cardPanel,
         error ? h('div', { style: S.error }, error) : null,
         data.spine ? h(Spine, { key: 'spine', spine: data.spine }) : null,
         ...editForm,

@@ -11,6 +11,7 @@
  * ("人物设计 12"), so a miscount is a test failure, not a visual nit.
  */
 import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
+import type { SkillNote } from '../domain/skills.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { cardIsStale } from '../domain/review-window.ts'
 
@@ -52,6 +53,7 @@ export type PanelEntryKind =
   | 'story'
   | 'timeline'
   | 'relations'
+  | 'skill'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -366,14 +368,52 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
 }
 
 /**
- * Build all four drawers.
+ * The skill drawer: the book's own craft notes.
+ *
+ * It is last on purpose. World, cast and plot are what the book *is*; the notes
+ * are how it wants to be written, and nobody opens them mid-chapter.
+ *
+ * @param notes - the notes on disk, already read.
+ * @returns the drawer.
+ */
+function skillsSection(notes: readonly SkillNote[]): PanelSection {
+  return {
+    id: 'skills',
+    label: '写作笔记',
+    count: notes.length,
+    rows:
+      notes.length === 0
+        ? [{ id: 'skill.none', label: '还没有笔记', aside: '让模型写一篇，或按下面的提示', tone: 'muted' }]
+        : notes.map((note) => ({
+            id: `skill:${note.name}`,
+            label: note.title,
+            aside: `${note.chars} 字`,
+            kind: 'skill' as const,
+            key: note.name,
+          })),
+  }
+}
+
+/**
+ * Build all drawers.
  *
  * @param snapshot - the book.
  * @param rounds - draft rounds per chapter.
+ * @param skills - the book's skill notes; omitted means the drawer still shows, empty.
  * @returns the sections, in drawing order.
  */
-export function buildSections(snapshot: Snapshot, rounds: DraftRounds): PanelSection[] {
-  return [worldSection(snapshot), castSection(snapshot), plotSection(snapshot), textSection(snapshot, rounds)]
+export function buildSections(
+  snapshot: Snapshot,
+  rounds: DraftRounds,
+  skills: readonly SkillNote[] = [],
+): PanelSection[] {
+  return [
+    worldSection(snapshot),
+    castSection(snapshot),
+    plotSection(snapshot),
+    textSection(snapshot, rounds),
+    skillsSection(skills),
+  ]
 }
 
 /** Rows in use, for the panel's footer line. */

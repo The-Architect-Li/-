@@ -82,6 +82,10 @@ import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelS
 import type { LlmCatalogSource } from './ports.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
+import { listSkills, readSkill, writeSkill } from '../domain/skills.ts'
+import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
+import { buildWriterPrompt } from '../roles.ts'
+import { skillPage } from './entry.ts'
 
 /** Route prefix the browser half fetches under. */
 export const PANEL_PREFIX = '/api/inkwell'
@@ -288,7 +292,7 @@ export async function readPanel(
     for (const chapter of snapshot.chapters) numbers.add(chapter.number)
     for (const plan of snapshot.plans) numbers.add(plan.number)
     const drafts = await readDrafts(store, [...numbers].sort((a, b) => a - b))
-    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root)
+    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root, await listSkills(store.root))
     return { status: 200, body: { ok: true, data } }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -1097,6 +1101,138 @@ export async function writeTeam(
  * @param root - an absolute project directory, when the browser named one.
  * @returns status and body.
  */
+/**
+ * Parse a history target, reporting a bad one as a 400 rather than a 500.
+ *
+ * `parseTarget` throws a plain Error because the tool surfaces it verbatim; the
+ * route has to translate it into the panel's status codes.
+ */
+function readTarget(target: string): { kind: 'chapter' | 'canon' | 'skill'; name: string } {
+  try {
+    return parseTarget(target)
+  } catch (error) {
+    throw new PanelInputError((error as Error).message, 400)
+  }
+}
+
+/** Turn a thrown error into the panel's answer shape. */
+function failure(error: unknown): PanelAnswer {
+  if (error instanceof PanelInputError) {
+    return { status: error.status, body: { ok: false, error: { message: error.message } } }
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return { status: 500, body: { ok: false, error: { message } } }
+}
+
+/**
+ * The last few versions of one file.
+ *
+ * Targets are the same coordinates the tool uses — `chapter:7`,
+ * `canon:characters`, `skill:开篇钩子` — so a version seen in the panel and a
+ * version named in the conversation are the same version.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param target - `kind:name`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the entries, newest first.
+ */
+export async function readHistoryRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  target: string,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const parsed = readTarget(target)
+    return {
+      status: 200,
+      body: { ok: true, data: { target, entries: await listHistory(store.root, parsed.kind, parsed.name) } },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * Put one file back to a stored version, leaving the rest of the book alone.
+ *
+ * The write goes through the same store methods the tool uses, so the restored
+ * content is validated (canon must still parse) and the chapter's revision goes
+ * up — an editor holding the old number finds out on its next save.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ target, rev }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the remaining entries.
+ */
+export async function revertRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const target = typeof body.target === 'string' ? body.target : ''
+    const rev = typeof body.rev === 'string' ? body.rev.trim() : ''
+    if (rev === '') throw new PanelInputError('要说回到哪一版。')
+    const parsed = readTarget(target)
+    const text = await readHistory(store.root, parsed.kind, parsed.name, rev)
+    if (parsed.kind === 'chapter') await store.restoreChapterText(Number(parsed.name), text)
+    else if (parsed.kind === 'canon') {
+      if (!['characters', 'world', 'places', 'relations'].includes(parsed.name)) {
+        throw new PanelInputError(`canon 只认 characters / world / places / relations，不认「${parsed.name}」。`)
+      }
+      await store.writeCanonRaw(parsed.name as 'characters' | 'world' | 'places' | 'relations', text)
+    } else await writeSkill(store.root, parsed.name, text)
+    return {
+      status: 200,
+      body: { ok: true, data: { target, entries: await listHistory(store.root, parsed.kind, parsed.name) } },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * The writer's brief for one chapter, as text the author can copy.
+ *
+ * Deliberately does not spawn: the panel's job is to show what the writer would
+ * be told, so the author can hand it to another session or keep it.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the brief.
+ */
+export async function cardRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const number = Number(body.number)
+    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('章号要是正整数。')
+    const snapshot = await store.snapshot()
+    if (!snapshot.plans.some((plan) => plan.number === number)) {
+      throw new PanelInputError(`第${number}章还没有章纲，写不出派单书。先 novel_outline add_chapter。`, 409)
+    }
+    const text = buildWriterPrompt(snapshot, await store.allChapters(), number, deps.config, '')
+    return { status: 200, body: { ok: true, data: { number, text } } }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function readEntry(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -1113,9 +1249,10 @@ export async function readEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
+      && kind !== 'skill'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline。`,
+        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline／skill。`,
       )
     }
     if ((key === undefined || key === '') && kind !== 'timeline') {
@@ -1124,6 +1261,13 @@ export async function readEntry(
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) {
       return { status: 404, body: { ok: false, error: { message: '这本书还没有项目文件。' } } }
+    }
+    if (kind === 'skill') {
+      const text = await readSkill(store.root, key ?? '')
+      if (text === undefined) {
+        return { status: 404, body: { ok: false, error: { message: `没有「${key ?? ''}」这篇笔记。它可能刚被删掉，刷新一下。` } } }
+      }
+      return { status: 200, body: { ok: true, data: skillPage(key ?? '', text, store.root) } }
     }
     const snapshot = await store.snapshot()
     const number = Number(key)
@@ -1201,9 +1345,10 @@ export async function writeEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
+      && kind !== 'skill'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline。`,
+        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline／skill。`,
       )
     }
     if (kind === 'timeline') {
@@ -1270,6 +1415,23 @@ export async function writeEntry(
         throw new PanelInputError((error as Error).message, 400)
       }
       return await readEntry(deps, sessionId, 'timeline', 'clock', root)
+    }
+    if (kind === 'skill') {
+      const store = storeFor(deps, sessionId, root)
+      if (!(await store.exists())) {
+        throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+      }
+      const name = typeof body.key === 'string' ? body.key.trim() : ''
+      if (name === '') throw new PanelInputError('缺 key：笔记名。')
+      if (typeof body.text !== 'string') throw new PanelInputError('text 必须是字符串。')
+      try {
+        await writeSkill(store.root, name, body.text)
+      } catch (error) {
+        throw new PanelInputError((error as Error).message, 400)
+      }
+      // Rebuild from disk: the page shows what was stored (trimmed to the cap),
+      // not what was typed.
+      return await readEntry(deps, sessionId, 'skill', name, root)
     }
     const key = typeof body.key === 'string' ? body.key.trim() : ''
     if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
@@ -1673,6 +1835,53 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
           return
         }
         send(res, await writeTeam(deps, catalog, await readJson(req), sessionId, root))
+        return
+      }
+
+      if (path === '/history') {
+        send(
+          res,
+          await readHistoryRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            url.searchParams.get('target') ?? '',
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/revert') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/revert 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await revertRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/card') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/card 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await cardRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
         return
       }
 

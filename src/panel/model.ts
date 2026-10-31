@@ -11,6 +11,7 @@
  */
 import { nextPhase, blockersFor } from '../domain/phase.ts'
 import { countChars } from '../domain/text.ts'
+import type { SkillNote } from '../domain/skills.ts'
 import type {
   ChapterMeta,
   ChapterPlan,
@@ -82,6 +83,8 @@ export interface PanelSnapshot {
   premiseChars: number
   /** When the project record last changed. */
   updatedAt: string | null
+  /** How many craft notes this book keeps. */
+  skillCount: number
   /** The four drawers the panel draws: world, cast, plot, manuscript. */
   sections: PanelSection[]
 }
@@ -172,6 +175,7 @@ export function buildPanelSnapshot(
   config: InkwellConfig,
   drafts: readonly ChapterDrafts[],
   root: string,
+  skills: readonly SkillNote[] = [],
 ): PanelSnapshot {
   const { project, plans, chapters, ledger } = snapshot
   const next = nextPhase(project.phase)
@@ -201,7 +205,8 @@ export function buildPanelSnapshot(
     volumeCount: snapshot.volumes.length,
     premiseChars: countChars(project.premise),
     updatedAt: project.updatedAt ?? null,
-    sections: buildSections(snapshot, new Map(drafts.map((entry) => [entry.number, entry.rounds]))),
+    skillCount: skills.length,
+    sections: buildSections(snapshot, new Map(drafts.map((entry) => [entry.number, entry.rounds])), skills),
   }
 }
 
@@ -226,6 +231,7 @@ export function emptyPanelSnapshot(root: string): PanelSnapshot {
     volumeCount: 0,
     premiseChars: 0,
     updatedAt: null,
+    skillCount: 0,
     sections: [],
   }
 }

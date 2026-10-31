@@ -699,6 +699,33 @@ function timelinePage(snapshot: Snapshot, root: string): EntryPayload {
  * @param body - the committed prose, for a chapter page.
  * @returns the page, or `undefined` when the thing is gone (a stale tree in the browser).
  */
+/**
+ * One skill note as a page.
+ *
+ * The note itself is the body: there are no fields, because a note is prose
+ * about writing prose. Editing reuses the long-body editor a chapter uses, so
+ * the panel has one way to edit long text rather than two.
+ *
+ * @param name - the note's file name, which is also its identity.
+ * @param text - the note's Markdown.
+ * @param root - project directory, echoed for the footer.
+ * @returns the page.
+ */
+export function skillPage(name: string, text: string, root: string): EntryPayload {
+  const heading = text.split(/\r?\n/).find((line) => line.trim().startsWith('# '))
+  const title = heading === undefined ? name : heading.replace(/^#\s*/, '').trim() || name
+  return {
+    kind: 'skill',
+    title,
+    subtitle: '写作笔记',
+    breadcrumb: ['写作笔记', name],
+    fields: [{ label: '字数', value: String(text.length) }],
+    lists: [],
+    edit: { inputs: [], body: { key: 'text', label: '笔记全文', value: text } },
+    root,
+  }
+}
+
 export function buildEntry(
   snapshot: Snapshot,
   kind: PanelEntryKind,
