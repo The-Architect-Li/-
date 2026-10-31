@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **派不出子智能体（`ctx.subagents.start is not a function`）**：这不是插件的 bug，是宿主接口换代。
+  新版 DSH 的 `ctx.subagents` 只有 `startActivation(spec)`，没有 `start(name, request)`；provider 名字
+  也从 `spawn` 变成 `subagent-spawn-in-process`，persona 从请求字段挪进了 preset。
+  `src/spawn.ts` 现在在调用时认形状：有 `start` 走旧路，有 `startActivation` 走新路（persona 折进
+  提示词，因为这些子智能体没有工具、没有第二轮），都没有就明说「宿主换了接口」而不是「不是函数」。
+  provider 名按 `list()` 里含 spawn 的挑，不写死，下一次改名不会再打死整条链路。
+  受影响的是 writer / 各审核 / 状态维护员 / 档案员 / 考据员——全都是同一条派发管线。
+
 ### Added
 
 - **`novel_pending`（第 16 个工具）：子智能体的提案有了审查队列。** 状态维护员以前在对话里提案，
