@@ -3620,6 +3620,13 @@ const API_BACKUP = '/api/inkwell/backup'
           setEditing(false)
           setMode('preview')
           if (onChanged) onChanged()
+          // Renaming a category changes the page's own key. Staying here would
+          // leave the next save pointed at a category that no longer exists, so
+          // the rename ends by going back to the drawer that now shows it.
+          if (payload.data && payload.data.kind === 'kind' && payload.data.title !== target.key) {
+            onBack()
+            return
+          }
         } catch (failure) {
           setError(String((failure && failure.message) || failure))
         } finally {

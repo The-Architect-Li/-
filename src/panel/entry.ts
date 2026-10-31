@@ -699,6 +699,53 @@ function timelinePage(snapshot: Snapshot, root: string): EntryPayload {
  * @param body - the committed prose, for a chapter page.
  * @returns the page, or `undefined` when the thing is gone (a stale tree in the browser).
  */
+/**
+ * One world category as a page.
+ *
+ * The kinds in a book are the author's own words, which means they drift: 宗门
+ * and 门派 arrive as two, 规则 collects things that are really 境界, a typo
+ * creates a category with one member. Without a place to fix that, the drawer's
+ * grouping turns into a record of every naming mistake.
+ *
+ * Renaming and merging are the same write — every entry under one kind moves to
+ * another — so the page has one field and says both things. Merging is what
+ * happens when the target already exists.
+ *
+ * @param snapshot - the book.
+ * @param kind - the category's current name.
+ * @param root - project directory, for the footer.
+ * @returns the page, or `undefined` when no entry carries this kind.
+ */
+function kindPage(snapshot: Snapshot, kind: string, root: string): EntryPayload | undefined {
+  const entries = snapshot.world.filter((entry) => (entry.kind.trim() === '' ? '未分类' : entry.kind.trim()) === kind)
+  if (entries.length === 0) return undefined
+  const others = [...new Set(snapshot.world.map((entry) => (entry.kind.trim() === '' ? '未分类' : entry.kind.trim())))]
+    .filter((name) => name !== kind)
+    .sort((a, b) => a.localeCompare(b, 'zh'))
+  return {
+    kind: 'kind',
+    title: kind,
+    subtitle: `${entries.length} 条`,
+    chip: '类别',
+    breadcrumb: ['世界观', kind],
+    fields: [{ label: '条目', value: String(entries.length) }],
+    lists: [
+      { label: '这一类的条目', items: entries.map((entry) => entry.name) },
+      ...(others.length > 0 ? [{ label: '这本书已有的其它类别（填进下面那一栏就是合并）', items: others }] : []),
+    ],
+    edit: {
+      inputs: [
+        {
+          key: 'to',
+          label: '改名为／合并到（这一类的全部条目一起搬过去）',
+          value: kind,
+        },
+      ],
+    },
+    root,
+  }
+}
+
 export function buildEntry(
   snapshot: Snapshot,
   kind: PanelEntryKind,
@@ -712,6 +759,7 @@ export function buildEntry(
   if (kind === 'character') return characterPage(snapshot, key, root)
   if (kind === 'relations') return relationsPage(snapshot, root)
   if (kind === 'world') return worldPage(snapshot, key, root)
+  if (kind === 'kind') return kindPage(snapshot, key, root)
   if (kind === 'place') return placePage(snapshot, key, root)
   if (kind === 'story') return storyPage(snapshot, key, root)
   if (kind === 'timeline') return timelinePage(snapshot, root)

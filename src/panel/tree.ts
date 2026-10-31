@@ -11,6 +11,7 @@
  * ("人物设计 12"), so a miscount is a test failure, not a visual nit.
  */
 import type { ChapterMeta, ChapterPlan, CharacterCard, DraftRound, Snapshot } from '../domain/types.ts'
+import { kindOf } from '../domain/kinds.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { cardIsStale } from '../domain/review-window.ts'
 
@@ -52,6 +53,7 @@ export type PanelEntryKind =
   | 'story'
   | 'timeline'
   | 'relations'
+  | 'kind'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -134,6 +136,11 @@ function worldSection(snapshot: Snapshot): PanelSection {
           id: `world.kind.${group.kind}`,
           label: group.label,
           count: group.entries.length,
+          // Clicking the row opens the category (where it can be renamed or
+          // merged); the ▸ still collapses, so nothing that worked before stops
+          // working.
+          kind: 'kind' as const,
+          key: group.kind,
           children: capped(
             group.entries.map((entry, index) => worldRow(entry, `world.kind.${group.kind}.${index}`, false)),
             group.entries.length,
@@ -168,9 +175,6 @@ function worldRow(entry: Snapshot['world'][number], id: string, showKind: boolea
   }
 }
 
-/** The kind a world entry falls under, when it never said. */
-const WORLD_UNFILED = '未分类'
-
 /**
  * Group world entries by the kind their author gave them.
  *
@@ -186,7 +190,7 @@ const WORLD_UNFILED = '未分类'
 function groupByKind(entries: Snapshot['world']): { kind: string; label: string; entries: Snapshot['world'] }[] {
   const byKind = new Map<string, Snapshot['world']>()
   for (const entry of entries) {
-    const kind = entry.kind.trim() === '' ? WORLD_UNFILED : entry.kind.trim()
+    const kind = kindOf(entry)
     const list = byKind.get(kind) ?? []
     list.push(entry)
     byKind.set(kind, list)

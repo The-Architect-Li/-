@@ -190,3 +190,67 @@ describe('creating canon by hand', () => {
     expect(response.status).toBe(400)
   })
 })
+
+describe('a world category as a page', () => {
+  /** Put three entries in two categories, the shape the drawer groups by. */
+  async function seeded(base: string): Promise<void> {
+    for (const [name, category] of [['妙玉宫', '宗门'], ['食佛门', '宗门'], ['补天丹', '物品']]) {
+      await write(base, '/new', { kind: 'world', fields: { name, category, detail: '一句话' } })
+    }
+  }
+
+  it('lists what is in one category and offers the others for merging', async () => {
+    const base = await book()
+    await seeded(base)
+
+    const page = (await (await fetch(`${base}/entry?kind=kind&key=${encodeURIComponent('宗门')}`)).json()) as {
+      data: { title: string; subtitle: string; lists: { label: string; items: string[] }[] }
+    }
+    expect(page.data.title).toBe('宗门')
+    expect(page.data.subtitle).toBe('2 条')
+    const members = page.data.lists.find((list) => list.label === '这一类的条目')
+    expect(members?.items.sort()).toEqual(['妙玉宫', '食佛门'].sort())
+    const others = page.data.lists.find((list) => list.label.includes('其它类别'))
+    expect(others?.items).toContain('物品')
+  })
+
+  it('renames the category, taking every entry with it', async () => {
+    const base = await book()
+    await seeded(base)
+
+    const saved = await write(base, '/entry', { kind: 'kind', key: '宗门', fields: { to: '门派' } })
+    expect(saved.status).toBe(200)
+    const page = (await saved.json()) as { data: { title: string; subtitle: string } }
+    expect(page.data.title).toBe('门派')
+    expect(page.data.subtitle).toBe('2 条')
+
+    const snapshot = (await (await fetch(`${base}/snapshot`)).json()) as {
+      data: { sections: { id: string; rows: { label: string; count?: number }[] }[] }
+    }
+    const world = snapshot.data.sections.find((section) => section.id === 'world')
+    expect(world?.rows.map((row) => row.label)).toEqual(['门派', '物品'])
+  })
+
+  it('merges when the target already exists, leaving one category', async () => {
+    const base = await book()
+    await seeded(base)
+
+    await write(base, '/entry', { kind: 'kind', key: '物品', fields: { to: '宗门' } })
+    const snapshot = (await (await fetch(`${base}/snapshot`)).json()) as {
+      data: { sections: { id: string; rows: { label: string; count?: number }[] }[] }
+    }
+    const world = snapshot.data.sections.find((section) => section.id === 'world')
+    // One category left, so the drawer goes flat again — a heading over
+    // everything is not a grouping.
+    expect(world?.rows.map((row) => row.label).sort()).toEqual(['妙玉宫', '补天丹', '食佛门'].sort())
+  })
+
+  it('refuses an empty new name instead of silently dropping the category', async () => {
+    const base = await book()
+    await seeded(base)
+    const response = await write(base, '/entry', { kind: 'kind', key: '宗门', fields: { to: '  ' } })
+    expect(response.status).toBe(400)
+    const payload = (await response.json()) as { error: { message: string } }
+    expect(payload.error.message).toContain('不能为空')
+  })
+})

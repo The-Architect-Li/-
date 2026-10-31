@@ -4,6 +4,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { currentStage, recordTurn, updateCharacter } from '../domain/characters.ts'
 import type { CharacterRelation, CharacterRole, CharacterStage, PlaceCard, PlaceState } from '../domain/types.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
+import { renameWorldKind } from '../domain/kinds.ts'
 import type { ToolDeps } from './deps.ts'
 
 function asRole(value: string | undefined): CharacterRole {
@@ -101,8 +102,8 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
       action: {
         type: 'string',
         required: true,
-        enum: ['upsert_character', 'shift', 'upsert_world', 'upsert_place', 'list'],
-        description: 'upsert_character 写角色 / shift 记角色转变 / upsert_world 写世界观 / upsert_place 记地点 / list 列表',
+        enum: ['upsert_character', 'shift', 'upsert_world', 'upsert_place', 'rename_kind', 'list'],
+        description: 'upsert_character 写角色 / shift 记角色转变 / upsert_world 写世界观 / upsert_place 记地点 / rename_kind 改世界观类别的名字或把两类合并 / list 列表',
       },
       chapter: {
         type: 'number',
@@ -220,6 +221,28 @@ export function registerCanonTool(ctx: Context, deps: ToolDeps): void {
             '卡上的性格已经改成现在的样子；原来那一段留在「经历的阶段」里，写第' + `${chapter + 1}章的时候他已经是新的人。`,
             '这不是设定改写，是一次有据可查的成长——写后续章节时按新的性格写，不要再按旧卡。',
           ].join('\n'),
+        }
+      }
+
+      if (args.action === 'rename_kind') {
+        // One write, two words: renaming a category and merging two into one are
+        // the same operation, and the drawer cannot tell them apart afterwards —
+        // which is the point.
+        const from = args.name?.trim()
+        if (!from) throw new Error('rename_kind 需要 name：被打散的那个类别名。')
+        const to = args.kind?.trim()
+        if (!to) throw new Error('rename_kind 需要 kind：改成什么名字。')
+        const result = await renameWorldKind(store, from, to)
+        return {
+          action: args.action,
+          name: result.to,
+          characters: (await store.characters()).map((card) => card.name),
+          world: (await store.world()).map((entry) => entry.name),
+          places: (await store.places()).map((card) => card.name),
+          report:
+            result.moved === 0
+              ? `书里没有「${from}」这个类别，什么都没改。novel_canon action="list" 看看现有的类别名。`
+              : `「${from}」的 ${result.moved} 条全部改到「${result.to}」。世界观抽屉里现在只有一类。`,
         }
       }
 

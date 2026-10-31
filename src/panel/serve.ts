@@ -67,6 +67,7 @@ import { gateToolCall } from '../gate.ts'
 import { atLeast, blockersFor } from '../domain/phase.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { PENDING_LABEL, describePending, readPending, removePending } from '../domain/pending.ts'
+import { renameWorldKind } from '../domain/kinds.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
@@ -1524,9 +1525,10 @@ export async function readEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
+      && kind !== 'kind'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline。`,
+        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline／kind。`,
       )
     }
     if ((key === undefined || key === '') && kind !== 'timeline') {
@@ -1612,9 +1614,10 @@ export async function writeEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
+      && kind !== 'kind'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline。`,
+        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline／kind。`,
       )
     }
     if (kind === 'timeline') {
@@ -1681,6 +1684,26 @@ export async function writeEntry(
         throw new PanelInputError((error as Error).message, 400)
       }
       return await readEntry(deps, sessionId, 'timeline', 'clock', root)
+    }
+    if (kind === 'kind') {
+      const store = storeFor(deps, sessionId, root)
+      if (!(await store.exists())) {
+        throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+      }
+      const from = typeof body.key === 'string' ? body.key.trim() : ''
+      if (from === '') throw new PanelInputError('缺少 key：要改的那个类别名。')
+      const fields = body.fields
+      if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
+        throw new PanelInputError('fields 必须是一个对象。')
+      }
+      const raw = (fields as Record<string, unknown>).to
+      const to = typeof raw === 'string' ? raw.trim() : ''
+      if (to === '') throw new PanelInputError('新类别名不能为空。想删掉这一类，改到「未分类」就好。')
+      if (to === from) return await readEntry(deps, sessionId, 'kind', from, root)
+      // One write, two words for it: rename when the target is new, merge when it
+      // is not. Nothing else about the entries changes.
+      await renameWorldKind(store, from, to)
+      return await readEntry(deps, sessionId, 'kind', to, root)
     }
     const key = typeof body.key === 'string' ? body.key.trim() : ''
     if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
