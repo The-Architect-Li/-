@@ -90,7 +90,9 @@ const KEEPER_CONTRACT = [
   '输出契约：',
   '- 严格输出一个 JSON 数组，不要 ```json 围栏，不要解释。',
   '- 每条形如 {"kind":"ledger|place|stage|anchor|card","subject":"<人/地点/世界>","key":"<属性>","value":"<值>","chapter":<章号>,"quote":"<原文片段>"}。',
-  '- kind 的含义：ledger=该记进账本的一条事实；place=这个地点在这一章变成了什么样；stage=这个人进入了哪个阶段；anchor=这一章的日期；card=章卡的故事梗概/关键事件/场景。',
+  '- kind 的含义：ledger=该记进账本的一条事实；place=这个地点在这一章变成了什么样；stage=这个人进入了哪个阶段；anchor=这一章的日期；card=章卡的故事梗概/关键事件/场景；thread=这一章埋下、以后要收的伏笔。',
+  '- thread 这样写：{"kind":"thread","subject":"<一句话说清埋了什么，如：那封没拆的信>","key":"","value":"<打算怎么收，或者为什么它是个承诺；想不到就留空>","chapter":<本章章号>,"quote":"<埋下它的那句原文>"}。',
+  '- thread 的标准很严：只有「读者会记着、作者以后必须交代」的才提——一个没解释的动作、一句没说完的话、一件被特意提到的物品。气氛、心情、普通的过场一律不提。提多了等于没提。',
   '- 每一条都必须有你摘的原文片段作为依据；摘不出来就不要提。',
   '- 没有该记的东西就输出 []。记多了比记漏了更坏。',
 ].join('\n')
@@ -462,7 +464,7 @@ export function buildChiefPrompt(
 
 /** One state update the keeper proposes; the commander turns it into a tool call. */
 export interface KeeperProposal {
-  kind: 'ledger' | 'place' | 'stage' | 'anchor' | 'card'
+  kind: 'ledger' | 'place' | 'stage' | 'anchor' | 'card' | 'thread'
   subject: string
   key: string
   value: string
@@ -540,10 +542,14 @@ export function parseKeeperOutput(output: string): { items: KeeperProposal[]; pa
       if (typeof entry !== 'object' || entry === null) continue
       const record = entry as Record<string, unknown>
       const kind = record.kind
-      if (kind !== 'ledger' && kind !== 'place' && kind !== 'stage' && kind !== 'anchor' && kind !== 'card') continue
+      if (kind !== 'ledger' && kind !== 'place' && kind !== 'stage' && kind !== 'anchor' && kind !== 'card' && kind !== 'thread') continue
       const subject = typeof record.subject === 'string' ? record.subject.trim() : ''
       const value_ = typeof record.value === 'string' ? record.value.trim() : ''
-      if (subject === '' || value_ === '') continue
+      // A thread's content is its subject line; the value field only says how it
+      // might be paid off, which the keeper often cannot know yet. Everything
+      // else needs both — a proposal the commander has to interpret is not one.
+      if (subject === '') continue
+      if (value_ === '' && kind !== 'thread') continue
       items.push({
         kind,
         subject,

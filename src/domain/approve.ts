@@ -22,6 +22,7 @@
  */
 import type { ProjectStore } from './store.ts'
 import { addAnchor } from './timeline-edit.ts'
+import { plantThread } from './threads.ts'
 import { UNASSIGNED } from './volumes.ts'
 import type { PendingItem } from './pending.ts'
 import type { CharacterCard, ChapterPlan, PlaceCard } from './types.ts'
@@ -188,6 +189,28 @@ export async function applyPending(
       }
       await store.upsertPlan(next)
       return { id: item.id, kind: 'card', line: `第${item.chapter}章章卡（${item.key === '' ? '梗概' : item.key}）：${item.value}`, created: plans.every((entry) => entry.number !== item.chapter) }
+    }
+
+    case 'thread': {
+      // A promise is not a fact: it must not overwrite anything, and planting the
+      // same line twice would make one debt look like two.
+      const existing = await store.threads()
+      const duplicate = existing.find((thread) => thread.label === item.subject && !thread.dropped && thread.paid === 0)
+      if (duplicate !== undefined) {
+        return { id: item.id, line: `伏笔「${item.subject}」已经在账上了（${duplicate.id}），不重复记。` }
+      }
+      const planted = await plantThread(store, {
+        label: item.subject,
+        chapter: item.chapter,
+        ...(item.quote === '' ? {} : { quote: item.quote }),
+        ...(item.value === '' ? {} : { notes: item.value }),
+      })
+      return {
+        id: item.id,
+        kind: 'thread',
+        line: `埋下 ${planted.id}：第${planted.planted}章「${planted.label}」`,
+        created: true,
+      }
     }
 
     default:

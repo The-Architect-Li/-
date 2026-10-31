@@ -39,7 +39,7 @@ export function registerPendingTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_pending',
     description:
-      '子智能体读完一章之后提出的「该记点什么」，在这里等你点头。keeper 派发时自动入队，不自动写。list 看全部（带原文引用）；approve 批准并写进书里（all=true 全收，或 ids="p-0003,p-0004" 只收那几条）；reject 丢掉（all=true 清空，或 ids）。写入是按类别确定的：事实进账本、地点加一个状态、人物加一段经历、日期钉到时间线、章卡补梗概。批准是不可撤销的，但每一处写入都留着原文引用，能追。',
+      '子智能体读完一章之后提出的「该记点什么」，在这里等你点头。keeper 派发时自动入队，不自动写。list 看全部（带原文引用）；approve 批准并写进书里（all=true 全收，或 ids="p-0003,p-0004" 只收那几条）；reject 丢掉（all=true 清空，或 ids）。写入是按类别确定的：事实进账本、地点加一个状态、人物加一段经历、日期钉到时间线、章卡补梗概、伏笔记成一条欠账（同名的不会重复记）。批准是不可撤销的，但每一处写入都留着原文引用，能追。',
     parameters: {
       action: {
         type: 'string',

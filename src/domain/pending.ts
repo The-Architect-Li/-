@@ -180,7 +180,11 @@ export async function clearPending(root: string): Promise<number> {
 export function describePending(item: PendingItem): string {
   const kind = PENDING_LABEL[item.kind] ?? item.kind
   const quote = item.quote === '' ? '' : `｜「${item.quote.slice(0, 40)}」`
-  return `[${kind}] ${item.subject}${item.key === '' ? '' : `·${item.key}`}：${item.value}${quote}`
+  const subject = `${item.subject}${item.key === '' ? '' : `·${item.key}`}`
+  // A thread's subject line already says what it is; an empty value must not
+  // leave a dangling colon that reads like missing text.
+  const body = item.value === '' ? subject : `${subject}：${item.value}`
+  return `[${kind}] ${body}${quote}`
 }
 
 /** What each kind means, in the author's words. */
@@ -188,6 +192,7 @@ export const PENDING_LABEL: Record<string, string> = {
   ledger: '事实',
   place: '地点',
   stage: '人物阶段',
+  thread: '伏笔',
   anchor: '日期',
   card: '章卡',
 }

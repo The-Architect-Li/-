@@ -237,3 +237,45 @@ describe('approving a batch', () => {
     expect(await store.ledger()).toHaveLength(2)
   })
 })
+
+describe('a promise proposed by the keeper', () => {
+  function proposed(over: { id?: string; value?: string } = {}) {
+    return {
+      ...proposal({ kind: 'thread', subject: '那封没拆的信', key: '', value: '', chapter: 3, quote: '她把信塞进袖子。' }),
+      id: over.id ?? 'p-0001',
+      at: '2026-01-01T00:00:00.000Z',
+      sourceChapter: 3,
+      role: 'keeper',
+      ...(over.value === undefined ? {} : { value: over.value }),
+    }
+  }
+
+  it('becomes a thread only when approved, with the line it came from', async () => {
+    const store = await book()
+    const result = await applyPending(store, proposed())
+    expect('kind' in result && result.kind).toBe('thread')
+    const [thread] = await store.threads()
+    expect(thread?.label).toBe('那封没拆的信')
+    expect(thread?.planted).toBe(3)
+    expect(thread?.quote).toContain('塞进袖子')
+    expect(thread?.paid).toBe(0)
+  })
+
+  it('does not plant the same promise twice', async () => {
+    // One debt that looks like two is worse than a missing one: the drawer then
+    // shows two lines, and the author has to work out which is real.
+    const store = await book()
+    await applyPending(store, proposed())
+    const again = await applyPending(store, proposed({ id: 'p-0002' }))
+    expect('kind' in again).toBe(false)
+    expect('line' in again ? again.line : '').toContain('已经在账上')
+    expect(await store.threads()).toHaveLength(1)
+  })
+
+  it('keeps a short note about how it might be paid off', async () => {
+    const store = await book()
+    await applyPending(store, proposed({ value: '等她打开信的时候' }))
+    const [thread] = await store.threads()
+    expect(thread?.notes).toBe('等她打开信的时候')
+  })
+})

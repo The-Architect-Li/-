@@ -94,6 +94,19 @@ describe('parseKeeperOutput', () => {
     expect(items[0]?.subject).toBe('沈砚')
   })
 
+  it('keeps a thread whose value is empty, because its subject is the content', () => {
+    // Every other kind needs both fields; a promise is stated by its subject
+    // line and often has no plan yet for how it will be paid off.
+    const { items } = parseKeeperOutput(
+      JSON.stringify([
+        { kind: 'thread', subject: '那封没拆的信', key: '', value: '', chapter: 3, quote: '她把信塞进袖子。' },
+        { kind: 'ledger', subject: '沈砚', key: '左手', value: '', chapter: 3, quote: 'x' },
+      ]),
+    )
+    expect(items.map((item) => item.kind)).toEqual(['thread'])
+    expect(items[0]?.subject).toBe('那封没拆的信')
+  })
+
   it('says so when the answer is not a list at all', () => {
     expect(parseKeeperOutput('它觉得这一章挺好，没什么要记的。')).toEqual({ items: [], parsed: false })
   })
