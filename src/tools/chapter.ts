@@ -5,6 +5,7 @@ import { checkContract, rank } from '../domain/contract.ts'
 import { recordCoverage } from '../domain/records.ts'
 import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/save.ts'
 import { scanChapter } from '../domain/scan.ts'
+import { describeSearch, parseTerms, searchChapters } from '../domain/search.ts'
 import type { ProjectStore } from '../domain/store.ts'
 import { countChars, splitParagraphs } from '../domain/text.ts'
 import type { ClockAdoption } from '../domain/timeline-edit.ts'
@@ -25,17 +26,17 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_chapter',
     description:
-      '章节正文。studio 流程用 propose→commit：propose 把稿子存成草稿并跑章纲合同+确定性扫描（不挡，原样留待审核）；commit 把最新草稿定稿进 chapters（你点头后调）。write 是绕过流水线的直接落笔，合同 error 会拒绝保存；write 与 restore 都要带上你读到的那一版 revision（防两处同时改互相覆盖），确要无条件覆盖传 force=true。restore 把某一轮草稿回退成正文。read 读某章（报告里带 revision 与审稿历史）。review 看某一章的审稿条目、并给单条结案（state=fixed/waived + note）。list 列出全部章节。写完一章建议接着 novel_ledger 记事实。',
+      '章节正文。studio 流程用 propose→commit：propose 把稿子存成草稿并跑章纲合同+确定性扫描（不挡，原样留待审核）；commit 把最新草稿定稿进 chapters（你点头后调）。write 是绕过流水线的直接落笔，合同 error 会拒绝保存；write 与 restore 都要带上你读到的那一版 revision（防两处同时改互相覆盖），确要无条件覆盖传 force=true。restore 把某一轮草稿回退成正文。read 读某章（报告里带 revision 与审稿历史）。review 看某一章的审稿条目、并给单条结案（state=fixed/waived + note）。list 列出全部章节。search 在已写的全部正文里搜词（零 token、纯扫盘），多个词用空格分开表示「都要出现」，带空格的短语用引号包起来；返回每章的命中次数与上下文，用来回答「这个词上次出现在哪章」「这个人这几章有没有露面」。写完一章建议接着 novel_ledger 记事实。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['write', 'propose', 'commit', 'restore', 'read', 'list', 'review'],
+        enum: ['write', 'propose', 'commit', 'restore', 'read', 'list', 'review', 'search'],
         description:
-          'write 直接写 / propose 落草稿 / commit 定稿 / restore 回退到某一轮草稿 / read 读 / list 列表 / review 看审稿条目并结案',
+          'write 直接写 / propose 落草稿 / commit 定稿 / restore 回退到某一轮草稿 / read 读 / list 列表 / review 看审稿条目并结案 / search 在全部正文里搜一个词',
       },
       number: { type: 'number', description: '章号，从 1 开始' },
-      text: { type: 'string', description: 'write 或 propose 时的完整正文' },
+      text: { type: 'string', description: 'write 或 propose 时的完整正文；search 时是要搜的词' },
       summary: { type: 'string', description: '本章一句话摘要，供后续章节的上下文包使用；不填则自动取末段' },
       title: { type: 'string', description: '章节标题，默认沿用章纲标题' },
       revision: {
@@ -51,6 +52,9 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
         description: 'review 结案状态：fixed 已改 / waived 认可不改（要在 note 里写为什么）/ open 重新打开',
       },
       note: { type: 'string', description: 'review 结案备注：改了什么，或为什么决定不改' },
+      from: { type: 'number', description: 'search 时从第几章开始找（默认第一章）' },
+      to: { type: 'number', description: 'search 时到第几章为止（默认最后一章）' },
+      limit: { type: 'number', description: 'search 时最多报告多少章命中，默认 40' },
     },
     output: {
       schema: {
@@ -68,6 +72,27 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
     async execute(args, exec) {
+      if (args.action === 'search') {
+        const store = deps.storeFor(exec)
+        const query = typeof args.text === 'string' ? args.text : ''
+        const terms = parseTerms(query)
+        if (terms.length === 0) throw new Error('要搜什么？text 里给一个词，多个词用空格分开。')
+        const chapters = await store.allChapters()
+        const result = searchChapters(chapters, terms, {
+          ...(Number.isInteger(args.from) && Number(args.from) > 0 ? { from: Number(args.from) } : {}),
+          ...(Number.isInteger(args.to) && Number(args.to) > 0 ? { to: Number(args.to) } : {}),
+          ...(Number.isInteger(args.limit) && Number(args.limit) > 0 ? { limit: Number(args.limit) } : {}),
+        })
+        return {
+          number: 0,
+          words: result.words,
+          errors: 0,
+          warnings: 0,
+          chapters: result.hits.map((hit) => String(hit.number)),
+          report: describeSearch(result, query),
+        }
+      }
+
       const store = deps.storeFor(exec)
       const snapshot = await store.snapshot()
 

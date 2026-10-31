@@ -58,6 +58,7 @@ window.__ModuleLoader__.load({
     const API_CHAPTER_PLAN = '/api/inkwell/chapter-plan'
     const API_NEW = '/api/inkwell/new'
     const API_PENDING = '/api/inkwell/pending'
+    const API_SEARCH = '/api/inkwell/search'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -835,6 +836,19 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** Full-text search over every chapter. */
+    async function loadSearch(sessionId, root, query) {
+      const params = [`q=${encodeURIComponent(query)}`]
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_SEARCH}?${params.join('&')}`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** What a subagent proposed and the book has not accepted yet. */
@@ -3879,6 +3893,101 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     /**
+     * Find a word in the book.
+     *
+     * Past a few hundred thousand characters the author stops remembering where
+     * things are and starts looking them up. The search runs on the server over
+     * prose already on disk — no model, no tokens — so it can be used in the
+     * middle of writing without thinking about cost.
+     *
+     * @param props - session, book root, and the callback that opens a chapter.
+     * @returns the page.
+     */
+    function Search(props) {
+      const { sessionId, root, onBack, onOpenChapter } = props
+      const [query, setQuery] = useState('')
+      const [state, setState] = useState({ status: 'idle' })
+      const run = (value) => {
+        const term = String(value || '').trim()
+        if (term === '') {
+          setState({ status: 'idle' })
+          return
+        }
+        setState({ status: 'loading' })
+        loadSearch(sessionId, root, term)
+          .then((data) => setState({ status: 'ready', data }))
+          .catch((failure) => setState({ status: 'error', message: String((failure && failure.message) || failure) }))
+      }
+      return h(
+        'div',
+        { style: { padding: '0 8px 10px' } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 8px' } },
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
+          h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '搜正文'),
+        ),
+        h('input', {
+          className: 'iw-input',
+          style: S.input,
+          value: query,
+          autoFocus: true,
+          placeholder: '一个词，多个词用空格分开（都要出现）',
+          onChange: (event) => {
+            setQuery(event.target.value)
+            run(event.target.value)
+          },
+          onKeyDown: (event) => {
+            if (event.key === 'Escape') onBack()
+          },
+        }),
+        h('div', { style: { ...S.aside, padding: '6px 0 4px' } }, describeSearchState(state)),
+        state.status === 'ready'
+          ? state.data.hits.map((hit) =>
+              h(
+                'div',
+                { key: hit.number, style: { padding: '4px 0 6px', borderTop: '1px solid rgba(127,127,127,.18)' } },
+                h(
+                  'div',
+                  {
+                    className: 'iw-open',
+                    role: 'button',
+                    tabIndex: 0,
+                    style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' },
+                    onClick: () => onOpenChapter(hit.number),
+                    onKeyDown: (event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      onOpenChapter(hit.number)
+                    },
+                  },
+                  h('span', { style: { fontSize: '12.5px', fontWeight: '600' } }, `第${hit.number}章`),
+                  h('span', { style: { ...S.aside, padding: 0 } }, hit.title),
+                  h('span', { style: S.spacer }),
+                  h('span', { style: S.count }, num(hit.count)),
+                ),
+                ...hit.samples.map((sample, index) =>
+                  h('div', { key: `s${index}`, style: { ...S.aside, maxWidth: '100%', padding: '2px 0 0' } }, sample),
+                ),
+              ),
+            )
+          : null,
+        h('div', { style: S.spacerBlock }),
+      )
+    }
+
+    /** What the search line says above the results. */
+    function describeSearchState(state) {
+      if (state.status === 'idle') return '零 token：直接在盘上的正文里找，不用等模型。'
+      if (state.status === 'loading') return '正在找…'
+      if (state.status === 'error') return `没搜成（${state.message}）`
+      const data = state.data || {}
+      if ((data.matched || 0) === 0) return `没有找到。看过的范围：${data.scanned || 0} 章。`
+      const more = data.truncated ? `，只列前 ${(data.hits || []).length} 章` : ''
+      return `${data.matched} 章命中${more}`
+    }
+
+    /**
      * The settings page: a list of doors, one of which is the team.
      *
      * @param props - session, book root, and navigation callbacks.
@@ -4556,6 +4665,20 @@ const API_BACKUP = '/api/inkwell/backup'
         )
       }
 
+      if (view === 'search') {
+        return withDialog(
+          h(Search, {
+            sessionId,
+            root: root || '',
+            onBack: () => setView('tree'),
+            onOpenChapter: (number) => {
+              setDetail({ kind: 'chapter', key: String(number), label: `第${number}章` })
+              setView('detail')
+            },
+          }),
+        )
+      }
+
       if (view === 'detail' && detail !== null) {
         return withDialog(
           h(Detail, {
@@ -4824,6 +4947,26 @@ const API_BACKUP = '/api/inkwell/backup'
             }),
           ),
         pendingBanner,
+        h(
+          'div',
+          {
+            className: 'iw-open',
+            role: 'button',
+            tabIndex: 0,
+            title: '在全部正文里搜一个词（零 token）',
+            style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', cursor: 'pointer' },
+            onClick: () => setView('search'),
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              setView('search')
+            },
+          },
+          h('span', { style: { fontSize: '12px', color: 'var(--iw-accent)' } }, '⌕'),
+          h('span', { style: { fontSize: '12.5px' } }, '搜正文'),
+          h('span', { style: S.spacer }),
+          h('span', { style: S.aside }, `${num(data.written)} 章可搜`),
+        ),
         h('div', { style: S.spacerBlock }),
         h(
           'div',

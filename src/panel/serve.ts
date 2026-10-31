@@ -68,6 +68,7 @@ import { atLeast, blockersFor } from '../domain/phase.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { PENDING_LABEL, describePending, readPending, removePending } from '../domain/pending.ts'
 import { renameWorldKind } from '../domain/kinds.ts'
+import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
@@ -1420,6 +1421,54 @@ export async function cardRoute(
  * @param root - an absolute project directory, when the browser named one.
  * @returns the items with the line that justifies each one.
  */
+/**
+ * Full-text search over every chapter, as the panel's search box uses it.
+ *
+ * The same walk the tool does, exposed over HTTP so the panel can answer
+ * "where did I write that" without a round trip through the chat. Cheap enough
+ * to run on every keystroke pause: a million characters take milliseconds.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param query - what to look for.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the hits, each with its chapter number so a click can open it.
+ */
+export async function searchRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  query: string,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const terms = parseTerms(query)
+    if (terms.length === 0) return { status: 400, body: { ok: false, error: { message: '要搜什么？' } } }
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) return { status: 200, body: { ok: true, data: { terms, hits: [], matched: 0, scanned: 0 } } }
+    const result = searchChapters(await store.allChapters(), terms, { limit: 60 })
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          terms: result.terms,
+          matched: result.matched,
+          scanned: result.scanned,
+          truncated: result.truncated,
+          hits: result.hits.map((hit) => ({
+            number: hit.number,
+            title: hit.title,
+            count: hit.count,
+            samples: hit.samples,
+          })),
+        },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function pendingRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2168,6 +2217,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/search') {
+        if (!isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/search 只读' } } })
+          return
+        }
+        send(
+          res,
+          await searchRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            url.searchParams.get('q') ?? '',
             url.searchParams.get('root') ?? undefined,
           ),
         )
