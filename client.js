@@ -464,12 +464,15 @@ const API_BACKUP = '/api/inkwell/backup'
       const chapters = data.chapters || 0
       const cast = data.cast || 0
       const volumes = data.volumes || 0
-      if (chapters === 0 && cast === 0 && volumes === 0) return '这个文件夹里没有现成稿件，从第一章开始写。'
+      if (chapters === 0 && cast === 0 && volumes === 0) {
+        return '没在这个文件夹里认出章节。整个 txt 或 md 都可以，只要章与章之间有标题行——「第一章」「Chapter 1」「1.标题」三种都认。'
+      }
       const parts = []
-      if (chapters > 0) parts.push(`${chapters} 章正文（${formatWords(data.words || 0)}）`)
+      if (chapters > 0) parts.push(`${chapters} 章`);
       if (cast > 0) parts.push(`${cast} 张角色卡`)
       if (volumes > 0) parts.push(`${volumes} 卷大纲`)
-      return `这个文件夹里已经有 ${parts.join('、')}。`
+      const head = `读出来了：${parts.join('、')}`
+      return chapters > 0 ? `${head}，共 ${formatWords(data.words || 0)}。` : `${head}。`
     }
 
     /** `125000` → `12.5 万字`; small numbers stay in characters. */
@@ -2295,7 +2298,11 @@ const API_BACKUP = '/api/inkwell/backup'
               )
             : null,
           empty
-            ? h('div', { style: S.note }, '换一个装稿件的文件夹：正文可以是一章一个文件，也可以是一整个 txt，只要里面写着「第一章」。')
+            ? h(
+                'div',
+                { style: S.note },
+                '换一个有稿件的文件夹。可以是一章一个文件，也可以是一整个 txt／md；章与章之间只要有标题行就行——「第一章」「Chapter 1」「1.标题」都认。',
+              )
             : null,
           h(
             'div',
@@ -2355,7 +2362,7 @@ const API_BACKUP = '/api/inkwell/backup'
           h(
             'div',
             { style: S.footer },
-            '会把稿件读成正文、章卡、人物与大纲这些记录，把这个文件夹注册成工作区，并新开一个聊天会话。',
+            '读进来的东西不会被改：原文还在原处。这里做的是把它搬成这本书的结构——一章一个文件、一张卡一条记录，之后改的是书里的副本。',
           ),
         ),
       )

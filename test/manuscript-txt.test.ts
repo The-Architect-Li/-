@@ -64,6 +64,58 @@ describe('splitManuscript', () => {
     expect(parts[0]!.text).toContain('甲。')
     expect(parts[0]!.text).toContain('乙。')
   })
+
+  it('splits a plain `1.标题` export, the way a download actually arrives', () => {
+    // The shape that made a real 122万字 manuscript read as "nothing here".
+    const text = [
+      '------------',
+      '',
+      '1.落难仙子',
+      '',
+      '雨落在甲板上。',
+      '',
+      '2.识时务的仙子',
+      '',
+      '她把刀收了起来。',
+      '',
+      '3.仙子，你吃不吃面',
+      '',
+      '锅里的水开了。',
+    ].join('\n')
+    const parts = splitManuscript(file('修仙界.txt', text))
+    expect(parts.map((part) => part.name)).toEqual([
+      '第1章 落难仙子.txt',
+      '第2章 识时务的仙子.txt',
+      '第3章 仙子，你吃不吃面.txt',
+    ])
+    expect(parts[0]!.text).toBe('雨落在甲板上。')
+  })
+
+  it('accepts a title that ends in a question mark', () => {
+    // `4.你就给我吃这个？` is a chapter; the first version of this filter
+    // dropped it because it ended in punctuation, losing a chapter silently.
+    const text = ['1.一', '', '甲。', '', '2.二', '', '乙。', '', '3.三', '', '丙。', '', '4.你就给我吃这个？', '', '丁。'].join('\n')
+    const parts = splitManuscript(file('book.txt', text))
+    expect(parts.map((part) => part.name)).toContain('第4章 你就给我吃这个？.txt')
+  })
+
+  it('refuses a file whose `1.` lines are dialogue, not a table of contents', () => {
+    // Same prefix, no sequence: seven numbered sentences scattered in prose.
+    const text = [
+      '他说：「1.我不知道。」',
+      '',
+      '她数着：2.三、5.七。',
+      '',
+      '1.这只是一句话。',
+      '',
+      '9.另外一句。',
+      '',
+      '2.再来一句。',
+    ].join('\n')
+    const parts = splitManuscript(file('notes.txt', text))
+    expect(parts).toHaveLength(1)
+    expect(parts[0]!.name).toBe('notes.txt')
+  })
 })
 
 describe('planChapters with one long file', () => {

@@ -169,6 +169,36 @@ export function planChapters(files: readonly SourceFile[]): {
 /** `第一章 裂缝` / `第12章 裂缝` / `Chapter 12 裂缝` at the start of a line. */
 const CHAPTER_LINE = /^\s*第\s*([0-9０-９]+|[零〇一二三四五六七八九十百千两]+)\s*[章回节]\s*(.*)$/
 const ENGLISH_CHAPTER_LINE = /^\s*chapter\s+([0-9]+)\s*(.*)$/i
+/**
+ * `1.落难仙子` / `1、识时务` / `1 落难仙子` — the numbering a plain text export
+ * arrives with.
+ *
+ * Deliberately narrow: the number must start the line, be followed by one of
+ * `．.、)）` or whitespace, and the rest must look like a title rather than a
+ * sentence. A bare `1.` inside dialogue is the reason for the last condition.
+ */
+const PLAIN_NUMBER_LINE = /^\s*([0-9０-９]{1,4})\s*[.、．)）]\s*(\S.*)$/
+
+/**
+ * Whether the text after a number reads like a chapter title.
+ *
+ * A line of prose is what this has to reject, and prose is long, contains a
+ * comma, and ends in a full stop. A title is short, and it may end in `？` —
+ * `4.你就给我吃这个？` is a chapter, not a question someone asked.
+ *
+ * @param rest - everything after the number and its separator.
+ * @returns true when it could plausibly be a heading.
+ */
+function looksLikeTitle(rest: string): boolean {
+  const text = rest.trim()
+  if (text === '') return false
+  if (text.length > 40) return false
+  // Narration is written in sentences and ends with one.
+  if (/[。；…]$/.test(text)) return false
+  // Two sentences on one line is prose, however short.
+  if (/[。！？].+[。！？]/.test(text)) return false
+  return true
+}
 
 /**
  * Split one file that holds more than one chapter.
@@ -177,6 +207,11 @@ const ENGLISH_CHAPTER_LINE = /^\s*chapter\s+([0-9]+)\s*(.*)$/i
  * `第1章.md`… stays as it is, and a single long `.txt` becomes chapters. The
  * split is stated rather than guessed — a file with fewer than two headings is
  * returned untouched, so a stray `第一章` inside prose cannot fragment a file.
+ *
+ * Three heading dialects are tried, because manuscripts are exported by other
+ * people's tools and none of them agree: `第12章 裂缝`, `Chapter 12`, and a plain
+ * `12.裂缝` list. The last one is only trusted when the numbers run 1, 2, 3… —
+ * a file full of `1.` lines that are dialogue must not become 400 chapters.
  *
  * @param file - one prose file as read from the disk.
  * @returns the file, or its chapters in reading order.
@@ -195,13 +230,13 @@ export function splitManuscript(file: SourceFile): SourceFile[] {
     if (number === undefined) continue
     headings.push({ at, number, title: cleanTitle(match[2] ?? '') })
   }
-  const seen = new Set<number>()
-  const usable = headings.filter((heading) => {
-    if (seen.has(heading.number)) return false
-    seen.add(heading.number)
-    return true
-  })
+  if (headings.length < 2) headings.push(...plainNumberHeadings(lines))
+  let usable = dedupe(headings)
   if (usable.length < 2) return [file]
+  // A plain-numbered file is only split when the numbers are a sequence starting
+  // at 1; otherwise the odds are that "3." was the third line of an argument.
+  const fromPlain = usable.every((heading) => heading.plain === true)
+  if (fromPlain && !runsFromOne(usable)) return [file]
   const parts: SourceFile[] = []
   for (const [index, heading] of usable.entries()) {
     const next = usable[index + 1]
@@ -217,6 +252,60 @@ export function splitManuscript(file: SourceFile): SourceFile[] {
   }
   return parts.length === 0 ? [file] : parts
 }
+
+/** Keep the first heading for each chapter number. */
+function dedupe(
+  headings: readonly { at: number; number: number; title: string; plain?: boolean }[],
+): { at: number; number: number; title: string; plain?: boolean }[] {
+  const seen = new Set<number>()
+  return headings.filter((heading) => {
+    if (seen.has(heading.number)) return false
+    seen.add(heading.number)
+    return true
+  })
+}
+
+/**
+ * `1.落难仙子` style headings, in file order.
+ *
+ * @param lines - the whole file, already split.
+ * @returns the headings that could be chapter starts.
+ */
+function plainNumberHeadings(lines: readonly string[]): { at: number; number: number; title: string; plain: true }[] {
+  const out: { at: number; number: number; title: string; plain: true }[] = []
+  for (const [at, raw] of lines.entries()) {
+    const match = PLAIN_NUMBER_LINE.exec(raw.trim())
+    if (match === null) continue
+    if (!looksLikeTitle(match[2]!)) continue
+    const number = numberFromText(match[1]!)
+    if (number === undefined) continue
+    out.push({ at, number, title: cleanTitle(match[2]!), plain: true })
+  }
+  return out
+}
+
+/**
+ * Whether a set of headings is the sequence 1, 2, 3… .
+ *
+ * Not an exact match: real books skip a chapter (deleted, merged, or a
+ * `4.你就给我吃这个？` whose title tripped a filter), add extras numbered after
+ * the end, and restart numbering per volume. What has to hold is that the
+ * numbers climb from 1 in order and almost never repeat — that is a table of
+ * contents, not a paragraph that happens to start with a digit.
+ *
+ * @param headings - headings already deduped and in file order.
+ * @returns true when the shape is a chapter list.
+ */
+function runsFromOne(headings: readonly { number: number }[]): boolean {
+  if (headings.length < 3) return false
+  if (headings[0]!.number !== 1) return false
+  let climbing = 0
+  for (let index = 1; index < headings.length; index += 1) {
+    if (headings[index]!.number > headings[index - 1]!.number) climbing += 1
+  }
+  return climbing >= (headings.length - 1) * 0.9
+}
+
 
 /** Trim the punctuation a heading puts between its number and its title. */
 function cleanTitle(raw: string): string {

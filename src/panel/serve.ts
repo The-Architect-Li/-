@@ -541,7 +541,7 @@ export async function importBook(deps: PanelDeps, body: Record<string, unknown>)
       body: {
         ok: false,
         error: {
-          message: `这个文件夹里没找到带章号的正文：${folder}。看过 正文/（或 chapters/）、人物/、大纲/全书大纲.md；markdown 与 txt 都认，单文件里写「第N章」也能拆。`,
+          message: `这个文件夹里没认出章节：${folder}。一个 txt 或 md 整个放进来也行，章与章之间只要有标题行——「第一章」「Chapter 1」「1.标题」三种写法都认。`,
         },
       },
     }
