@@ -688,10 +688,9 @@ const API_BACKUP = '/api/inkwell/backup'
       return payload.data
     }
 
-    /** The history coordinate for a page: chapters and notes are per name, canon is per file. */
+    /** The history coordinate for a page: chapters are per number, canon is per file. */
     function historyTargetOf(kind, key) {
       if (kind === 'chapter') return `chapter:${key}`
-      if (kind === 'skill') return `skill:${key}`
       if (kind === 'character') return 'canon:characters'
       if (kind === 'world') return 'canon:world'
       if (kind === 'place') return 'canon:places'
@@ -817,7 +816,6 @@ const API_BACKUP = '/api/inkwell/backup'
       ],
       volume: [{ key: 'title', label: '卷名' }],
       story: [{ key: 'name', label: '故事点' }, { key: 'startChapter', label: '起始章' }],
-      skill: [{ key: 'name', label: '笔记名' }],
     }
 
     const NEW_TITLE = {
@@ -825,7 +823,6 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
-      skill: '新建写作笔记',
     }
 
     /** Where a role's effective route comes from, as the team page labels it. */
@@ -4714,9 +4711,7 @@ const API_BACKUP = '/api/inkwell/backup'
                       ? () => startNewCard('character')
                       : section.id === 'plot'
                         ? () => startNewCard('volume')
-                        : section.id === 'skills'
-                          ? () => startNewCard('skill')
-                          : null,
+                        : null,
               addTitle: '新建',
             }),
           ),

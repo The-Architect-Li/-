@@ -2,7 +2,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { buildBriefing } from '../domain/briefing.ts'
-import { skillExcerpts } from '../domain/skills.ts'
 import { recordCoverage } from '../domain/records.ts'
 import type { ToolDeps } from './deps.ts'
 
@@ -41,7 +40,7 @@ export function registerBriefingTool(ctx: Context, deps: ToolDeps): void {
       const chapter = args.chapter
       if (!Number.isInteger(chapter) || chapter < 1) throw new Error('chapter 必须是正整数。')
 
-      const result = buildBriefing(snapshot, drafts, chapter, deps.config, await skillExcerpts(store.root))
+      const result = buildBriefing(snapshot, drafts, chapter, deps.config)
 
       // Every chapter's pack ends with what the records still owe. A book that
       // was imported arrives with eighty-five chapters and no places at all, and

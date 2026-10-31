@@ -83,10 +83,8 @@ import { buildPanelSnapshot, emptyPanelSnapshot, type ChapterDrafts, type PanelS
 import type { LlmCatalogSource } from './ports.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { checkRouteAgainstCatalog, readRoleChoice, roleViews, withRoleOverride, type RoleView } from './roles.ts'
-import { listSkills, readSkill, skillExcerpts, writeSkill } from '../domain/skills.ts'
 import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
 import { buildWriterBrief } from '../roles.ts'
-import { skillPage } from './entry.ts'
 
 /** Route prefix the browser half fetches under. */
 export const PANEL_PREFIX = '/api/inkwell'
@@ -293,7 +291,7 @@ export async function readPanel(
     for (const chapter of snapshot.chapters) numbers.add(chapter.number)
     for (const plan of snapshot.plans) numbers.add(plan.number)
     const drafts = await readDrafts(store, [...numbers].sort((a, b) => a - b))
-    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root, await listSkills(store.root))
+    const data = buildPanelSnapshot(snapshot, deps.config, drafts, store.root)
     return { status: 200, body: { ok: true, data } }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -1108,7 +1106,7 @@ export async function writeTeam(
  * `parseTarget` throws a plain Error because the tool surfaces it verbatim; the
  * route has to translate it into the panel's status codes.
  */
-function readTarget(target: string): { kind: 'chapter' | 'canon' | 'skill'; name: string } {
+function readTarget(target: string): { kind: 'chapter' | 'canon'; name: string } {
   try {
     return parseTarget(target)
   } catch (error) {
@@ -1129,7 +1127,7 @@ function failure(error: unknown): PanelAnswer {
  * The last few versions of one file.
  *
  * Targets are the same coordinates the tool uses — `chapter:7`,
- * `canon:characters`, `skill:开篇钩子` — so a version seen in the panel and a
+ * `canon:characters`, `canon:world` — so a version seen in the panel and a
  * version named in the conversation are the same version.
  *
  * @param deps - route dependencies.
@@ -1184,13 +1182,14 @@ export async function revertRoute(
     if (rev === '') throw new PanelInputError('要说回到哪一版。')
     const parsed = readTarget(target)
     const text = await readHistory(store.root, parsed.kind, parsed.name, rev)
-    if (parsed.kind === 'chapter') await store.restoreChapterText(Number(parsed.name), text)
-    else if (parsed.kind === 'canon') {
+    if (parsed.kind === 'chapter') {
+      await store.restoreChapterText(Number(parsed.name), text)
+    } else {
       if (!['characters', 'world', 'places', 'relations'].includes(parsed.name)) {
         throw new PanelInputError(`canon 只认 characters / world / places / relations，不认「${parsed.name}」。`)
       }
       await store.writeCanonRaw(parsed.name as 'characters' | 'world' | 'places' | 'relations', text)
-    } else await writeSkill(store.root, parsed.name, text)
+    }
     return {
       status: 200,
       body: { ok: true, data: { target, entries: await listHistory(store.root, parsed.kind, parsed.name) } },
@@ -1255,7 +1254,7 @@ export async function addChapterRoute(
 }
 
 /** Names one thing the panel can create, and the drawer it belongs to. */
-export type CreateKind = 'character' | 'world' | 'volume' | 'story' | 'skill'
+export type CreateKind = 'character' | 'world' | 'volume' | 'story'
 
 /**
  * Create one canon card, volume, story point or note by hand.
@@ -1352,14 +1351,7 @@ export async function createRoute(
       return { status: 200, body: { ok: true, data: { kind, key: id } } }
     }
 
-    if (kind === 'skill') {
-      const name = text('name')
-      if (name === '') throw new PanelInputError('笔记要有名字。')
-      await writeSkill(store.root, name, `# ${name}\n\n`)
-      return { status: 200, body: { ok: true, data: { kind, key: name } } }
-    }
-
-    throw new PanelInputError(`不认识的类别：${kind}。支持 character / world / volume / story / skill。`)
+    throw new PanelInputError(`不认识的类别：${kind}。支持 character / world / volume / story。`)
   } catch (error) {
     return failure(error)
   }
@@ -1398,7 +1390,6 @@ export async function cardRoute(
       chapter: number,
       config: deps.config,
       directive: '',
-      skills: await skillExcerpts(store.root),
     })
     // The warnings ride on top of the card, not below it: this panel is read as
     // "what will the writer be told", and a rule that did not fit changes that
@@ -1429,10 +1420,9 @@ export async function readEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
-      && kind !== 'skill'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline／skill。`,
+        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline。`,
       )
     }
     if ((key === undefined || key === '') && kind !== 'timeline') {
@@ -1441,13 +1431,6 @@ export async function readEntry(
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) {
       return { status: 404, body: { ok: false, error: { message: '这本书还没有项目文件。' } } }
-    }
-    if (kind === 'skill') {
-      const text = await readSkill(store.root, key ?? '')
-      if (text === undefined) {
-        return { status: 404, body: { ok: false, error: { message: `没有「${key ?? ''}」这篇笔记。它可能刚被删掉，刷新一下。` } } }
-      }
-      return { status: 200, body: { ok: true, data: skillPage(key ?? '', text, store.root) } }
     }
     const snapshot = await store.snapshot()
     const number = Number(key)
@@ -1525,10 +1508,9 @@ export async function writeEntry(
       && kind !== 'place'
       && kind !== 'story'
       && kind !== 'timeline'
-      && kind !== 'skill'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline／skill。`,
+        `未知的条目类型 ${String(kind)}，只支持 character／world／chapter／card／place／story／timeline。`,
       )
     }
     if (kind === 'timeline') {
@@ -1595,23 +1577,6 @@ export async function writeEntry(
         throw new PanelInputError((error as Error).message, 400)
       }
       return await readEntry(deps, sessionId, 'timeline', 'clock', root)
-    }
-    if (kind === 'skill') {
-      const store = storeFor(deps, sessionId, root)
-      if (!(await store.exists())) {
-        throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
-      }
-      const name = typeof body.key === 'string' ? body.key.trim() : ''
-      if (name === '') throw new PanelInputError('缺 key：笔记名。')
-      if (typeof body.text !== 'string') throw new PanelInputError('text 必须是字符串。')
-      try {
-        await writeSkill(store.root, name, body.text)
-      } catch (error) {
-        throw new PanelInputError((error as Error).message, 400)
-      }
-      // Rebuild from disk: the page shows what was stored (trimmed to the cap),
-      // not what was typed.
-      return await readEntry(deps, sessionId, 'skill', name, root)
     }
     const key = typeof body.key === 'string' ? body.key.trim() : ''
     if (key === '') throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')

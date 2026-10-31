@@ -110,58 +110,19 @@ describe('buildBriefing', () => {
     expect(result.budgetChars).toBe(900)
   })
 
-  it('carries the book’s own craft notes into the pack', () => {
-    const notes = [
-      { name: '开篇钩子', title: '开篇钩子', text: '前三句里必须有一个问题。' },
-      { name: '对话', title: '对话', text: '不写「说道」，用动作代替。' },
-    ]
-    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig(), notes)
-    expect(result.markdown).toContain('写作笔记')
-    expect(result.markdown).toContain('前三句里必须有一个问题')
-    expect(result.markdown).toContain('不写「说道」')
-    // Notes are how the book is written, not who is in it: they come after the
-    // cast so a long note cannot push the people out of the budget.
-    const order = result.sections.map((section) => section.name)
-    expect(order.indexOf('写作笔记')).toBeGreaterThan(order.indexOf('出场角色'))
-  })
-
-  it('says nothing about notes when the book has none', () => {
-    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig())
-    expect(result.markdown).not.toContain('写作笔记')
-  })
-
-  it('keeps the contract and the cast when the notes would fill the budget', () => {
-    const notes = Array.from({ length: 6 }, (_, index) => ({
-      name: `note-${index}`,
-      title: `笔记${index}`,
-      text: '这一条很长的规则，用来把预算挤满。'.repeat(40),
-    }))
-    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig({ briefingBudgetChars: 900 }), notes)
-    expect(result.markdown).toContain('本章合同')
-    expect(result.markdown).toContain('说话方式')
-  })
-
-  it('says so when the notes did not fully fit, instead of dropping them quietly', () => {
-    // The failure this guards: the author writes a rule, believes it is in force,
-    // and the writer never saw it. Silence is the wrong answer.
-    const notes = Array.from({ length: 6 }, (_, index) => ({
-      name: `note-${index}`,
-      title: `笔记${index}`,
-      text: '这一条很长的规则，用来把预算挤满。'.repeat(40),
-    }))
-    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig({ briefingBudgetChars: 900 }), notes)
-    expect(result.warnings.join('\n')).toContain('写作笔记')
-    expect(result.warnings.join('\n')).toContain('没能完整进包')
+  it('names the sections it could not fit, instead of dropping them quietly', () => {
+    // The failure this guards: a rule the author thinks is in force, that the
+    // writer never received. Silence is the wrong answer.
+    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig({ briefingBudgetChars: 800 }))
+    const dropped = result.sections.filter((section) => !section.kept).map((section) => section.name)
+    if (dropped.length > 0) {
+      expect(result.warnings.join('\n')).toContain(dropped[0]!)
+    }
+    expect(result.warnings.every((line) => line.trim() !== '')).toBe(true)
   })
 
   it('stays quiet when everything fit', () => {
-    const result = buildBriefing(
-      snapshot(),
-      drafts(),
-      3,
-      resolveConfig(),
-      [{ name: '开篇钩子', title: '开篇钩子', text: '前三句里必须有一个问题。' }],
-    )
+    const result = buildBriefing(snapshot(), drafts(), 3, resolveConfig())
     expect(result.warnings).toEqual([])
   })
 

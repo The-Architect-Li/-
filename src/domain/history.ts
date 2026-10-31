@@ -1,5 +1,5 @@
 /**
- * Per-file history: the last few versions of one chapter, one canon file, one skill note.
+ * Per-file history: the last few versions of one chapter or one canon file.
  *
  * Backups (`domain/backup.ts`) answer "give me the whole book as of yesterday".
  * That is the right tool for "I broke something and I am not sure what", and the
@@ -26,13 +26,12 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** What kind of thing a revision belongs to. */
-export type HistoryKind = 'chapter' | 'canon' | 'skill'
+export type HistoryKind = 'chapter' | 'canon'
 
 /** How many versions each kind keeps. Chapters are big; canon files are not. */
 export const HISTORY_KEEP: Record<HistoryKind, number> = {
   chapter: 5,
   canon: 20,
-  skill: 20,
 }
 
 /** Where a book keeps its per-file copies. */
@@ -59,15 +58,19 @@ function safeName(raw: string): string {
 
 /** Directory holding every revision of one named thing. */
 export function historyDir(root: string, kind: HistoryKind, name: string): string {
-  return join(root, HISTORY_DIR, kind, safeName(name))
+  // Chapters are stored under `ch007`, not `7` — `writeChapter` decides that, and
+  // a reader who asks for `chapter:7` must land in the same folder or it sees an
+  // empty history for a chapter that has plenty of versions.
+  const handle = kind === 'chapter' && /^\d+$/.test(name) ? chapterHistoryName(Number(name)) : name
+  return join(root, HISTORY_DIR, kind, safeName(handle))
 }
 
 /**
  * Copy the previous content aside before it gets overwritten.
  *
  * @param root - project directory.
- * @param kind - chapter, canon file or skill note.
- * @param name - stable handle (`ch007`, `characters`, the skill's name).
+ * @param kind - chapter or canon file.
+ * @param name - stable handle (`ch007`, `characters`).
  * @param text - content about to be replaced.
  * @param options - `keep` overrides the per-kind default.
  * @returns the entry written, or `undefined` when there was nothing worth keeping.
@@ -134,17 +137,17 @@ export async function readHistory(root: string, kind: HistoryKind, name: string,
   }
 }
 
-/** Parse `"chapter:7"` / `"canon:characters"` / `"skill:开篇钩子"` into its parts. */
+/** Parse `"chapter:7"` / `"canon:characters"` into its parts. */
 export function parseTarget(target: string): { kind: HistoryKind; name: string } {
   const raw = String(target ?? '').trim()
   const at = raw.indexOf(':')
   if (at <= 0) {
-    throw new Error('target 要写成「类别:名字」——例如 chapter:7、canon:characters、skill:开篇钩子。')
+    throw new Error('target 要写成「类别:名字」——例如 chapter:7、canon:characters。')
   }
   const kind = raw.slice(0, at) as HistoryKind
   const name = raw.slice(at + 1).trim()
-  if (kind !== 'chapter' && kind !== 'canon' && kind !== 'skill') {
-    throw new Error(`不认识的类别：${kind}。只支持 chapter / canon / skill。`)
+  if (kind !== 'chapter' && kind !== 'canon') {
+    throw new Error(`不认识的类别：${kind}。只支持 chapter / canon。`)
   }
   if (name === '') throw new Error('target 缺少名字，例如 chapter:7。')
   if (kind === 'chapter' && !/^\d+$/.test(name)) throw new Error('chapter 的 target 要写章号，例如 chapter:7。')

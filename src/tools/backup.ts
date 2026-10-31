@@ -11,7 +11,6 @@ import {
 } from '../domain/backup.ts'
 import { join } from 'node:path'
 import { listHistory, parseTarget, readHistory } from '../domain/history.ts'
-import { writeSkill } from '../domain/skills.ts'
 import type { ToolDeps } from './deps.ts'
 
 /**
@@ -45,7 +44,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_backup',
     description:
-      '给整本书留一份副本，或者把书退回某一份副本；也管单份文件的历史。list 看有哪些整书副本；make 现在打一份（只留最近 20 份，副本放在 dsh 的状态目录下，不在书里）；restore 回到某一份整书副本——恢复前会先自动存一份当下的状态，所以恢复本身也能撤销；history 看某一份文件的历史版本（target="chapter:7" / "canon:characters" / "skill:开篇钩子"）；revert 把那一个文件退回某一版，其余文件不动。',
+      '给整本书留一份副本，或者把书退回某一份副本；也管单份文件的历史。list 看有哪些整书副本；make 现在打一份（只留最近 20 份，副本放在 dsh 的状态目录下，不在书里）；restore 回到某一份整书副本——恢复前会先自动存一份当下的状态，所以恢复本身也能撤销；history 看某一份文件的历史版本（target="chapter:7" / "canon:characters"）；revert 把那一个文件退回某一版，其余文件不动。',
     parameters: {
       action: {
         type: 'string',
@@ -59,7 +58,7 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
       },
       target: {
         type: 'string',
-        description: 'history / revert 用：要动哪一份，写成「类别:名字」，例如 chapter:7、canon:characters、canon:world、canon:places、skill:开篇钩子',
+        description: 'history / revert 用：要动哪一份，写成「类别:名字」，例如 chapter:7、canon:characters、canon:world、canon:places',
       },
       rev: {
         type: 'string',
@@ -125,13 +124,11 @@ export function registerBackupTool(ctx: Context, deps: ToolDeps): void {
         const text = await readHistory(store.root, kind, name, rev)
         if (kind === 'chapter') {
           await store.restoreChapterText(Number(name), text)
-        } else if (kind === 'canon') {
+        } else {
           if (!['characters', 'world', 'places', 'relations'].includes(name)) {
             throw new Error(`canon 只认 characters / world / places / relations，不认「${name}」。`)
           }
           await store.writeCanonRaw(name as 'characters' | 'world' | 'places' | 'relations', text)
-        } else {
-          await writeSkill(store.root, name, text)
         }
         return {
           backup: '',

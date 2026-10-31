@@ -300,14 +300,12 @@ describe('panel tree', () => {
     expect(cards?.children?.at(-1)?.label).toBe('还有 5 条')
   })
 
-  it('describes an empty book with five drawers, all empty', () => {
+  it('describes an empty book with four drawers, all empty', () => {
     const sections = buildPanelSnapshot(book(), config, [], '/nowhere').sections
-    // World, cast, plot, manuscript, and the book's own writing notes.
-    expect(sections.map((section) => section.id)).toEqual(['world', 'cast', 'plot', 'text', 'skills'])
-    expect(sections.map((section) => section.count)).toEqual([0, 0, 0, 0, 0])
-    // 人物设计 gained 「关系一览」 in v0.21, so the empty cast drawer is 6 rows;
-    // the notes drawer keeps one "none yet" line so it does not vanish.
-    expect(sections.map((section) => section.rows.length)).toEqual([0, 6, 4, 0, 1])
+    expect(sections.map((section) => section.id)).toEqual(['world', 'cast', 'plot', 'text'])
+    expect(sections.map((section) => section.count)).toEqual([0, 0, 0, 0])
+    // 人物设计 gained 「关系一览」 in v0.21, so the empty cast drawer is 6 rows.
+    expect(sections.map((section) => section.rows.length)).toEqual([0, 6, 4, 0])
   })
 })
 

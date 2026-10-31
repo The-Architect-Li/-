@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { HISTORY_KEEP, listHistory, parseTarget, readHistory, recordHistory } from '../src/domain/history.ts'
+import { HISTORY_KEEP, historyDir, listHistory, parseTarget, readHistory, recordHistory } from '../src/domain/history.ts'
 import { ProjectStore } from '../src/domain/store.ts'
 
 const roots: string[] = []
@@ -121,10 +121,15 @@ describe('restoring one file', () => {
 })
 
 describe('parseTarget', () => {
-  it('reads the three kinds', () => {
+  it('reads the two kinds', () => {
     expect(parseTarget('chapter:7')).toEqual({ kind: 'chapter', name: '7' })
     expect(parseTarget('canon:characters')).toEqual({ kind: 'canon', name: 'characters' })
-    expect(parseTarget('skill:开篇钩子')).toEqual({ kind: 'skill', name: '开篇钩子' })
+  })
+
+  it('looks up a chapter by the folder it is actually stored in', () => {
+    // `chapter:7` is how a person names it; `ch007` is how writeChapter files it.
+    expect(historyDir('/book', 'chapter', '7')).toBe(historyDir('/book', 'chapter', 'ch007'))
+    expect(historyDir('/book', 'canon', 'characters')).toContain('characters')
   })
 
   it('says what a malformed target should look like', () => {
@@ -138,9 +143,9 @@ describe('parseTarget', () => {
 describe('history files stay inside the book', () => {
   it('writes under .history and nowhere else', async () => {
     const store = await project()
-    await recordHistory(store.root, 'skill', '开篇钩子', '# 开篇钩子\n\n第一句要有问题。')
-    const entries = await listHistory(store.root, 'skill', '开篇钩子')
-    const text = await readFile(join(store.root, '.history', 'skill', '开篇钩子', `${entries[0]!.rev}.md`), 'utf8')
+    await recordHistory(store.root, 'canon', 'characters', '# 人物\n\n第一句要有问题。')
+    const entries = await listHistory(store.root, 'canon', 'characters')
+    const text = await readFile(join(store.root, '.history', 'canon', 'characters', `${entries[0]!.rev}.md`), 'utf8')
     expect(text).toContain('第一句要有问题')
   })
 })

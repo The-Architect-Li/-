@@ -3,7 +3,6 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { countChars } from '../domain/text.ts'
-import { skillExcerpts } from '../domain/skills.ts'
 import { buildReviewWindow } from '../domain/review-window.ts'
 import type { ToolDeps } from './deps.ts'
 import {
@@ -158,7 +157,6 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           chapter: number,
           config: deps.config,
           directive: args.directive ?? '',
-          skills: await skillExcerpts(store.root),
         })
         return {
           role: 'writer',
@@ -185,7 +183,6 @@ export function registerDispatchTool(ctx: Context, deps: ToolDeps): void {
           chapter: number,
           config: deps.config,
           directive: args.directive ?? '',
-          skills: await skillExcerpts(store.root),
         })
         const text = await runRole(ctx, role.persona, brief.text, exec, route)
         const words = countChars(text)

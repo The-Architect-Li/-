@@ -19,7 +19,6 @@ import { describeWindow, resolveTimeline, windowAt } from './clock.ts'
 import { activeEntries } from './ledger.ts'
 import { describeRelation, relationsOf } from './relations.ts'
 import { countChars, tailOf } from './text.ts'
-import type { SkillExcerpt } from './skills.ts'
 
 /** One candidate block of the pack. */
 export interface BriefingSection {
@@ -180,7 +179,6 @@ function collectSections(
   drafts: ChapterDraft[],
   chapter: number,
   config: InkwellConfig,
-  skills: readonly SkillExcerpt[] = [],
 ): BriefingSection[] {
   const plan: ChapterPlan | undefined = snapshot.plans.find((item) => item.number === chapter)
   const previous = drafts.filter((item) => item.number < chapter).sort((a, b) => b.number - a.number)
@@ -223,19 +221,6 @@ function collectSections(
       ? castNames.map((name) => formatCharacter(snapshot, name)).join('\n')
       : '（还没有角色卡，先补齐再动笔）',
   })
-
-  if (skills.length > 0) {
-    sections.push({
-      name: '写作笔记',
-      priority: 4,
-      chars: 0,
-      kept: true,
-      content: [
-        '这本书自己的手法（不是设定，是「怎么写」）：',
-        ...skills.map((note) => `### ${note.title}\n${note.text}`),
-      ].join('\n\n'),
-    })
-  }
 
   sections.push({
     name: '上一章结尾',
@@ -316,9 +301,8 @@ export function buildBriefing(
   drafts: ChapterDraft[],
   chapter: number,
   config: InkwellConfig,
-  skills: readonly SkillExcerpt[] = [],
 ): BriefingResult {
-  const candidates = collectSections(snapshot, drafts, chapter, config, skills).sort(
+  const candidates = collectSections(snapshot, drafts, chapter, config).sort(
     (a, b) => a.priority - b.priority,
   )
 
@@ -326,8 +310,6 @@ export function buildBriefing(
   const kept: BriefingSection[] = []
   /** What did not fit, in the sections' own words. */
   const warnings: string[] = []
-  /** Style rules that never reached the writer, which is the one thing that must be said out loud. */
-  const lostNotes: string[] = []
   for (const section of candidates) {
     if (section.chars <= remaining) {
       kept.push({ ...section, kept: true })
@@ -340,24 +322,13 @@ export function buildBriefing(
     const allowance = Math.max(remaining, floor)
     if (allowance < 120) {
       kept.push({ ...section, kept: false, content: '' })
-      if (section.name === '写作笔记') lostNotes.push('整段')
-      else warnings.push(`「${section.name}」没有装进这一章的包（预算不够）。`)
+      warnings.push(`「${section.name}」没有装进这一章的包（预算不够）。`)
       continue
     }
     const cut = section.content.slice(0, allowance)
     kept.push({ ...section, kept: true, content: `${cut}\n…（已截断，原文 ${section.chars} 字）`, chars: countChars(cut) })
-    if (section.name === '写作笔记') lostNotes.push(`只装进前 ${allowance} 字，原文 ${section.chars} 字`)
+    warnings.push(`「${section.name}」被截断：只装进前 ${allowance} 字，原文 ${section.chars} 字。`)
     remaining = Math.max(0, remaining - allowance)
-  }
-
-  // Notes are rules the author expects the writer to follow. Saying nothing when
-  // they did not fit reads as "the rule is in effect" — the exact misunderstanding
-  // `写作笔记` exists to prevent.
-  if (lostNotes.length > 0) {
-    warnings.push(
-      `写作笔记没能完整进包（${lostNotes.join('；')}）。这一章写手只看到了一部分手法要求，`
-        + '剩下那部分是它自己发挥。要么把笔记写短一点（每篇 600 字以内），要么把 briefingBudgetChars 调大。',
-    )
   }
 
   const markdown = kept

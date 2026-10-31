@@ -44,49 +44,33 @@ function write(base: string, path: string, body: unknown): Promise<Response> {
   })
 }
 
-describe('a skill note as a page', () => {
-  it('is written and read back through the panel routes', async () => {
-    const base = await book()
-    const saved = await write(base, '/entry', { kind: 'skill', key: '开篇钩子', text: '# 开篇钩子\n\n第一句要有问题。' })
-    expect(saved.status).toBe(200)
-    const payload = (await saved.json()) as { data: { title: string; edit: { body: { value: string } } } }
-    expect(payload.data.title).toBe('开篇钩子')
-    expect(payload.data.edit.body.value).toContain('第一句要有问题')
-
-    const read = await fetch(`${base}/entry?kind=skill&key=${encodeURIComponent('开篇钩子')}`)
-    const again = (await read.json()) as { data: { title: string } }
-    expect(again.data.title).toBe('开篇钩子')
-  })
-
-  it('shows up in the tree as its own drawer', async () => {
-    const base = await book()
-    await write(base, '/entry', { kind: 'skill', key: '节奏', text: '# 节奏\n\n三段一个转折。' })
-    const snapshot = (await (await fetch(`${base}/snapshot`)).json()) as {
-      data: { sections: Array<{ id: string; count: number }>; skillCount: number }
-    }
-    expect(snapshot.data.skillCount).toBe(1)
-    const skills = snapshot.data.sections.find((section) => section.id === 'skills')
-    expect(skills?.count).toBe(1)
-  })
-})
-
 describe('one file history', () => {
-  it('lists versions and puts one back', async () => {
+  it('lists a chapter\'s versions and puts one back', async () => {
     const base = await book()
-    await write(base, '/entry', { kind: 'skill', key: '对话', text: '# 对话\n\n不写「说道」。' })
-    await write(base, '/entry', { kind: 'skill', key: '对话', text: '# 对话\n\n长短句交替。' })
+    await drafting(harness!)
+    // Two drafts, then commits: the second commit is what leaves a version behind.
+    valueOf(await harness!.call('novel_chapter', {
+      action: 'propose', number: 1, title: '入港', text: '雾从海面漫上来。'.repeat(20),
+    }))
+    valueOf(await harness!.call('novel_chapter', { action: 'commit', number: 1 }))
+    valueOf(await harness!.call('novel_chapter', {
+      action: 'propose', number: 1, title: '入港', text: '雾把港口吃掉了。'.repeat(20),
+    }))
+    valueOf(await harness!.call('novel_chapter', { action: 'commit', number: 1 }))
 
-    const listed = (await (await fetch(`${base}/history?target=${encodeURIComponent('skill:对话')}`)).json()) as {
+    const listed = (await (await fetch(`${base}/history?target=${encodeURIComponent('chapter:1')}`)).json()) as {
       data: { entries: Array<{ rev: string }> }
     }
-    expect(listed.data.entries).toHaveLength(1)
+    expect(listed.data.entries.length).toBeGreaterThan(0)
 
-    const reverted = await write(base, '/revert', { target: 'skill:对话', rev: listed.data.entries[0]!.rev })
+    const reverted = await write(base, '/revert', { target: 'chapter:1', rev: listed.data.entries[0]!.rev })
     expect(reverted.status).toBe(200)
-    const page = (await (await fetch(`${base}/entry?kind=skill&key=${encodeURIComponent('对话')}`)).json()) as {
+    const page = (await (await fetch(`${base}/entry?kind=chapter&key=1`)).json()) as {
       data: { edit: { body: { value: string } } }
     }
-    expect(page.data.edit.body.value).toContain('不写「说道」')
+    // The stored revision is the copy taken *before* the second commit, so going
+    // back to it restores the first draft's text.
+    expect(page.data.edit.body.value).toContain('雾从海面漫上来')
   })
 
   it('says why it cannot answer for a target it does not understand', async () => {
@@ -200,37 +184,9 @@ describe('creating canon by hand', () => {
     expect(payload.error.message).toContain('还不能建分卷')
   })
 
-  it('adds a writing note from the notes drawer', async () => {
-    const base = await book()
-    const created = await write(base, '/new', { kind: 'skill', fields: { name: '开篇钩子' } })
-    expect(created.status).toBe(200)
-    const page = (await (await fetch(`${base}/entry?kind=skill&key=${encodeURIComponent('开篇钩子')}`)).json()) as {
-      data: { title: string }
-    }
-    expect(page.data.title).toBe('开篇钩子')
-  })
-
   it('rejects a role the card cannot hold', async () => {
     const base = await book()
     const response = await write(base, '/new', { kind: 'character', fields: { name: '阿鸢', role: '神仙' } })
     expect(response.status).toBe(400)
-  })
-})
-
-describe('a writing note reaches the writer', () => {
-  it('shows up in the brief the panel hands out', async () => {
-    const base = await book()
-    await drafting(harness!)
-    await write(base, '/entry', {
-      kind: 'skill',
-      key: '开篇钩子',
-      text: '# 开篇钩子\n\n前三句里必须有一个问题。',
-    })
-
-    const response = await write(base, '/card', { number: 1 })
-    expect(response.status).toBe(200)
-    const payload = (await response.json()) as { data: { text: string } }
-    expect(payload.data.text).toContain('写作笔记')
-    expect(payload.data.text).toContain('前三句里必须有一个问题')
   })
 })
