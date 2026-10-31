@@ -56,6 +56,7 @@ window.__ModuleLoader__.load({
     const API_REVERT = '/api/inkwell/revert'
     const API_CARD = '/api/inkwell/card'
     const API_CHAPTER_PLAN = '/api/inkwell/chapter-plan'
+    const API_NEW = '/api/inkwell/new'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -775,6 +776,56 @@ const API_BACKUP = '/api/inkwell/backup'
         throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
       }
       return payload.data
+    }
+
+    /**
+     * Create one card, volume, story point or note by hand.
+     *
+     * @param sessionId - the calling session.
+     * @param root - the book, when the panel pinned one.
+     * @param kind - what to create.
+     * @param fields - the few values the form collects; the rest start empty.
+     * @returns `{ kind, key }`.
+     */
+    async function createCard(sessionId, root, kind, fields) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_NEW}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ kind, fields }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** The few fields each "new" form asks for; everything else starts blank. */
+    const NEW_FIELDS = {
+      character: [
+        { key: 'name', label: '姓名' },
+        { key: 'role', label: '身份', options: [['protagonist', '主角'], ['antagonist', '反派'], ['supporting', '配角'], ['minor', '路人']] },
+        { key: 'voice', label: '说话方式（先空着也行，写手会照这个说话）' },
+      ],
+      world: [
+        { key: 'name', label: '名称' },
+        { key: 'category', label: '类别（地点 / 规则 / 组织…）' },
+        { key: 'detail', label: '细节', multiline: true },
+      ],
+      volume: [{ key: 'title', label: '卷名' }],
+      story: [{ key: 'name', label: '故事点' }, { key: 'startChapter', label: '起始章' }],
+      skill: [{ key: 'name', label: '笔记名' }],
+    }
+
+    const NEW_TITLE = {
+      character: '新建人物',
+      world: '新建设定',
+      volume: '新建分卷',
+      story: '新建故事点',
+      skill: '新建写作笔记',
     }
 
     /** Where a role's effective route comes from, as the team page labels it. */
@@ -3865,6 +3916,13 @@ const API_BACKUP = '/api/inkwell/backup'
       // A caveat that belongs to the book, not to the dialog: the dialog closes
       // on success, so anything the writer still needs to know is said here.
       const [notice, setNotice] = useState('')
+      // One creation form at a time, drawn above the drawers: the author asked
+      // to add a character *from the character drawer* rather than describing
+      // one to a model and hoping it lands in the right file.
+      const [creatingKind, setCreatingKind] = useState('')
+      const [creatingFields, setCreatingFields] = useState({})
+      const [creatingBusy, setCreatingBusy] = useState(false)
+      const [creatingError, setCreatingError] = useState('')
       // Export and delete both act on a book rather than open one. `exportFor`
       // keeps the book and the reason (`afterDelete`), because the same dialog
       // serves both doors.
@@ -4536,6 +4594,33 @@ const API_BACKUP = '/api/inkwell/backup'
           })
           .catch((failure) => setNotice(String((failure && failure.message) || failure)))
       }
+
+      const startNewCard = (kind) => {
+        setCreatingKind(kind)
+        setCreatingFields({})
+        setCreatingError('')
+      }
+
+      const submitNewCard = () => {
+        setCreatingBusy(true)
+        setCreatingError('')
+        createCard(sessionId, root, creatingKind, creatingFields)
+          .then((created) => {
+            setCreatingKind('')
+            setNotice(`建好了：${created.key}`)
+            refresh()
+            // Open the page it just made: creating a card and then hunting for
+            // it in the drawer is two steps where one will do.
+            const page =
+              created.kind === 'volume' ? null : { kind: created.kind, key: created.key, label: created.key }
+            if (page) {
+              setDetail(page)
+              setView('detail')
+            }
+          })
+          .catch((failure) => setCreatingError(String((failure && failure.message) || failure)))
+          .finally(() => setCreatingBusy(false))
+      }
       const progress = data.targetWords > 0 ? Math.min(1, data.words / data.targetWords) : 0
 
       return withDialog(
@@ -4544,6 +4629,74 @@ const API_BACKUP = '/api/inkwell/backup'
           { style: S.root },
           header,
           notice ? h('div', { style: S.note }, notice) : null,
+          creatingKind
+            ? (() => {
+                const fields = NEW_FIELDS[creatingKind] || []
+                const input = {
+                  width: '100%', boxSizing: 'border-box', marginTop: '2px', padding: '5px 7px',
+                  border: '1px solid rgba(127,127,127,.32)', borderRadius: '6px',
+                  background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '12px',
+                }
+                return h(
+                  'div',
+                  {
+                    style: {
+                      margin: '6px 8px 8px', padding: '8px 10px', borderRadius: '8px',
+                      border: '1px solid rgba(127,127,127,.28)',
+                    },
+                  },
+                  h(
+                    'div',
+                    { style: { ...S.row, marginBottom: '4px' } },
+                    h('span', { style: { fontSize: '12.5px', fontWeight: '600' } }, NEW_TITLE[creatingKind] || '新建'),
+                    h('span', { style: S.spacer }),
+                    creatingKind === 'volume' || creatingKind === 'story'
+                      ? h(
+                          'button',
+                          {
+                            type: 'button', className: 'iw-btn', style: S.iconButton,
+                            onClick: () => startNewCard(creatingKind === 'volume' ? 'story' : 'volume'),
+                          },
+                          creatingKind === 'volume' ? '改成故事点' : '改成分卷',
+                        )
+                      : null,
+                    h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setCreatingKind('') }, '取消'),
+                  ),
+                  ...fields.map((field) =>
+                    h(
+                      'label',
+                      { key: field.key, style: { display: 'block', marginTop: '6px' } },
+                      h('span', { style: S.aside }, field.label),
+                      field.options
+                        ? h(
+                            'select',
+                            {
+                              value: creatingFields[field.key] === undefined ? field.options[0][0] : creatingFields[field.key],
+                              onChange: (event) => setCreatingFields({ ...creatingFields, [field.key]: event.target.value }),
+                              style: input,
+                            },
+                            ...field.options.map(([value, label]) => h('option', { key: value, value }, label)),
+                          )
+                        : h('input', {
+                            value: creatingFields[field.key] || '',
+                            onChange: (event) => setCreatingFields({ ...creatingFields, [field.key]: event.target.value }),
+                            style: input,
+                          }),
+                    ),
+                  ),
+                  creatingError ? h('div', { style: { ...S.error, marginTop: '6px' } }, creatingError) : null,
+                  h(
+                    'div',
+                    { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
+                    h(
+                      'button',
+                      { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, disabled: creatingBusy, onClick: submitNewCard },
+                      creatingBusy ? '建中…' : '建',
+                    ),
+                  ),
+                )
+              })()
+            : null,
           sections.map((section) =>
             h(Section, {
               key: section.id,
@@ -4552,8 +4705,19 @@ const API_BACKUP = '/api/inkwell/backup'
               onToggle: toggle,
               selected,
               onRowClick,
-              onAdd: section.id === 'text' ? addChapter : null,
-              addTitle: '新建一章（空章，可直接写）',
+              onAdd:
+                section.id === 'text'
+                  ? addChapter
+                  : section.id === 'world'
+                    ? () => startNewCard('world')
+                    : section.id === 'cast'
+                      ? () => startNewCard('character')
+                      : section.id === 'plot'
+                        ? () => startNewCard('volume')
+                        : section.id === 'skills'
+                          ? () => startNewCard('skill')
+                          : null,
+              addTitle: '新建',
             }),
           ),
         h('div', { style: S.spacerBlock }),

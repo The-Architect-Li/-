@@ -62,7 +62,7 @@ import { ChapterBlockedError, saveChapterBody } from '../domain/save.ts'
 import { ChapterConflictError } from '../domain/store.ts'
 import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
-import type { CharacterCard, Finding, InkwellConfig, Phase } from '../domain/types.ts'
+import { CHARACTER_ROLES, type CharacterCard, type CharacterRole, type Finding, type InkwellConfig, type Phase } from '../domain/types.ts'
 import { gateToolCall } from '../gate.ts'
 import { atLeast, blockersFor } from '../domain/phase.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
@@ -1254,6 +1254,117 @@ export async function addChapterRoute(
   }
 }
 
+/** Names one thing the panel can create, and the drawer it belongs to. */
+export type CreateKind = 'character' | 'world' | 'volume' | 'story' | 'skill'
+
+/**
+ * Create one canon card, volume, story point or note by hand.
+ *
+ * The panel could only edit things that already existed. Every one of those
+ * things had to be born in the conversation first, which is a strange place to
+ * put "add a character" for an author who is looking at the character drawer.
+ *
+ * Only fields that make sense empty are defaulted: a name is required, a role
+ * defaults to `supporting`, everything else starts blank and gets filled on the
+ * page this creation opens.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ kind, fields }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the new thing's key, for opening its page.
+ */
+export async function createRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const snapshot = await store.snapshot()
+    const kind = String(body.kind ?? '')
+    const raw = (body.fields ?? {}) as Record<string, unknown>
+    const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '')
+
+    if (kind === 'character') {
+      const name = text('name')
+      if (name === '') throw new PanelInputError('人物要有名字。')
+      const role = text('role') || 'supporting'
+      if (!(CHARACTER_ROLES as readonly string[]).includes(role)) {
+        throw new PanelInputError(`身份只能是 ${CHARACTER_ROLES.join(' / ')}。`)
+      }
+      await store.upsertCharacter({
+        name,
+        role: role as CharacterRole,
+        voice: text('voice'),
+        appearance: '',
+        goal: '',
+        secret: '',
+        updatedAt: new Date().toISOString(),
+      })
+      return { status: 200, body: { ok: true, data: { kind, key: name } } }
+    }
+
+    if (kind === 'world') {
+      const name = text('name')
+      if (name === '') throw new PanelInputError('设定要有名字。')
+      await store.upsertWorld({
+        name,
+        kind: text('category') || '设定',
+        detail: text('detail'),
+        updatedAt: new Date().toISOString(),
+      })
+      return { status: 200, body: { ok: true, data: { kind, key: name } } }
+    }
+
+    if (kind === 'volume') {
+      if (!atLeast(snapshot.project.phase, 'outline')) {
+        throw new PanelInputError(['当前还在「' + snapshot.project.phase + '」阶段，还不能建分卷。', '要进入 outline，先补齐：', ...blockersFor('outline', snapshot, deps.config).map((item) => `- ${item}`)].join('\n'), 409)
+      }
+      const number = snapshot.volumes.length === 0 ? 1 : Math.max(...snapshot.volumes.map((volume) => volume.number)) + 1
+      await store.upsertVolume({ number, title: text('title') || `第${number}卷`, summary: '', approved: false })
+      return { status: 200, body: { ok: true, data: { kind, key: String(number) } } }
+    }
+
+    if (kind === 'story') {
+      if (!atLeast(snapshot.project.phase, 'outline')) {
+        throw new PanelInputError(['当前还在「' + snapshot.project.phase + '」阶段，还不能建故事点。', '要进入 outline，先补齐：', ...blockersFor('outline', snapshot, deps.config).map((item) => `- ${item}`)].join('\n'), 409)
+      }
+      const name = text('name')
+      if (name === '') throw new PanelInputError('故事点要有名字。')
+      const used = new Set(snapshot.storyPoints.map((point) => point.id))
+      let index = snapshot.storyPoints.length + 1
+      while (used.has(`sp-${String(index).padStart(3, '0')}`)) index += 1
+      const id = `sp-${String(index).padStart(3, '0')}`
+      const startChapter = Number(raw.startChapter)
+      await store.upsertStoryPoint({
+        id,
+        name,
+        startChapter: Number.isInteger(startChapter) && startChapter > 0 ? startChapter : 1,
+        endChapter: null,
+        premise: text('premise'),
+        characters: [],
+        closed: false,
+        createdAt: new Date().toISOString(),
+      })
+      return { status: 200, body: { ok: true, data: { kind, key: id } } }
+    }
+
+    if (kind === 'skill') {
+      const name = text('name')
+      if (name === '') throw new PanelInputError('笔记要有名字。')
+      await writeSkill(store.root, name, `# ${name}\n\n`)
+      return { status: 200, body: { ok: true, data: { kind, key: name } } }
+    }
+
+    throw new PanelInputError(`不认识的类别：${kind}。支持 character / world / volume / story / skill。`)
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 /**
  * The writer's brief for one chapter, as text the author can copy.
  *
@@ -1914,6 +2025,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await revertRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/new') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/new 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await createRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

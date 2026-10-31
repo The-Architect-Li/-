@@ -163,3 +163,56 @@ describe('creating a chapter by hand', () => {
     expect(again.status).toBe(409)
   })
 })
+
+describe('creating canon by hand', () => {
+  it('adds a character from the cast drawer', async () => {
+    const base = await book()
+    const created = await write(base, '/new', {
+      kind: 'character',
+      fields: { name: '沈砚', role: 'protagonist', voice: '短句，回答前先停顿' },
+    })
+    expect(created.status).toBe(200)
+    const payload = (await created.json()) as { data: { kind: string; key: string } }
+    expect(payload.data).toEqual({ kind: 'character', key: '沈砚' })
+
+    const page = (await (await fetch(`${base}/entry?kind=character&key=${encodeURIComponent('沈砚')}`)).json()) as {
+      data: { title: string; subtitle: string }
+    }
+    expect(page.data.title).toBe('沈砚')
+  })
+
+  it('adds a world entry, and a name is required', async () => {
+    const base = await book()
+    const ok = await write(base, '/new', { kind: 'world', fields: { name: '雾港', category: '地点' } })
+    expect(ok.status).toBe(200)
+
+    const missing = await write(base, '/new', { kind: 'world', fields: {} })
+    expect(missing.status).toBe(400)
+    const payload = (await missing.json()) as { error: { message: string } }
+    expect(payload.error.message).toContain('要有名字')
+  })
+
+  it('refuses a volume before the book reaches the outline phase', async () => {
+    const base = await book()
+    const response = await write(base, '/new', { kind: 'volume', fields: { title: '入港' } })
+    expect(response.status).toBe(409)
+    const payload = (await response.json()) as { error: { message: string } }
+    expect(payload.error.message).toContain('还不能建分卷')
+  })
+
+  it('adds a writing note from the notes drawer', async () => {
+    const base = await book()
+    const created = await write(base, '/new', { kind: 'skill', fields: { name: '开篇钩子' } })
+    expect(created.status).toBe(200)
+    const page = (await (await fetch(`${base}/entry?kind=skill&key=${encodeURIComponent('开篇钩子')}`)).json()) as {
+      data: { title: string }
+    }
+    expect(page.data.title).toBe('开篇钩子')
+  })
+
+  it('rejects a role the card cannot hold', async () => {
+    const base = await book()
+    const response = await write(base, '/new', { kind: 'character', fields: { name: '阿鸢', role: '神仙' } })
+    expect(response.status).toBe(400)
+  })
+})
