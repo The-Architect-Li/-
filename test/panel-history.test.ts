@@ -107,3 +107,59 @@ describe('the writer brief', () => {
     expect(payload.error.message).toContain('还没有章纲')
   })
 })
+
+describe('creating a chapter by hand', () => {
+  /** Walk a book to drafting, the shortest legal path the gate accepts. */
+  async function drafting(harness: Harness): Promise<void> {
+    valueOf(await harness.call('novel_project', { action: 'init', title: '雾港' }))
+    valueOf(await harness.call('novel_project', {
+      action: 'premise',
+      premise: '一个替人销赃的船工，在货舱里发现了失踪三年的妹妹。'.repeat(4),
+    }))
+    valueOf(await harness.call('novel_project', { action: 'advance' }))
+    valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '沈砚', role: 'protagonist', voice: '短句' }))
+    valueOf(await harness.call('novel_canon', { action: 'upsert_character', name: '阿鸢', role: 'supporting', voice: '快' }))
+    valueOf(await harness.call('novel_canon', { action: 'upsert_world', name: '雾港', kind: '地点', detail: '终年起雾' }))
+    valueOf(await harness.call('novel_project', { action: 'advance' }))
+    valueOf(await harness.call('novel_outline', { action: 'add_volume', number: 1, title: '入港' }))
+    valueOf(await harness.call('novel_outline', { action: 'approve_volume', number: 1 }))
+    valueOf(await harness.call('novel_outline', {
+      action: 'add_chapter', number: 1, pov: '沈砚', characters: ['沈砚'],
+      beats: ['沈砚发现船底藏着尸体', '阿鸢承认改过航向'],
+    }))
+    valueOf(await harness.call('novel_outline', { action: 'approve_chapter', number: 1 }))
+    valueOf(await harness.call('novel_project', { action: 'advance' }))
+  }
+
+  it('refuses before drafting, naming what is missing', async () => {
+    const base = await book()
+    const response = await write(base, '/chapter-plan', {})
+    expect(response.status).toBe(409)
+    const payload = (await response.json()) as { error: { message: string } }
+    expect(payload.error.message).toContain('还不能建章节')
+    expect(payload.error.message).toContain('要进入 drafting')
+  })
+
+  it('adds the next chapter once the book is drafting, and it shows up as writable', async () => {
+    const base = await book()
+    await drafting(harness!)
+
+    const created = await write(base, '/chapter-plan', {})
+    expect(created.status).toBe(200)
+    const payload = (await created.json()) as { data: { number: number } }
+    expect(payload.data.number).toBe(2)
+
+    const snapshot = (await (await fetch(`${base}/snapshot`)).json()) as {
+      data: { sections: Array<{ id: string; rows: Array<{ key?: string; chip?: string }> }> }
+    }
+    const text = snapshot.data.sections.find((section) => section.id === 'text')
+    // Loose chapters live under a 「未分卷」 group rather than at the top level.
+    const keys = (text?.rows ?? []).flatMap((row) =>
+      row.key === undefined ? (row as { children?: Array<{ key?: string }> }).children ?? [] : [row],
+    )
+    expect(keys.some((row) => row.key === '2')).toBe(true)
+
+    const again = await write(base, '/chapter-plan', { number: 2 })
+    expect(again.status).toBe(409)
+  })
+})

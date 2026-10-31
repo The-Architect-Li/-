@@ -55,6 +55,7 @@ window.__ModuleLoader__.load({
     const API_HISTORY = '/api/inkwell/history'
     const API_REVERT = '/api/inkwell/revert'
     const API_CARD = '/api/inkwell/card'
+    const API_CHAPTER_PLAN = '/api/inkwell/chapter-plan'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -745,6 +746,29 @@ const API_BACKUP = '/api/inkwell/backup'
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ number }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /**
+     * Create one empty chapter by hand.
+     *
+     * @param sessionId - the calling session.
+     * @param root - the book, when the panel pinned one.
+     * @returns `{ number, title }`.
+     */
+    async function addChapterPlan(sessionId, root) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_CHAPTER_PLAN}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({}),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -1803,6 +1827,22 @@ const API_BACKUP = '/api/inkwell/backup'
           h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', fontSize: '12.5px' } }, SECTION_ICON[section.id] || '▫'),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
+          props.onAdd
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'iw-btn',
+                  style: { ...S.sectionCount, padding: '0 6px', cursor: 'pointer' },
+                  title: props.addTitle || '新增',
+                  onClick: (event) => {
+                    event.stopPropagation()
+                    props.onAdd()
+                  },
+                },
+                '+',
+              )
+            : null,
         ),
         open
           ? section.rows.length === 0
@@ -4484,6 +4524,18 @@ const API_BACKUP = '/api/inkwell/backup'
       }
 
       const sections = Array.isArray(data.sections) ? data.sections : []
+
+      // One manual way in: a chapter with no beats, approved, ready to type.
+      // The route refuses before drafting and says what is missing — the same
+      // sentence the model would get from the gate.
+      const addChapter = () => {
+        addChapterPlan(sessionId, root)
+          .then((created) => {
+            setNotice(`建好了第${created.number}章。点它就能开始写。`)
+            refresh()
+          })
+          .catch((failure) => setNotice(String((failure && failure.message) || failure)))
+      }
       const progress = data.targetWords > 0 ? Math.min(1, data.words / data.targetWords) : 0
 
       return withDialog(
@@ -4500,6 +4552,8 @@ const API_BACKUP = '/api/inkwell/backup'
               onToggle: toggle,
               selected,
               onRowClick,
+              onAdd: section.id === 'text' ? addChapter : null,
+              addTitle: '新建一章（空章，可直接写）',
             }),
           ),
         h('div', { style: S.spacerBlock }),

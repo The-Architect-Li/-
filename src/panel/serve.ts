@@ -64,6 +64,7 @@ import { resolveRoot } from '../domain/scope.ts'
 import { ProjectStore } from '../domain/store.ts'
 import type { CharacterCard, Finding, InkwellConfig, Phase } from '../domain/types.ts'
 import { gateToolCall } from '../gate.ts'
+import { atLeast, blockersFor } from '../domain/phase.ts'
 import { listDirectories, PanelInputError, requireDirectory } from './dirs.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
@@ -1200,6 +1201,60 @@ export async function revertRoute(
 }
 
 /**
+ * Create one empty chapter by hand.
+ *
+ * The panel could not make a chapter before this: an outline is the tool's job,
+ * and a plan without beats has nothing to approve. That is right for a planned
+ * book and wrong for an author who simply wants to start typing a scene — so
+ * this creates the same shell the importer does (approved, no beats) and says
+ * why when the book is not far enough along to hold a chapter at all.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ number?, title? }`; number defaults to the next free one.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the number that was created.
+ */
+export async function addChapterRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
+    const snapshot = await store.snapshot()
+    if (!atLeast(snapshot.project.phase, 'drafting')) {
+      const blockers = blockersFor('drafting', snapshot, deps.config)
+      throw new PanelInputError(
+        [
+          `当前还在「${snapshot.project.phase}」阶段，还不能建章节。`,
+          '要进入 drafting，先补齐：',
+          ...blockers.map((item) => `- ${item}`),
+        ].join('\n'),
+        409,
+      )
+    }
+
+    const used = new Set<number>([
+      ...snapshot.plans.map((plan) => plan.number),
+      ...snapshot.chapters.map((chapter) => chapter.number),
+    ])
+    const asked = Number(body.number)
+    const number = Number.isInteger(asked) && asked > 0 ? asked : (used.size === 0 ? 1 : Math.max(...used) + 1)
+    if (used.has(number)) throw new PanelInputError(`第${number}章已经存在了。`, 409)
+
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    const plan = { ...shellPlan(number, UNASSIGNED, undefined), approved: true, title }
+    await store.upsertPlan(plan)
+    return { status: 200, body: { ok: true, data: { number, title } } }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
  * The writer's brief for one chapter, as text the author can copy.
  *
  * Deliberately does not spawn: the panel's job is to show what the writer would
@@ -1859,6 +1914,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await revertRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/chapter-plan') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/chapter-plan 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await addChapterRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),
