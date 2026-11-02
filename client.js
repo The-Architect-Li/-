@@ -1325,7 +1325,11 @@ const API_BACKUP = '/api/inkwell/backup'
       },
       label: {
         letterSpacing: '0.005em',
-        flex: '1 1 auto',
+        // `1 1 auto` sizes the basis from the text, so a long chapter title pushes
+        // the row wider than the panel and the whole drawer starts scrolling
+        // sideways. `1 1 0` with minWidth 0 lets it give way instead.
+        flex: '1 1 0',
+        minWidth: 0,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -2009,7 +2013,7 @@ const API_BACKUP = '/api/inkwell/backup'
                     return
                   }
                   const box = event.currentTarget.getBoundingClientRect()
-                  onMenuToggle({ id: row.id, x: box.left, y: box.bottom })
+                  onMenuToggle({ id: row.id, key: Number(row.key), moves: row.moves, x: box.left, y: box.bottom })
                 },
                 onKeyDown: (event) => event.stopPropagation(),
               },
@@ -2017,45 +2021,7 @@ const API_BACKUP = '/api/inkwell/backup'
             )
           : null,
       )
-      // A popover, not an extra row: the chapter list is virtualised past two
-      // hundred entries, and a row that only exists while a menu is open would
-      // change the list's height and fight the windowing.
-      const actions = row.kind === 'chapter' && menuAt !== undefined && menuAt !== null && menuAt.id === row.id
-        ? [
-            h('div', {
-              key: 'scrim',
-              style: S.menuScrim,
-              onClick: (event) => { event.stopPropagation(); onMenuToggle(null) },
-            }),
-            h(
-              'div',
-              {
-                key: 'menu',
-                style: { ...S.menuPop, left: `${Math.max(8, menuAt.x - 132)}px`, top: `${menuAt.y + 2}px` },
-                onClick: (event) => event.stopPropagation(),
-              },
-              h('button', {
-                type: 'button',
-                style: { ...S.menuItem, ...(row.moves && row.moves.up ? {} : S.menuItemOff) },
-                disabled: !(row.moves && row.moves.up),
-                onClick: () => onChapterAction('up', Number(row.key)),
-              }, '↑　上移'),
-              h('button', {
-                type: 'button',
-                style: { ...S.menuItem, ...(row.moves && row.moves.down ? {} : S.menuItemOff) },
-                disabled: !(row.moves && row.moves.down),
-                onClick: () => onChapterAction('down', Number(row.key)),
-              }, '↓　下移'),
-              h('button', {
-                type: 'button',
-                style: { ...S.menuItem, ...(row.moves && row.moves.down ? {} : S.menuItemOff) },
-                disabled: !(row.moves && row.moves.down),
-                onClick: () => onChapterAction('merge', Number(row.key)),
-              }, '⇤　并入下章'),
-            ),
-          ]
-        : []
-      if (!hasChildren || !open || flat === true) return [head, ...actions]
+      if (!hasChildren || !open || flat === true) return [head]
       const children = row.children.map((child) =>
         h(Row, {
           key: child.id,
@@ -2070,7 +2036,7 @@ const API_BACKUP = '/api/inkwell/backup'
           ...(onChapterAction === undefined ? {} : { onChapterAction }),
         }),
       )
-      return [head, ...children, ...actions]
+      return [head, ...children]
     }
 
     /**
@@ -5265,6 +5231,46 @@ const API_BACKUP = '/api/inkwell/backup'
               addTitle: '新建',
             }),
           ),
+        // The menu lives here, not inside the row: chapter rows sit in a
+        // virtualised list whose rows carry `transform: translateY(...)`, and a
+        // fixed element inside a transformed ancestor is positioned against that
+        // ancestor — the scrim stretched to one row's width and the menu was
+        // clipped to 24px, which looked exactly like "clicking does nothing".
+        menuAt !== null && menuAt !== undefined
+          ? h('div', { key: 'menu-scrim', style: S.menuScrim, onClick: () => setMenuAt(null) })
+          : null,
+        menuAt !== null && menuAt !== undefined
+          ? h(
+              'div',
+              {
+                key: 'menu',
+                style: {
+                  ...S.menuPop,
+                  left: `${Math.max(8, menuAt.x - 132)}px`,
+                  top: `${menuAt.y + 4 + 132 > window.innerHeight ? Math.max(8, menuAt.y - 132) : menuAt.y + 4}px`,
+                },
+                onClick: (event) => event.stopPropagation(),
+              },
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.up ? {} : S.menuItemOff) },
+                disabled: !(menuAt.moves && menuAt.moves.up),
+                onClick: () => runChapterAction('up', menuAt.key),
+              }, '↑　上移'),
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
+                disabled: !(menuAt.moves && menuAt.moves.down),
+                onClick: () => runChapterAction('down', menuAt.key),
+              }, '↓　下移'),
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
+                disabled: !(menuAt.moves && menuAt.moves.down),
+                onClick: () => runChapterAction('merge', menuAt.key),
+              }, '⇤　并入下章'),
+            )
+          : null,
         // The result of a move or a merge, where the author did it. A silent
         // chapter list that quietly renumbered itself is the worst outcome.
         menuNote !== ''
