@@ -204,6 +204,28 @@ describe('panel tree', () => {
     expect((world?.rows ?? []).map((row) => row.label).sort()).toEqual(['势力', '未分类'])
   })
 
+  it('marks a merged chapter as needing a recap, and leaves the others alone', () => {
+    // An imported book has no summaries anywhere; flagging all of them would paint
+    // the whole list yellow. Only the chapter a merge produced is incomplete.
+    const mergedChapter = { ...written(1, 'a', 3000), origin: { kind: 'merged' as const, from: [1, 2], at: '2026-01-01T00:00:00.000Z' } }
+    const sections = buildPanelSnapshot(
+      book({ plans: [{ ...plan(1, true, 'a'), beats: ['x'], summary: '' }, { ...plan(2, true, 'b'), beats: ['y'], summary: '' }], chapters: [mergedChapter, written(2, 'b', 3000)] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const text = sections.find((section) => section.id === 'text')
+    const stack = [...(text?.rows ?? [])]
+    const found: Record<string, string | undefined> = {}
+    while (stack.length > 0) {
+      const row = stack.shift()!
+      if (row.key !== undefined) found[row.key] = row.chip
+      stack.push(...(row.children ?? []))
+    }
+    expect(found['1']).toBe('待补摘要')
+    expect(found['2']).toBe('已完成')
+  })
+
   it('tells each chapter row whether it can move, and stops at both ends', () => {
     // The menu is drawn from the row, so the row has to know: a chapter list can
     // have holes, and the first and last must not offer a move onto nothing.

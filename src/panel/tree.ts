@@ -464,7 +464,14 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       // A merged chapter keeps its card but has no recap: the old summary
       // described half the text. That is not the same as being stale — the card
       // is current, it is incomplete — and it needs its own word.
-      const needsRecap = !stale && plan !== undefined && (plan.summary ?? '').trim() === ''
+      //
+      // Only for chapters that were actually merged. An imported book has no
+      // summaries anywhere, and flagging every one of those would paint five
+      // hundred rows yellow and mean nothing.
+      const needsRecap = !stale
+        && origin?.kind === 'merged'
+        && plan !== undefined
+        && (plan.summary ?? '').trim() === ''
       return {
         ...base,
         chip: stale ? '卡过期' : needsRecap ? '待补摘要' : '已完成',
