@@ -226,6 +226,33 @@ describe('panel tree', () => {
     expect(found['2']).toBe('已完成')
   })
 
+  it('shows the same 「并」 badge on the card row as on the chapter row', () => {
+    // One chapter, one account of where it came from. A badge visible in one drawer
+    // and absent in the other reads as a bug in whichever the author is looking at.
+    const merged = { ...written(2, 'b', 4000), origin: { kind: 'merged' as const, from: [2, 3], at: '2026-01-01T00:00:00.000Z' } }
+    const sections = buildPanelSnapshot(
+      book({ plans: [plan(2, true, 'b')], chapters: [merged] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const findRow = (sectionId: string) => {
+      const section = sections.find((item) => item.id === sectionId)
+      const stack = [...(section?.rows ?? [])]
+      while (stack.length > 0) {
+        const row = stack.shift()!
+        if (row.key === '2') return row
+        stack.push(...(row.children ?? []))
+      }
+      return undefined
+    }
+    const inText = findRow('text')
+    const inPlot = findRow('plot')
+    expect(inText?.mark).toMatchObject({ label: '并' })
+    expect(inPlot?.mark).toMatchObject({ label: '并' })
+    expect(inPlot?.mark?.hint).toBe(inText?.mark?.hint)
+  })
+
   it('tells each chapter row whether it can move, and stops at both ends', () => {
     // The menu is drawn from the row, so the row has to know: a chapter list can
     // have holes, and the first and last must not offer a move onto nothing.

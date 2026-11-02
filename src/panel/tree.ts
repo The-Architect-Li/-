@@ -358,6 +358,7 @@ function plotSection(snapshot: Snapshot): PanelSection {
     chip: plan.approved ? '已批准' : '待批准',
     aside: `${plan.beats.length} 节拍`,
     tone: plan.approved ? 'done' : 'todo',
+    ...chapterMark(snapshot.chapters, plan.number),
   }))
 
   return {
@@ -420,6 +421,27 @@ function plotSection(snapshot: Snapshot): PanelSection {
 }
 
 /**
+ * The 「移」/「并」 badge for one chapter number, or nothing.
+ *
+ * A reorder leaves no trace in the prose, so the badge is the only evidence a
+ * chapter travelled. It has to appear everywhere the chapter is listed: the
+ * manuscript drawer and the card drawer show the same chapters, and a fact that is
+ * visible in one place and not the other reads as a bug in whichever the author
+ * happens to be looking at.
+ *
+ * @param chapters - the book's chapters, carrying their origins.
+ * @param number - the chapter to look up.
+ * @returns the badge, when this chapter came from somewhere.
+ */
+function chapterMark(chapters: readonly ChapterMeta[], number: number): { mark: { label: string; hint: string } } | Record<string, never> {
+  const origin = chapters.find((chapter) => chapter.number === number)?.origin
+  if (origin === undefined) return {}
+  return origin.kind === 'merged'
+    ? { mark: { label: '并', hint: `由第${origin.from.join('、')}章合并而来` } }
+    : { mark: { label: '移', hint: `原来在第${origin.from.join('、')}章` } }
+}
+
+/**
  * The manuscript drawer: volumes, then their chapters with real state.
  *
  * A chapter row is `done` once it is committed, `todo` when its outline is
@@ -443,19 +465,14 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
     const chapter = written.get(number)
     const draftCount = rounds.get(number)?.length ?? 0
     const title = plan?.title || chapter?.title || ''
-    const origin = chapter?.origin
-    const mark = origin === undefined
-      ? undefined
-      : origin.kind === 'merged'
-        ? { label: '并', hint: `由第${origin.from.join('、')}章合并而来` }
-        : { label: '移', hint: `原来在第${origin.from.join('、')}章` }
+    // Same badge as the card drawer: one chapter, one account of where it came from.
     const base = {
       id: `text.chapter.${number}`,
       label: `第${number}章 ${title}`.trim(),
       kind: 'chapter' as const,
       key: String(number),
       moves: { up: number > lowest, down: number < highest },
-      ...(mark === undefined ? {} : { mark }),
+      ...chapterMark(snapshot.chapters, number),
     }
     if (chapter) {
       // A card written from an older draft no longer describes the prose. The
@@ -469,7 +486,7 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       // summaries anywhere, and flagging every one of those would paint five
       // hundred rows yellow and mean nothing.
       const needsRecap = !stale
-        && origin?.kind === 'merged'
+        && chapter?.origin?.kind === 'merged'
         && plan !== undefined
         && (plan.summary ?? '').trim() === ''
       return {
