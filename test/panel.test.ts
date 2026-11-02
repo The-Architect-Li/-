@@ -204,6 +204,29 @@ describe('panel tree', () => {
     expect((world?.rows ?? []).map((row) => row.label).sort()).toEqual(['势力', '未分类'])
   })
 
+  it('tells each chapter row whether it can move, and stops at both ends', () => {
+    // The menu is drawn from the row, so the row has to know: a chapter list can
+    // have holes, and the first and last must not offer a move onto nothing.
+    const sections = buildPanelSnapshot(
+      book({ plans: [{ ...plan(1, true, 'a'), beats: ['x'] }, { ...plan(2, true, 'b'), beats: ['y'] }], chapters: [written(1, 'a', 3000), written(2, 'b', 3000)] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const find = (number: number) => {
+      const text = sections.find((section) => section.id === 'text')
+      const stack = [...(text?.rows ?? [])]
+      while (stack.length > 0) {
+        const row = stack.shift()!
+        if (row.key === String(number)) return row
+        stack.push(...(row.children ?? []))
+      }
+      return undefined
+    }
+    expect(find(1)?.moves).toEqual({ up: false, down: true })
+    expect(find(2)?.moves).toEqual({ up: true, down: false })
+  })
+
   it('groups the cast by structural role, with an overview row first', () => {
     const sections = buildPanelSnapshot(
       book({ characters: [card('沈砚', 'protagonist'), card('阿鸢', 'supporting'), card('老周', 'supporting')] }),

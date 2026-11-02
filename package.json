@@ -36,7 +36,8 @@
     "preview:entry": "node scripts/preview-entry.mjs",
     "check": "npm run typecheck && npm run test && npm run build && npm run verify",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check",
+    "sync": "node scripts/sync.mjs"
   },
   "keywords": [
     "dsh",

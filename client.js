@@ -1361,6 +1361,55 @@ const API_BACKUP = '/api/inkwell/backup'
         fontSize: '13.5px',
         letterSpacing: '0.01em',
       },
+      // The ⋯ that opens a chapter's actions. Quiet until hovered: a column of
+      // shouting buttons down a five-hundred-row list is worse than no buttons.
+      rowMenu: {
+        marginLeft: '2px',
+        padding: '0 4px',
+        fontSize: '13px',
+        lineHeight: '16px',
+        color: 'var(--iw-fg-3)',
+        background: 'transparent',
+        border: '1px solid transparent',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        opacity: 0.55,
+      },
+      menuScrim: {
+        position: 'fixed',
+        inset: '0',
+        zIndex: 60,
+        background: 'transparent',
+      },
+      menuPop: {
+        position: 'fixed',
+        zIndex: 61,
+        minWidth: '132px',
+        padding: '4px',
+        borderRadius: '9px',
+        border: '1px solid var(--iw-line-strong)',
+        background: 'var(--iw-bg)',
+        boxShadow: '0 8px 24px rgba(0,0,0,.28)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+      },
+      menuItem: {
+        textAlign: 'left',
+        padding: '5px 8px',
+        fontSize: '12.5px',
+        color: 'var(--iw-fg)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      },
+      menuItemOff: {
+        color: 'var(--iw-fg-3)',
+        opacity: 0.45,
+        cursor: 'default',
+      },
       sectionCount: {
         fontSize: '11px',
         color: 'var(--iw-fg-3)',
@@ -1783,7 +1832,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the scroll box.
      */
     function VirtualRows(props) {
-      const { entries, collapsed, onToggle, selected, onRowClick, label } = props
+      const { entries, collapsed, onToggle, selected, onRowClick, label, menuAt, onMenuToggle, onChapterAction } = props
       const [top, setTop] = useState(0)
       const total = entries.length
       const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
@@ -1805,6 +1854,9 @@ const API_BACKUP = '/api/inkwell/backup'
               selected,
               onRowClick,
               flat: true,
+              menuAt,
+              onMenuToggle,
+              onChapterAction,
             }),
           ),
         )
@@ -1899,7 +1951,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the row element, plus its children when expanded.
      */
     function Row(props) {
-      const { row, depth, collapsed, onToggle, selected, onRowClick, flat } = props
+      const { row, depth, collapsed, onToggle, selected, onRowClick, flat, menuAt, onMenuToggle, onChapterAction } = props
       const hasChildren = Array.isArray(row.children) && row.children.length > 0
       const open = hasChildren && !collapsed.has(row.id)
       const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
@@ -1939,8 +1991,71 @@ const API_BACKUP = '/api/inkwell/backup'
         row.aside ? h('span', { style: S.aside }, row.aside) : null,
         row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
         typeof row.count === 'number' ? h('span', { style: S.count }, num(row.count)) : null,
+        // Chapter rows carry their own actions. On the detail page they pushed the
+        // title aside and every open felt like a form; here they are where the
+        // author already is — the list.
+        row.kind === 'chapter'
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: S.rowMenu,
+                title: '上移 / 下移 / 并章',
+                onClick: (event) => {
+                  event.stopPropagation()
+                  if (menuAt !== undefined && menuAt !== null && menuAt.id === row.id) {
+                    onMenuToggle(null)
+                    return
+                  }
+                  const box = event.currentTarget.getBoundingClientRect()
+                  onMenuToggle({ id: row.id, x: box.left, y: box.bottom })
+                },
+                onKeyDown: (event) => event.stopPropagation(),
+              },
+              '⋯',
+            )
+          : null,
       )
-      if (!hasChildren || !open || flat === true) return [head]
+      // A popover, not an extra row: the chapter list is virtualised past two
+      // hundred entries, and a row that only exists while a menu is open would
+      // change the list's height and fight the windowing.
+      const actions = row.kind === 'chapter' && menuAt !== undefined && menuAt !== null && menuAt.id === row.id
+        ? [
+            h('div', {
+              key: 'scrim',
+              style: S.menuScrim,
+              onClick: (event) => { event.stopPropagation(); onMenuToggle(null) },
+            }),
+            h(
+              'div',
+              {
+                key: 'menu',
+                style: { ...S.menuPop, left: `${Math.max(8, menuAt.x - 132)}px`, top: `${menuAt.y + 2}px` },
+                onClick: (event) => event.stopPropagation(),
+              },
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(row.moves && row.moves.up ? {} : S.menuItemOff) },
+                disabled: !(row.moves && row.moves.up),
+                onClick: () => onChapterAction('up', Number(row.key)),
+              }, '↑　上移'),
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(row.moves && row.moves.down ? {} : S.menuItemOff) },
+                disabled: !(row.moves && row.moves.down),
+                onClick: () => onChapterAction('down', Number(row.key)),
+              }, '↓　下移'),
+              h('button', {
+                type: 'button',
+                style: { ...S.menuItem, ...(row.moves && row.moves.down ? {} : S.menuItemOff) },
+                disabled: !(row.moves && row.moves.down),
+                onClick: () => onChapterAction('merge', Number(row.key)),
+              }, '⇤　并入下章'),
+            ),
+          ]
+        : []
+      if (!hasChildren || !open || flat === true) return [head, ...actions]
       const children = row.children.map((child) =>
         h(Row, {
           key: child.id,
@@ -1950,9 +2065,12 @@ const API_BACKUP = '/api/inkwell/backup'
           onToggle,
           selected,
           onRowClick,
+          ...(menuAt === undefined ? {} : { menuAt }),
+          ...(onMenuToggle === undefined ? {} : { onMenuToggle }),
+          ...(onChapterAction === undefined ? {} : { onChapterAction }),
         }),
       )
-      return [head, ...children]
+      return [head, ...children, ...actions]
     }
 
     /**
@@ -2012,7 +2130,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Section(props) {
-      const { section, collapsed, onToggle, selected, onRowClick } = props
+      const { section, collapsed, onToggle, selected, onRowClick, menuAt, onMenuToggle, onChapterAction } = props
       const open = !collapsed.has(section.id)
       return h(
         'div',
@@ -2069,6 +2187,9 @@ const API_BACKUP = '/api/inkwell/backup'
                       onToggle,
                       selected,
                       onRowClick,
+                      menuAt,
+                      onMenuToggle,
+                      onChapterAction,
                     }),
                   )
                 }
@@ -2076,6 +2197,9 @@ const API_BACKUP = '/api/inkwell/backup'
                   key: 'window',
                   label: section.label,
                   entries,
+                  menuAt,
+                  onMenuToggle,
+                  onChapterAction,
                   collapsed,
                   onToggle,
                   selected,
@@ -3658,9 +3782,6 @@ const API_BACKUP = '/api/inkwell/backup'
       // the label on the panel says out loud.
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
-      const [mergeArmed, setMergeArmed] = useState(false)
-      const [moveBusy, setMoveBusy] = useState(false)
-      const [moveNote, setMoveNote] = useState('')
       const [roundBusy, setRoundBusy] = useState(false)
       const [roundReport, setRoundReport] = useState('')
       const [roundError, setRoundError] = useState('')
@@ -3773,100 +3894,6 @@ const API_BACKUP = '/api/inkwell/backup'
         // The pipeline used to live only in the documentation: write, propose,
         // two reviews, chief, commit — six steps and five tool names, none of
         // them visible here. One button, and the report comes back in the page.
-        // Merging is the only button here that destroys a chapter number, so it
-        // arms first and fires second: one click is never enough to do it.
-        data && isChapter
-          ? h(
-              'button',
-              {
-                type: 'button',
-                className: 'iw-btn',
-                style: {
-                  ...S.iconButton,
-                  ...(mergeArmed ? { color: '#c0392b', borderColor: '#c0392b' } : {}),
-                  ...(moveBusy ? { opacity: 0.6 } : {}),
-                },
-                disabled: moveBusy,
-                title: '把下一章的正文接到这一章末尾，删掉下一章，后面的章前移一位（会先备份整本书）',
-                onClick: () => {
-                  if (!mergeArmed) {
-                    setMergeArmed(true)
-                    setTimeout(() => setMergeArmed(false), 4000)
-                    return undefined
-                  }
-                  const n = Number(target.key)
-                  setMergeArmed(false)
-                  setMoveBusy(true)
-                  setMoveNote('')
-                  mergeChapter(sessionId, root, n)
-                    .then((output) => {
-                      setMoveNote(`第 ${output.dropped} 章并入第 ${output.number} 章，全书 ${output.total} 章。备份：${output.backup}`)
-                      if (onChanged) onChanged()
-                    })
-                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
-                    .finally(() => setMoveBusy(false))
-                  return undefined
-                },
-              },
-              mergeArmed ? '真的并？' : '并入下章',
-            )
-          : null,
-        // Chapter numbers are the book's primary key, so moving one is not a
-        // rename: the draft, the card, the ledger, the places, the stages and the
-        // thread anchors all follow. The route does that in one pass and backs up
-        // first; the arrows only say which way.
-        data && isChapter
-          ? h(
-              'button',
-              {
-                type: 'button',
-                className: 'iw-btn',
-                style: { ...S.iconButton, ...(moveBusy ? { opacity: 0.6 } : {}) },
-                disabled: moveBusy || Number(target.key) <= 1,
-                title: '和上一章交换位置',
-                onClick: () => {
-                  const n = Number(target.key)
-                  setMoveBusy(true)
-                  setMoveNote('')
-                  moveChapter(sessionId, root, n, n - 1)
-                    .then((output) => {
-                      setMoveNote(`已挪到第 ${output.number} 位，动了 ${output.moved} 章。备份：${output.backup}`)
-                      if (onChanged) onChanged()
-                    })
-                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
-                    .finally(() => setMoveBusy(false))
-                  return undefined
-                },
-              },
-              '↑',
-            )
-          : null,
-        data && isChapter
-          ? h(
-              'button',
-              {
-                type: 'button',
-                className: 'iw-btn',
-                style: { ...S.iconButton, ...(moveBusy ? { opacity: 0.6 } : {}) },
-                disabled: moveBusy,
-                title: '和下一章交换位置',
-                onClick: () => {
-                  const n = Number(target.key)
-                  setMoveBusy(true)
-                  setMoveNote('')
-                  moveChapter(sessionId, root, n, n + 1)
-                    .then((output) => {
-                      setMoveNote(`已挪到第 ${output.number} 位，动了 ${output.moved} 章。备份：${output.backup}`)
-                      if (onChanged) onChanged()
-                    })
-                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
-                    .finally(() => setMoveBusy(false))
-                  return undefined
-                },
-              },
-              '↓',
-            )
-          : null,
         data && isChapter
           ? h(
               'button',
@@ -4105,7 +4132,6 @@ const API_BACKUP = '/api/inkwell/backup'
         chart,
         // The round's report lands here: it is a page of text, and the author is
         // already looking at this chapter.
-        moveNote !== '' ? h('div', { style: { ...S.note, padding: '4px 0' } }, moveNote) : null,
         roundBusy
           ? h('div', { style: { ...S.note, padding: '6px 0' } }, '写手、两位审核、总裁决正在依次过这一章，可能要几分钟。没有自动定稿，跑完你自己决定。')
           : null,
@@ -4320,6 +4346,10 @@ const API_BACKUP = '/api/inkwell/backup'
       // as a wall of ninety-four chapter rows.
       const [collapsed, setCollapsed] = useState(() => new Set(['world', 'cast', 'plot', 'text']))
       const [selected, setSelected] = useState(null)
+      // Which row's ⋯ menu is open. Held here, not in Row: a row cannot own state
+      // because the list is virtualised and rows come and go.
+      const [menuAt, setMenuAt] = useState(null)
+      const [menuNote, setMenuNote] = useState('')
       const [detail, setDetail] = useState(null)
       // The create dialog: the folder the chooser returned, or null when closed.
       const [draft, setDraft] = useState(null)
@@ -4769,6 +4799,35 @@ const API_BACKUP = '/api/inkwell/backup'
         setSelected((current) => (current === row.id ? null : row.id))
       }, [])
 
+      /**
+       * Move or merge a chapter from its row.
+       *
+       * Both go through the same routes the detail page used to call, so there is
+       * one implementation of "move" and one of "merge" no matter which surface
+       * asked. The list refreshes afterwards because every one of these changes
+       * the numbers in it.
+       */
+      const runChapterAction = useCallback((action, number) => {
+        setMenuAt(null)
+        setMenuNote('')
+        const call =
+          action === 'up'
+            ? moveChapter(sessionId, root, number, number - 1)
+            : action === 'down'
+              ? moveChapter(sessionId, root, number, number + 1)
+              : mergeChapter(sessionId, root, number)
+        call
+          .then((output) => {
+            setMenuNote(
+              action === 'merge'
+                ? `第 ${output.dropped} 章并入第 ${output.number} 章，现在共 ${output.total} 章。备份：${output.backup}`
+                : `第 ${number} 章挪到第 ${output.number} 位。备份：${output.backup}`,
+            )
+            return refresh()
+          })
+          .catch((failure) => setMenuNote(String((failure && failure.message) || failure)))
+      }, [sessionId, root, refresh])
+
       // Every dialog in this panel is an overlay over whichever view is behind
       // it. `display: contents` keeps the wrapper out of the layout, and the
       // overlay itself is position: fixed. Keeping them in one list means a
@@ -5190,6 +5249,9 @@ const API_BACKUP = '/api/inkwell/backup'
               onToggle: toggle,
               selected,
               onRowClick,
+              menuAt,
+              onMenuToggle: setMenuAt,
+              onChapterAction: runChapterAction,
               onAdd:
                 section.id === 'text'
                   ? addChapter
@@ -5203,6 +5265,11 @@ const API_BACKUP = '/api/inkwell/backup'
               addTitle: '新建',
             }),
           ),
+        // The result of a move or a merge, where the author did it. A silent
+        // chapter list that quietly renumbered itself is the worst outcome.
+        menuNote !== ''
+          ? h('div', { style: { ...S.note, margin: '0 0 6px', padding: '6px 8px', fontSize: '12px' } }, menuNote)
+          : null,
         pendingBanner,
         h(
           'div',

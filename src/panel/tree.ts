@@ -30,6 +30,14 @@ export interface PanelRow {
   chip?: string
   /** Right-aligned detail that is not a number, e.g. `3.2 万字`. */
   aside?: string
+  /**
+   * Whether this chapter can trade places with its neighbours.
+   *
+   * Computed here rather than in the browser because only the book knows which
+   * numbers exist: a chapter list can have holes, and the first and last rows
+   * must not offer a move that would land on nothing.
+   */
+  moves?: { up: boolean; down: boolean }
   tone?: PanelTone
   /**
    * What clicking this leaf opens, when it stands for a thing with its own page.
@@ -419,6 +427,9 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
   for (const plan of snapshot.plans) numbers.add(plan.number)
   for (const chapter of snapshot.chapters) numbers.add(chapter.number)
 
+  const lowest = Math.min(...numbers)
+  const highest = Math.max(...numbers)
+
   const chapterRow = (number: number): PanelRow => {
     const plan = snapshot.plans.find((entry) => entry.number === number)
     const chapter = written.get(number)
@@ -429,6 +440,7 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       label: `第${number}章 ${title}`.trim(),
       kind: 'chapter' as const,
       key: String(number),
+      moves: { up: number > lowest, down: number < highest },
     }
     if (chapter) {
       // A card written from an older draft no longer describes the prose. The
