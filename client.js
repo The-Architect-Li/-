@@ -1397,11 +1397,16 @@ const API_BACKUP = '/api/inkwell/backup'
         // the panel but wrong for a popover — at 14% the row underneath reads
         // straight through the menu. So: an opaque system colour as the floor,
         // the theme tint layered on top of it. Same palette, no see-through.
-        // `backgroundColor`, not the `background` shorthand: the shorthand resets
-        // background-image, and whichever of the two the renderer applies last
-        // wins. This pair has to survive in one order only.
-        backgroundColor: 'Canvas',
-        backgroundImage: 'linear-gradient(var(--iw-surface-active), var(--iw-surface-active))',
+        // A popover must be opaque, and every surface token in this panel is a
+        // few percent of CanvasText mixed with `transparent` — at 14% the row
+        // underneath reads straight through the menu. So the floor is a literal
+        // near-solid colour rather than a token: 98% leaves the blur behind it
+        // visible as depth, and no text can come through. It does not follow a
+        // light theme, which is a deliberate trade — a menu you cannot read is
+        // worse than a menu that is dark in the wrong theme.
+        backgroundColor: 'rgba(26, 26, 31, 0.98)',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
         boxShadow: '0 10px 28px rgba(0,0,0,.45)',
         display: 'flex',
         flexDirection: 'column',

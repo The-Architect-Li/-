@@ -54,6 +54,30 @@ const GRAMMAR_OPENERS = new Set([
  * @returns the openings that behave like names.
  */
 export function discoverOpeners(chapters: readonly ChapterDraft[], ratio = 0.15): string[] {
+  // Every save asks for this, and on a five-hundred-chapter book that means
+  // walking 1.2 million characters on each keystroke-then-save. The answer only
+  // changes when the prose does, so it is cached against a cheap fingerprint:
+  // chapter count plus total words. A rewrite that happens to preserve both is
+  // the one case where the cache is stale, and the cost then is a name list one
+  // chapter out of date — not a wrong save.
+  const key = `${chapters.length}:${chapters.reduce((sum, chapter) => sum + chapter.words, 0)}:${ratio}`
+  if (openerCache !== null && openerCache.key === key) return openerCache.value
+  const computed = computeOpeners(chapters, ratio)
+  openerCache = { key, value: computed }
+  return computed
+}
+
+/** Last answer, keyed by a fingerprint of the prose. One slot is enough: saves go one at a time. */
+let openerCache: { key: string; value: string[] } | null = null
+
+/**
+ * The uncached walk. Same contract as {@link discoverOpeners}.
+ *
+ * @param chapters - every chapter with its text.
+ * @param ratio - share of chapters an opening must appear in.
+ * @returns openings that behave like names.
+ */
+function computeOpeners(chapters: readonly ChapterDraft[], ratio: number): string[] {
   const usable = chapters.filter((chapter) => chapter.text.trim() !== '')
   if (usable.length < 5) return []
   const spread = new Map<string, number>()
