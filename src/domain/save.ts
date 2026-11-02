@@ -7,7 +7,7 @@
  * rules live here and both callers only decorate the result.
  */
 import { checkContract, rank } from './contract.ts'
-import { scanChapter } from './scan.ts'
+import { discoverOpeners, properNames, scanChapter } from './scan.ts'
 import { countChars, splitParagraphs } from './text.ts'
 import { adoptClock, type ClockAdoption } from './timeline-edit.ts'
 import type { ChapterDraft, Finding, InkwellConfig } from './types.ts'
@@ -85,7 +85,17 @@ export async function saveChapterBody(
     revision: 0,
     text,
   }
-  const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, config)])
+  // Names come from the book, not from the text: a chapter that opens with the
+  // protagonist's name is an ordinary sentence, not a flat opening.
+  const proper = [
+    ...properNames({
+      characters: await store.characters(),
+      places: await store.places(),
+      world: await store.world(),
+    }),
+    ...discoverOpeners(previous),
+  ]
+  const findings: Finding[] = rank([...contract, ...scanChapter(draft, previous, config, { proper })])
   const meta = await store.writeChapter(draft, { baseRevision: input.baseRevision })
   // The prose has just told the book when it happens; the clock should hear it
   // in the same breath as the save, not on some later sweep that nobody runs.

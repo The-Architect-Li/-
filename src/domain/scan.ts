@@ -19,6 +19,90 @@ import {
   splitSentences,
 } from './text.ts'
 
+/**
+ * Words that start a sentence as grammar, not as a name.
+ *
+ * They are deliberately *not* treated as names below: a chapter where forty
+ * sentences begin with 「他」 has a real problem, and excluding it would hide the
+ * one thing this check is good at. Pronouns and connectives are exactly the
+ * openings that can be flat.
+ */
+const GRAMMAR_OPENERS = new Set([
+  '他', '她', '它', '我', '你', '您', '咱', '这', '那', '其', '此', '该', '每', '各',
+  '但', '而', '却', '也', '又', '只', '就', '便', '才', '还', '再', '已', '曾', '正',
+  '忽', '突', '猛', '骤', '顿', '渐', '依', '仍', '终', '于', '在', '从', '随', '被',
+  '把', '将', '为', '因', '若', '如', '虽', '即', '凡', '所', '众', '一', '两', '三',
+  '半', '片', '声', '有', '没', '不', '无', '是', '就', '要', '想', '能', '会', '可',
+])
+
+/**
+ * Find the names in a manuscript that has no character cards yet.
+ *
+ * An imported book starts with prose and nothing else, so `properNames` has
+ * nothing to offer — and the opening check then reports the protagonist's name
+ * as a stylistic tic, forty times per chapter. But a name has a signature the
+ * prose can be read for: **it opens sentences in chapter after chapter**. 「路长」
+ * appears at the start of sentences across hundreds of chapters because 路长远 is
+ * the protagonist; 「仿佛」 might too, and that one is caught by the tone check
+ * instead.
+ *
+ * @param chapters - every chapter with its text.
+ * @param ratio - share of chapters a two-character opening must appear in. 15%
+ *   was measured on a 521-chapter book: it caught the three leads and left the
+ *   ordinary adverbs alone. Higher misses a lead whose arc is one third of the
+ *   book; lower starts excluding 「仿佛」, which the tone check needs to report.
+ * @returns the openings that behave like names.
+ */
+export function discoverOpeners(chapters: readonly ChapterDraft[], ratio = 0.15): string[] {
+  const usable = chapters.filter((chapter) => chapter.text.trim() !== '')
+  if (usable.length < 5) return []
+  const spread = new Map<string, number>()
+  for (const chapter of usable) {
+    const seen = new Set<string>()
+    for (const sentence of splitSentences(chapter.text)) {
+      const opening = sentence.replace(OPENING_STRIP, '').slice(0, 2)
+      if (opening.length < 2) continue
+      if (GRAMMAR_OPENERS.has(opening[0]!)) continue
+      seen.add(opening)
+    }
+    for (const opening of seen) spread.set(opening, (spread.get(opening) ?? 0) + 1)
+  }
+  const need = Math.max(3, Math.ceil(usable.length * ratio))
+  return [...spread.entries()]
+    .filter(([, count]) => count >= need)
+    .map(([opening]) => opening)
+    .sort((a, b) => b.length - a.length)
+}
+
+/**
+ * Every proper noun the book has already named.
+ *
+ * The opening check needs this to tell 「他推开门」 from 「路长远推开门」: the first is a
+ * flat opening, the second is a sentence about a person. A name is not a
+ * stylistic tic, and reporting it as one teaches the author to ignore the
+ * report.
+ *
+ * @param source - the book's characters, places and world entries.
+ * @returns names and aliases, longest first so a longer name wins the match.
+ */
+export function properNames(source: {
+  characters?: readonly { name: string; aliases?: readonly string[] }[]
+  places?: readonly { name: string; aliases?: readonly string[] }[]
+  world?: readonly { name: string }[]
+}): string[] {
+  const names = new Set<string>()
+  for (const card of source.characters ?? []) {
+    if (card.name.trim() !== '') names.add(card.name.trim())
+    for (const alias of card.aliases ?? []) if (alias.trim() !== '') names.add(alias.trim())
+  }
+  for (const card of source.places ?? []) {
+    if (card.name.trim() !== '') names.add(card.name.trim())
+    for (const alias of card.aliases ?? []) if (alias.trim() !== '') names.add(alias.trim())
+  }
+  for (const entry of source.world ?? []) if (entry.name.trim() !== '') names.add(entry.name.trim())
+  return [...names].sort((a, b) => b.length - a.length)
+}
+
 const OPENING_STRIP = /^["'“”「『（(\s]+/
 
 /** Compare one draft against every earlier chapter for reused phrasing. */
@@ -49,26 +133,43 @@ export function scanRepetition(
 }
 
 /** Sentences that all begin with the same characters. */
-export function scanOpenings(text: string, config: InkwellConfig): Finding[] {
+export function scanOpenings(
+  text: string,
+  config: InkwellConfig,
+  proper: readonly string[] = [],
+): Finding[] {
   const sentences = splitSentences(text)
+  // A name at the start of a sentence is not a flat opening, it is a character
+  // doing something. Without this the main character's name — 路长远, appearing
+  // forty times in one chapter — is reported as 「40 个句子以『路长』开头」, and a
+  // report that is wrong forty times in a row is one the author turns off.
+  const names = proper.filter((name) => name.length >= 2)
   const counts = new Map<string, number>()
   for (const sentence of sentences) {
-    const opening = sentence.replace(OPENING_STRIP, '').slice(0, 2)
+    const cleaned = sentence.replace(OPENING_STRIP, '')
+    if (names.some((name) => cleaned.startsWith(name))) continue
+    const opening = cleaned.slice(0, 2)
     if (opening.length < 2) continue
     counts.set(opening, (counts.get(opening) ?? 0) + 1)
   }
 
-  const findings: Finding[] = []
-  for (const [opening, count] of counts) {
-    if (count < config.openingRepeatMin) continue
-    findings.push({
+  // One finding, not one per opening: `scanChapter` keeps the first finding per
+  // code, so a chapter with seven flat openings used to report whichever one
+  // happened to be seen first — often the least interesting. Ranking them and
+  // naming the top few is both shorter and more useful.
+  const offenders = [...counts.entries()]
+    .filter(([, count]) => count >= config.openingRepeatMin)
+    .sort((a, b) => b[1] - a[1])
+  if (offenders.length === 0) return []
+  const top = offenders.slice(0, 3).map(([opening, count]) => `${opening}×${count}`)
+  return [
+    {
       code: 'scan/opening-repeat',
       severity: 'warn',
-      message: `有 ${count} 个句子以「${opening}」开头，段落起手太单一`,
-      evidence: `阈值：同一开头最多 ${config.openingRepeatMin - 1} 次`,
-    })
-  }
-  return findings
+      message: `${offenders.length} 种开头反复出现，段落起手太单一`,
+      evidence: `最高几个：${top.join(' ')}（阈值：同一开头最多 ${config.openingRepeatMin - 1} 次）`,
+    },
+  ]
 }
 
 /** Sentence-length dispersion as a proxy for rhythm. */
@@ -102,16 +203,10 @@ export function scanTone(text: string, config: InkwellConfig): Finding[] {
   const density = (total / chars) * 1000
   const top = hits.slice(0, 6).map((item) => `${item.word}×${item.count}`)
 
-  if (density < config.aiToneWarnPer1000) {
-    return [
-      {
-        code: 'scan/tone-ok',
-        severity: 'info',
-        message: `套路词密度 ${density.toFixed(1)}/千字，在阈值内`,
-        evidence: top.join(' '),
-      },
-    ]
-  }
+  // 「密度在阈值内」 is not a finding. It used to be reported as an info line, and
+  // a full-book pass then showed dozens of lines saying nothing was wrong —
+  // which is how the one line that matters gets skimmed past.
+  if (density < config.aiToneWarnPer1000) return []
   return [
     {
       code: 'scan/tone-heavy',
@@ -182,10 +277,11 @@ export function scanChapter(
   draft: ChapterDraft,
   previous: ChapterDraft[],
   config: InkwellConfig,
+  options: { proper?: readonly string[] } = {},
 ): Finding[] {
   const findings = [
     ...scanRepetition(draft, previous, config),
-    ...scanOpenings(draft.text, config),
+    ...scanOpenings(draft.text, config, options.proper ?? []),
     ...scanRhythm(draft.text, config),
     ...scanTone(draft.text, config),
     ...scanShape(draft.text, config),

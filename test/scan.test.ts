@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scanChapter, scanEnding, scanOpenings, scanRepetition, scanRhythm, scanTone } from '../src/domain/scan.ts'
+import { discoverOpeners, scanChapter, scanEnding, scanOpenings, scanRepetition, scanRhythm, scanTone } from '../src/domain/scan.ts'
 import { resolveConfig } from '../src/config.ts'
 import type { ChapterDraft } from '../src/domain/types.ts'
 
@@ -72,10 +72,11 @@ describe('scanTone', () => {
     expect(scanTone(text, config)).toHaveLength(0)
   })
 
-  it('reports a light density without failing', () => {
+  it('says nothing at all when the density is light', () => {
+    // "Nothing is wrong" is not a finding. Reporting it once per chapter buried
+    // the one line that mattered on a full-book pass.
     const text = `他仿佛看见了她。${'他推开门，屋里没有人。'.repeat(60)}`
-    const findings = scanTone(text, config)
-    expect(findings[0]?.severity).toBe('info')
+    expect(scanTone(text, config)).toEqual([])
   })
 })
 
@@ -94,5 +95,54 @@ describe('scanChapter', () => {
     const findings = scanChapter(draft(2, `${bridgeScene}${bridgeScene}`), [draft(1, bridgeScene)], config)
     const codes = findings.map((item) => item.code)
     expect(new Set(codes).size).toBe(codes.length)
+  })
+})
+
+describe('telling a name from a flat opening', () => {
+  it('does not count a sentence that starts with a character’s name', () => {
+    // 「路长远收起了伞」 forty times is a protagonist doing things, not a stylistic
+    // tic. Reporting it teaches the author to ignore the whole report.
+    const text = Array.from({ length: 12 }, () => '路长远推开门。').join('')
+    expect(scanOpenings(text, config, [])).toHaveLength(1)
+    expect(scanOpenings(text, config, ['路长远'])).toEqual([])
+  })
+
+  it('still counts the openings that are genuinely flat', () => {
+    const text = Array.from({ length: 12 }, () => '他推开门。').join('')
+    const [finding] = scanOpenings(text, config, ['路长远'])
+    expect(finding?.code).toBe('scan/opening-repeat')
+    expect(finding?.evidence).toContain('他推×12')
+  })
+
+  it('reports the worst openings in one line, not one line each', () => {
+    // `scanChapter` keeps the first finding per code; one finding per opening
+    // meant a chapter with seven of them reported whichever came first.
+    const text = `${'他推开门。'.repeat(6)}${'她抬起头。'.repeat(5)}${'雨落下来。'.repeat(4)}`
+    const findings = scanOpenings(text, config)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.evidence).toContain('他推×6')
+    expect(findings[0]?.evidence).toContain('她抬×5')
+  })
+})
+
+describe('discoverOpeners', () => {
+  function chapter(number: number, text: string) {
+    return { number, title: `第${number}章`, text, words: text.length, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 }
+  }
+
+  it('finds an opening that recurs across chapters, i.e. a name', () => {
+    const book = Array.from({ length: 10 }, (_, index) => chapter(index + 1, '路长远推开门。路上有水。'))
+    expect(discoverOpeners(book, 0.15)).toContain('路长')
+  })
+
+  it('leaves a pronoun alone, however often it opens a sentence', () => {
+    // 「他」 is exactly what the check is for. Excluding it would hide the one
+    // habit that is worth fixing.
+    const book = Array.from({ length: 10 }, (_, index) => chapter(index + 1, '他推开门。他坐下。他走了。'))
+    expect(discoverOpeners(book, 0.15)).not.toContain('他')
+  })
+
+  it('says nothing about a book too short to have habits', () => {
+    expect(discoverOpeners([chapter(1, '路长远推开门。'), chapter(2, '路长远坐下。')])).toEqual([])
   })
 })

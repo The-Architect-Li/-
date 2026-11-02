@@ -4,7 +4,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkContract, rank } from '../domain/contract.ts'
 import { recordCoverage } from '../domain/records.ts'
 import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/save.ts'
-import { scanChapter } from '../domain/scan.ts'
+import { discoverOpeners, properNames, scanChapter } from '../domain/scan.ts'
 import { describeSearch, parseTerms, searchChapters } from '../domain/search.ts'
 import type { ProjectStore } from '../domain/store.ts'
 import { countChars, splitParagraphs } from '../domain/text.ts'
@@ -241,9 +241,17 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
         const previous = await store.allChapters()
         const round = (await store.draftsOf(number)).length + 1
         const words = countChars(text)
+        const proper = [
+          ...properNames({
+            characters: await store.characters(),
+            places: await store.places(),
+            world: await store.world(),
+          }),
+          ...discoverOpeners(previous),
+        ]
         const findings = rank([
           ...contract,
-          ...scanChapter({ number, title: args.title?.trim() || plan.title, text, words, summary: args.summary?.trim() || deriveSummary(text), writtenAt: new Date().toISOString() }, previous, deps.config),
+          ...scanChapter({ number, title: args.title?.trim() || plan.title, text, words, summary: args.summary?.trim() || deriveSummary(text), writtenAt: new Date().toISOString() }, previous, deps.config, { proper }),
         ])
         const counts = tally(findings)
         await store.saveDraft({

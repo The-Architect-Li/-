@@ -6,7 +6,7 @@ import { checkContract, rank } from '../domain/contract.ts'
 import { staleCards } from '../domain/cards.ts'
 import { chapterRanges, describeCoverage, recordCoverage } from '../domain/records.ts'
 import { checkRelations } from '../domain/relations.ts'
-import { scanChapter } from '../domain/scan.ts'
+import { discoverOpeners, properNames, scanChapter } from '../domain/scan.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { STALE_AFTER, openThreads, staleThreads } from '../domain/threads.ts'
 import type { Finding } from '../domain/types.ts'
@@ -53,6 +53,9 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       const snapshot = await store.snapshot()
       const drafts = await store.allChapters()
       const findings: Finding[] = []
+      // Names the book already has, so the opening check can tell a character
+      // from a stylistic tic.
+      const proper = [...properNames(snapshot), ...discoverOpeners(drafts)]
 
       if (args.action === 'ledger' || args.action === 'all') {
         findings.push(...auditLedger(snapshot.ledger, drafts.length))
@@ -93,7 +96,7 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
         for (const draft of targets) {
           const others = drafts.filter((item) => item.number !== draft.number)
           findings.push(
-            ...scanChapter(draft, others, deps.config).map((finding) => ({
+            ...scanChapter(draft, others, deps.config, { proper }).map((finding) => ({
               ...finding,
               message: `第${draft.number}章：${finding.message}`,
             })),
