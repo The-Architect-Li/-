@@ -27,6 +27,7 @@
  */
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { countChars } from './text.ts'
 import type { ProjectStore } from './store.ts'
 
 /** One file that was rewritten, for the report. */
@@ -170,8 +171,8 @@ function fileName(number: number): string {
  * @param files - relative paths.
  * @returns the backup directory.
  */
-async function backup(store: ProjectStore, stamp: string, files: readonly string[]): Promise<string> {
-  const dir = join(store.root, '.history', `reorder-${stamp}`)
+async function backup(store: ProjectStore, folder: string, files: readonly string[]): Promise<string> {
+  const dir = join(store.root, '.history', folder)
   await mkdir(dir, { recursive: true })
   for (const file of files) {
     const text = await readFile(join(store.root, file), 'utf8').catch(() => undefined)
@@ -218,7 +219,7 @@ export async function moveChapter(store: ProjectStore, from: number, to: number)
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const proseFiles = [...map.keys()].filter((number) => existing.has(number)).flatMap((number) => [`chapters/${fileName(number)}`, `drafts/${String(number).padStart(3, '0')}`])
-  const backupDir = await backup(store, stamp, [...Object.values(FILES), ...proseFiles])
+  const backupDir = await backup(store, `reorder-${stamp}`, [...Object.values(FILES), ...proseFiles])
 
   const touched: string[] = []
 
@@ -291,4 +292,146 @@ export async function moveChapter(store: ProjectStore, from: number, to: number)
  */
 export async function swapChapters(store: ProjectStore, a: number, b: number): Promise<Reordered> {
   return await moveChapter(store, a, b)
+}
+
+/**
+ * Fold the next chapter into this one.
+ *
+ * The common case is a writer who split a scene across two chapters and now wants
+ * one: 「第 80 章并入第 79 章」. What comes back is a single chapter holding both
+ * bodies, a card that carries both sets of beats and characters, and every later
+ * chapter one number lower — because a book with a hole at 80 is a book whose
+ * chapter numbers no longer mean "the tenth thing that happens".
+ *
+ * Three decisions worth stating:
+ *
+ * - **The prose is joined, not rewritten.** The two bodies go together with a
+ *   paragraph break between them, and not one character is changed. If the seam
+ *   reads badly, that is an edit the author makes, not one this tool makes.
+ * - **The later body's hook wins.** A chapter ends once, at the end, so the
+ *   merged chapter's hook is the one that was pulling at the end of the second
+ *   body. The first body's hook stops being a hook and becomes an internal beat.
+ * - **The dropped chapter's drafts are kept, not deleted.** They no longer match
+ *   the merged prose, so they move to `.history/merge-<stamp>/` where they can be
+ *   read, instead of vanishing.
+ *
+ * @param store - the book.
+ * @param number - the chapter that receives the next one.
+ * @returns what moved, and where the backup is.
+ * @throws when either chapter has no prose, or there is no next chapter.
+ */
+export async function mergeChapters(store: ProjectStore, number: number): Promise<Reordered & { words: number; dropped: number }> {
+  if (!Number.isInteger(number) || number < 1) throw new Error(`章号要是正整数，收到 ${String(number)}。`)
+  const index = await store.chapters()
+  const keep = index.find((chapter) => chapter.number === number)
+  const absorb = index.find((chapter) => chapter.number === number + 1)
+  if (keep === undefined) throw new Error(`第${number}章没有正文，没法合并。`)
+  if (absorb === undefined) throw new Error(`第${number + 1}章没有正文。并章只合并相邻的两章，后面没有内容可并。`)
+  const keepDraft = await store.chapter(number)
+  const absorbDraft = await store.chapter(number + 1)
+  if (keepDraft === undefined || absorbDraft === undefined) throw new Error('读不到正文文件，先刷新再看。')
+
+  const last = index.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+  // Everything after the absorbed chapter steps down one; the absorbed chapter
+  // itself points at the one that keeps it, so its records land in the merged
+  // chapter rather than disappearing.
+  const map = new Map<number, number>([[number + 1, number]])
+  for (let next = number + 2; next <= last; next += 1) map.set(next, next - 1)
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const proseFiles = index.map((chapter) => `chapters/${fileName(chapter.number)}`)
+  const backupDir = await backup(store, `merge-${stamp}`, [...Object.values(FILES), ...proseFiles])
+
+  const touched: string[] = []
+
+  // 1. Records first, through the same remap as a move: the absorbed chapter's
+  //    facts and threads now belong to the chapter that swallowed it.
+  //
+  //    `index` and `plans` are excluded: both get purpose-built rewrites below,
+  //    and running them through the generic remap first would apply the shift
+  //    twice — which showed up as two chapters numbered 3 after a merge.
+  const recordFiles = (Object.entries(FILES) as [keyof typeof FILES, string][]).filter(
+    ([name]) => name !== 'index' && name !== 'plans',
+  )
+  for (const [name, path] of recordFiles) {
+    const raw = await readFile(join(store.root, path), 'utf8').catch(() => undefined)
+    if (raw === undefined || raw.trim() === '') continue
+    const next = remapFile(name, JSON.parse(raw) as unknown, map)
+    const text = `${JSON.stringify(next, null, 2)}\n`
+    if (text === raw) continue
+    await writeFile(join(store.root, path), text, 'utf8')
+    touched.push(path)
+  }
+
+  // 2. Cards: merge the pair, then shift the rest.
+  const plans = await store.plans()
+  const keepPlan = plans.find((plan) => plan.number === number)
+  const absorbPlan = plans.find((plan) => plan.number === number + 1)
+  const merged = keepPlan === undefined
+    ? undefined
+    : {
+        ...keepPlan,
+        // The second body's hook is the one at the end of the merged chapter.
+        hooks: absorbPlan !== undefined && absorbPlan.hooks.length > 0 ? absorbPlan.hooks : keepPlan.hooks,
+        beats: [...keepPlan.beats, ...(absorbPlan?.beats ?? [])],
+        characters: [...new Set([...keepPlan.characters, ...(absorbPlan?.characters ?? [])])],
+        // A recap of two chapters is a new recap; nobody can write it from here.
+        summary: '',
+      }
+  const nextPlans = plans
+    .filter((plan) => plan.number !== number + 1)
+    .map((plan) => (plan.number === number ? (merged ?? plan) : plan))
+    .map((plan) => ({ ...plan, number: plan.number > number + 1 ? plan.number - 1 : plan.number }))
+    .sort((a, b) => a.number - b.number)
+  if (JSON.stringify(nextPlans) !== JSON.stringify(plans)) {
+    await store.writePlans(nextPlans)
+    touched.push(FILES.plans)
+  }
+
+  // 3. Prose. Read the whole run, then write it back shifted — a chapter cannot be
+  //    moved onto a number that has not vacated yet.
+  const parked = new Map<number, string>()
+  for (let from = number + 2; from <= last; from += 1) {
+    const text = await readFile(join(store.root, 'chapters', fileName(from)), 'utf8').catch(() => undefined)
+    if (text !== undefined) parked.set(from - 1, text)
+  }
+  const joined = `${keepDraft.text.trim()}\n\n${absorbDraft.text.trim()}\n`
+  for (const [target, text] of parked) await writeFile(join(store.root, 'chapters', fileName(target)), text, 'utf8')
+  await writeFile(join(store.root, 'chapters', fileName(number)), joined, 'utf8')
+  // The last number is now empty: the book got one chapter shorter.
+  await rm(join(store.root, 'chapters', fileName(last)), { force: true }).catch(() => undefined)
+  touched.push(`chapters/${fileName(number)}`, `chapters/${fileName(last)}`)
+
+  // 4. The index, rebuilt from what is actually on disk.
+  const rebuilt = [...index.filter((chapter) => chapter.number !== number + 1)]
+    .map((chapter) => (chapter.number > number + 1 ? { ...chapter, number: chapter.number - 1 } : chapter))
+    .map((chapter) =>
+      chapter.number === number
+        ? { ...chapter, words: countChars(joined), summary: '', writtenAt: new Date().toISOString(), revision: (chapter.revision ?? 0) + 1 }
+        : chapter,
+    )
+    .sort((a, b) => a.number - b.number)
+  await writeFile(join(store.root, FILES.index), `${JSON.stringify(rebuilt, null, 2)}\n`, 'utf8')
+  touched.push(FILES.index)
+
+  // 5. Draft rounds. The absorbed chapter's rounds no longer describe any prose,
+  //    so they are parked rather than deleted; the rest shift down with it.
+  for (let from = number + 2; from <= last; from += 1) {
+    const source = join(store.root, 'drafts', String(from).padStart(3, '0'))
+    const destination = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.merging`)
+    await rename(source, destination).catch(() => undefined)
+  }
+  for (let from = number + 2; from <= last; from += 1) {
+    const moved = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.merging`)
+    await rename(moved, join(store.root, 'drafts', String(from - 1).padStart(3, '0'))).catch(() => undefined)
+  }
+
+  return {
+    moved: map.size,
+    mapping: [...map.entries()].map(([oldNumber, newNumber]) => `${oldNumber}→${newNumber}`),
+    touched,
+    backup: backupDir,
+    words: countChars(joined),
+    dropped: number + 1,
+  }
 }

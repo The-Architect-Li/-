@@ -71,7 +71,7 @@ import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { runRound } from '../tools/dispatch.ts'
-import { moveChapter } from '../domain/reorder.ts'
+import { mergeChapters, moveChapter } from '../domain/reorder.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
@@ -1478,6 +1478,50 @@ export async function cardRoute(
  * @param root - an absolute project directory, when the browser named one.
  * @returns what moved.
  */
+/**
+ * Fold a chapter into the one before it, from the button on its page.
+ *
+ * The same `mergeChapters` the tool calls. It answers with what a person needs
+ * after an irreversible edit: how many chapters the book has now, which number
+ * disappeared, and where the whole-book backup went.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns what merged.
+ */
+export async function mergeRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const number = Number(body.number)
+    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('merge 需要 number：第几章把下一章并进来。')
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
+    const result = await mergeChapters(store, number)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          number,
+          dropped: result.dropped,
+          words: result.words,
+          total: result.mapping.length === 0 ? 0 : (await store.chapters()).length,
+          backup: result.backup,
+          touched: result.touched,
+        },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function moveRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2330,6 +2374,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await addChapterRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/merge') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/merge 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await mergeRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

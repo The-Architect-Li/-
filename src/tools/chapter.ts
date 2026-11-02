@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { checkContract } from '../domain/contract.ts'
 import { recordCoverage } from '../domain/records.ts'
-import { moveChapter } from '../domain/reorder.ts'
+import { mergeChapters, moveChapter } from '../domain/reorder.ts'
 import { ChapterBlockedError, proposeDraft, saveChapterBody } from '../domain/save.ts'
 import { describeSearch, parseTerms, searchChapters } from '../domain/search.ts'
 import type { ProjectStore } from '../domain/store.ts'
@@ -26,14 +26,14 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
   ctx.tools.register(defineTool({
     name: 'novel_chapter',
     description:
-      '章节正文。studio 流程用 propose→commit：propose 把稿子存成草稿并跑章纲合同+确定性扫描（不挡，原样留待审核）；commit 把最新草稿定稿进 chapters（你点头后调）。write 是绕过流水线的直接落笔，合同 error 会拒绝保存；write 与 restore 都要带上你读到的那一版 revision（防两处同时改互相覆盖），确要无条件覆盖传 force=true。restore 把某一轮草稿回退成正文。read 读某章（报告里带 revision 与审稿历史）。review 看某一章的审稿条目、并给单条结案（state=fixed/waived + note）。list 列出全部章节。search 在已写的全部正文里搜词（零 token、纯扫盘），多个词用空格分开表示「都要出现」，带空格的短语用引号包起来；返回每章的命中次数与上下文，用来回答「这个词上次出现在哪章」「这个人这几章有没有露面」。move 只改顺序和编号，一个字都不改：正文文件、草稿、章卡、账本、地点状态、人物阶段、时间线锚点、伏笔的埋设点，全部跟着新章号走，动手前先把要碰的文件备份到 .history/reorder-<时间>/。写完一章建议接着 novel_ledger 记事实。',
+      '章节正文。studio 流程用 propose→commit：propose 把稿子存成草稿并跑章纲合同+确定性扫描（不挡，原样留待审核）；commit 把最新草稿定稿进 chapters（你点头后调）。write 是绕过流水线的直接落笔，合同 error 会拒绝保存；write 与 restore 都要带上你读到的那一版 revision（防两处同时改互相覆盖），确要无条件覆盖传 force=true。restore 把某一轮草稿回退成正文。read 读某章（报告里带 revision 与审稿历史）。review 看某一章的审稿条目、并给单条结案（state=fixed/waived + note）。list 列出全部章节。search 在已写的全部正文里搜词（零 token、纯扫盘），多个词用空格分开表示「都要出现」，带空格的短语用引号包起来；返回每章的命中次数与上下文，用来回答「这个词上次出现在哪章」「这个人这几章有没有露面」。move 只改顺序和编号，一个字都不改：正文文件、草稿、章卡、账本、地点状态、人物阶段、时间线锚点、伏笔的埋设点，全部跟着新章号走，动手前先把要碰的文件备份到 .history/reorder-<时间>/。merge 把第 N+1 章的正文接到第 N 章末尾、删掉第 N+1 章、后面的章统一前移一位，动手前整书备份。写完一章建议接着 novel_ledger 记事实。',
     parameters: {
       action: {
         type: 'string',
         required: true,
-        enum: ['write', 'propose', 'commit', 'restore', 'read', 'list', 'review', 'search', 'move'],
+        enum: ['write', 'propose', 'commit', 'restore', 'read', 'list', 'review', 'search', 'move', 'merge'],
         description:
-          'write 直接写 / propose 落草稿 / commit 定稿 / restore 回退到某一轮草稿 / read 读 / list 列表 / review 看审稿条目并结案 / search 在全部正文里搜一个词 / move 把一章挪到另一个位置（后面的章顺次让位）',
+          'write 直接写 / propose 落草稿 / commit 定稿 / restore 回退到某一轮草稿 / read 读 / list 列表 / review 看审稿条目并结案 / search 在全部正文里搜一个词 / move 把一章挪到另一个位置 / merge 把下一章并进这一章',
       },
       number: { type: 'number', description: '章号，从 1 开始' },
       text: { type: 'string', description: 'write 或 propose 时的完整正文；search 时是要搜的词' },
@@ -72,6 +72,33 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       render: (_args, value) => [{ type: 'text', text: value.report ?? '' }],
     },
     async execute(args, exec) {
+      if (args.action === 'merge') {
+        const store = deps.storeFor(exec)
+        const number = Number(args.number)
+        if (!Number.isInteger(number) || number < 1) throw new Error('merge 需要 number：第几章把下一章并进来。')
+        const result = await mergeChapters(store, number)
+        const after = await store.chapters()
+        const title = after.find((chapter) => chapter.number === number)?.title ?? ''
+        return {
+          number,
+          words: result.words,
+          errors: 0,
+          warnings: 0,
+          chapters: result.mapping.slice(0, 5),
+          report: [
+            `第${result.dropped}章并进了第${number}章，全书从 ${after.length + 1} 章变成 ${after.length} 章。`,
+            `现在的第${number}章《${title}》，${result.words} 字。`,
+            '',
+            `后面的 ${Math.max(0, result.mapping.length - 1)} 章各前移一位（原来的第${result.dropped + 1}章现在是第${result.dropped}章）。`,
+            `改编号的记录：${result.touched.join('、')}`,
+            `整书备份在：${result.backup}`,
+            '',
+            '两段正文是直接接起来的，一个字没改。接缝要润色，那是你的活。',
+            '合并后的章卡摘要清空了——两章的前情提要要重写成一段，这一步该由档案员或你自己来。',
+          ].join('\n'),
+        }
+      }
+
       if (args.action === 'move') {
         const store = deps.storeFor(exec)
         const number = Number(args.number)

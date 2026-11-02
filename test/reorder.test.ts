@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/domain/store.ts'
-import { moveChapter } from '../src/domain/reorder.ts'
+import { mergeChapters, moveChapter } from '../src/domain/reorder.ts'
 
 const roots: string[] = []
 
@@ -138,5 +138,67 @@ describe('moveChapter', () => {
   it('refuses to move a chapter onto itself', async () => {
     const store = await book()
     await expect(moveChapter(store, 3, 3)).rejects.toThrow(/同一章/)
+  })
+})
+
+describe('mergeChapters', () => {
+  it('joins the two bodies and shortens the book by one', async () => {
+    const store = await book()
+    const result = await mergeChapters(store, 3)
+    expect(result.dropped).toBe(4)
+    // Both bodies are there, in order, and the word count is the sum.
+    const merged = await store.chapter(3)
+    expect(merged?.text).toContain('这是第3章的正文')
+    expect(merged?.text).toContain('这是第4章的正文')
+    expect(merged?.text.indexOf('这是第3章')).toBeLessThan(merged!.text.indexOf('这是第4章'))
+    expect((await store.chapters()).length).toBe(5)
+  })
+
+  it('renumbers everything after the seam, so no number is missing', async () => {
+    const store = await book()
+    await mergeChapters(store, 3)
+    expect(await titleAt(store, 4)).toBe('第5章标题')
+    expect(await titleAt(store, 5)).toBe('第6章标题')
+    expect((await store.chapters()).map((chapter) => chapter.number)).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('folds the swallowed chapter’s records into the chapter that kept it', async () => {
+    // A fact from chapter 4 now belongs to chapter 3, because that is where the
+    // sentence lives now.
+    const store = await book()
+    await store.appendLedger({ subject: '阿鸢', predicate: '状态', value: '在岸上', chapter: 4, quote: '', supersedes: null })
+    await mergeChapters(store, 3)
+    const facts = await store.ledger()
+    expect(facts.find((fact) => fact.subject === '阿鸢')?.chapter).toBe(3)
+  })
+
+  it('keeps both cards’ beats and characters, and the later hook', async () => {
+    const store = await book()
+    await store.upsertPlan({
+      number: 4, volume: 1, title: '第4章', pov: '', characters: ['新人物'],
+      beats: ['c'], hooks: ['第二个钩子'], approved: true,
+    })
+    await mergeChapters(store, 3)
+    const plan = (await store.plans()).find((item) => item.number === 3)
+    expect(plan?.characters).toContain('人物3')
+    expect(plan?.characters).toContain('新人物')
+    expect(plan?.beats).toEqual(['a', 'b', 'c'])
+    expect(plan?.hooks).toEqual(['第二个钩子'])
+    // A recap of two chapters is a new recap; leaving the old one would describe
+    // half the chapter.
+    expect(plan?.summary).toBe('')
+  })
+
+  it('refuses when there is no next chapter to swallow', async () => {
+    const store = await book()
+    await expect(mergeChapters(store, 6)).rejects.toThrow(/没有正文/)
+  })
+
+  it('backs up the whole book before joining anything', async () => {
+    const store = await book()
+    const result = await mergeChapters(store, 2)
+    expect(result.backup).toContain('merge-')
+    const kept = await readFile(join(result.backup, 'chapters__002.md'), 'utf8').catch(() => '')
+    expect(kept).toContain('这是第2章的正文')
   })
 })

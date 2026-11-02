@@ -61,6 +61,7 @@ window.__ModuleLoader__.load({
     const API_SEARCH = '/api/inkwell/search'
     const API_ROUND = '/api/inkwell/round'
     const API_MOVE = '/api/inkwell/move'
+    const API_MERGE = '/api/inkwell/merge'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -838,6 +839,23 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** Fold the next chapter into this one. Not reversible without the backup. */
+    async function mergeChapter(sessionId, root, number) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_MERGE}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** Move one chapter to another position; everything between shifts. */
@@ -3640,6 +3658,7 @@ const API_BACKUP = '/api/inkwell/backup'
       // the label on the panel says out loud.
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
+      const [mergeArmed, setMergeArmed] = useState(false)
       const [moveBusy, setMoveBusy] = useState(false)
       const [moveNote, setMoveNote] = useState('')
       const [roundBusy, setRoundBusy] = useState(false)
@@ -3754,6 +3773,44 @@ const API_BACKUP = '/api/inkwell/backup'
         // The pipeline used to live only in the documentation: write, propose,
         // two reviews, chief, commit — six steps and five tool names, none of
         // them visible here. One button, and the report comes back in the page.
+        // Merging is the only button here that destroys a chapter number, so it
+        // arms first and fires second: one click is never enough to do it.
+        data && isChapter
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: {
+                  ...S.iconButton,
+                  ...(mergeArmed ? { color: '#c0392b', borderColor: '#c0392b' } : {}),
+                  ...(moveBusy ? { opacity: 0.6 } : {}),
+                },
+                disabled: moveBusy,
+                title: '把下一章的正文接到这一章末尾，删掉下一章，后面的章前移一位（会先备份整本书）',
+                onClick: () => {
+                  if (!mergeArmed) {
+                    setMergeArmed(true)
+                    setTimeout(() => setMergeArmed(false), 4000)
+                    return undefined
+                  }
+                  const n = Number(target.key)
+                  setMergeArmed(false)
+                  setMoveBusy(true)
+                  setMoveNote('')
+                  mergeChapter(sessionId, root, n)
+                    .then((output) => {
+                      setMoveNote(`第 ${output.dropped} 章并入第 ${output.number} 章，全书 ${output.total} 章。备份：${output.backup}`)
+                      if (onChanged) onChanged()
+                    })
+                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
+                    .finally(() => setMoveBusy(false))
+                  return undefined
+                },
+              },
+              mergeArmed ? '真的并？' : '并入下章',
+            )
+          : null,
         // Chapter numbers are the book's primary key, so moving one is not a
         // rename: the draft, the card, the ledger, the places, the stages and the
         // thread anchors all follow. The route does that in one pass and backs up

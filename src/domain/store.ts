@@ -331,6 +331,19 @@ export class ProjectStore {
     return list
   }
 
+  /**
+   * Replace the whole card list.
+   *
+   * Needed when chapter numbers shift: merging two chapters renumbers every card
+   * after them, and doing that through `upsertPlan` one at a time would leave the
+   * file half-renumbered if the process died in the middle.
+   *
+   * @param list - the cards to store.
+   */
+  async writePlans(list: readonly ChapterPlan[]): Promise<void> {
+    await writeJson(join(this.root, PLANS_FILE), [...list].sort((a, b) => a.number - b.number))
+  }
+
   /** Every promise the book has made, settled or not. */
   async threads(): Promise<Thread[]> {
     return readJson<Thread[]>(join(this.root, THREADS_FILE), [])
