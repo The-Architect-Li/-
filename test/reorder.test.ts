@@ -251,3 +251,81 @@ describe('a merged chapter is not a stale card', () => {
     expect(plan?.summary).toBe('')
   })
 })
+
+describe('everything that points at a chapter follows it', () => {
+  /** A book where all seven carriers hold a record at chapter 4. */
+  async function loaded(): Promise<ProjectStore> {
+    const store = await book()
+    await store.upsertPlace({
+      name: '三号仓', kind: '地点', detail: '',
+      states: [{ chapter: 4, state: '锁是新的' }],
+      firstChapter: 4, latestChapter: 4,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never)
+    await store.upsertCharacter({
+      name: '沈砚', role: 'protagonist', voice: '', appearance: '', goal: '', secret: '',
+      stages: [{ chapter: 4, stage: '起疑' }],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never)
+    await store.writeTimeline({ start: '', anchors: [{ chapter: 4, when: '霜月', label: '上船' }], spans: [] } as never)
+    return store
+  }
+
+  it('moves the cards, places, stages and clock along with the prose', async () => {
+    const store = await loaded()
+    // Chapter 4 goes to the end of a six-chapter book, so every one of the
+    // seven carriers has to move with it.
+    await moveChapter(store, 4, 6)
+    const plan = (await store.plans()).find((item) => item.characters.includes('人物4'))
+    expect(plan?.number).toBe(6)
+    const place = (await store.places()).find((item) => item.name === '三号仓')
+    expect(place?.states[0]?.chapter).toBe(6)
+    const card = (await store.characters()).find((item) => item.name === '沈砚')
+    expect(card?.stages?.[0]?.chapter).toBe(6)
+    const clock = await store.timeline()
+    expect(clock.anchors[0]?.chapter).toBe(6)
+  })
+
+  it('shifts every later card down when a chapter is merged away', async () => {
+    // The absorbed chapter's card is folded into its neighbour; every card after
+    // it must lose a number, or the list shows two chapters claiming number 5.
+    const store = await loaded()
+    await mergeChapters(store, 3)
+    const numbers = (await store.plans()).map((plan) => plan.number)
+    expect(numbers).toEqual([1, 2, 3, 4, 5])
+    // The card that lived at 5 is now at 4.
+    expect((await store.plans()).find((plan) => plan.number === 4)?.characters).toEqual(['人物5'])
+  })
+
+  it('folds the absorbed chapter’s places and stages into the one that kept it', async () => {
+    // A place state recorded at chapter 4 now lives inside the merged chapter 3,
+    // so the place page must say 3 or it describes a chapter that is gone.
+    const store = await loaded()
+    await store.upsertPlace({
+      name: '旧码头', kind: '地点', detail: '',
+      states: [{ chapter: 3, state: '空着' }],
+      firstChapter: 3, latestChapter: 3,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never)
+    await mergeChapters(store, 3)
+    const place = (await store.places()).find((item) => item.name === '三号仓')
+    expect(place?.states[0]?.chapter).toBe(3)
+    const card = (await store.characters()).find((item) => item.name === '沈砚')
+    expect(card?.stages?.[0]?.chapter).toBe(3)
+  })
+
+  it('leaves no record pointing at a chapter that no longer exists', async () => {
+    // The real failure this guards: a merge shortens the book, and anything still
+    // pointing at the old last number now points at nothing.
+    const store = await loaded()
+    await mergeChapters(store, 5)
+    const alive = new Set((await store.chapters()).map((chapter) => chapter.number))
+    const pointed = [
+      ...(await store.ledger()).map((fact) => fact.chapter),
+      ...(await store.places()).flatMap((place) => (place.states ?? []).map((state) => state.chapter)),
+      ...(await store.characters()).flatMap((char) => (char.stages ?? []).map((stage) => stage.chapter)),
+      ...(await store.timeline()).anchors.map((anchor) => anchor.chapter),
+    ].filter((number) => typeof number === 'number' && number > 0)
+    expect(pointed.filter((number) => !alive.has(number))).toEqual([])
+  })
+})
