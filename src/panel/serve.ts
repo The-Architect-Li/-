@@ -1520,7 +1520,7 @@ export async function recapRoute(
     const ctx = deps.ctxOf?.()
     if (agent === undefined || ctx === undefined) {
       throw new PanelInputError(
-        `面板拿不到这个会话的 agent，摘要没法重写。跑一次：novel_archive action="apply" from=${number} limit=1`,
+        '面板拿不到这个会话的 agent，没法让档案员读这一章。在对话里说一句「给第 ' + number + ' 章写章卡」就行。',
         409,
       )
     }
@@ -1900,10 +1900,27 @@ export async function readEntry(
       }
     }
     if (kind === 'chapter') {
-      // Ask the gate now, not after the writer typed: the page can then explain
-      // why the body is not editable yet, using the same sentence the model gets.
+      // Ask the gate now, not after the writer typed. But its answer is written for
+      // a model: `novel_archive action="apply" from=6 limit=1` is exact and useless
+      // to somebody looking at their own chapter. So the panel does not echo the
+      // gate — it reads the situation and says the human version, with the button
+      // that fixes it.
       const reason = await gateToolCall('novel_chapter', { action: 'write', number }, store, deps.config)
-      if (reason !== null) entry.blocked = reason
+      if (reason !== null) {
+        const written = snapshot.chapters.some((chapter) => chapter.number === number)
+        const plan = snapshot.plans.find((item) => item.number === number)
+        if (written && plan === undefined) {
+          entry.blocked = '这一章有正文，但还没有章卡。让档案员读一遍，写出摘要、事件、场景、出场人物和钩子。'
+          entry.action = {
+            id: 'recap',
+            number,
+            label: '为这一章建章卡',
+            hint: '读一遍这章正文，写出摘要与关键事件（一次模型调用，十几秒）',
+          }
+        } else {
+          entry.blocked = reason
+        }
+      }
     }
     return { status: 200, body: { ok: true, data: entry } }
   } catch (error) {

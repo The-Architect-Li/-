@@ -3813,7 +3813,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Detail(props) {
-      const { sessionId, root, target, onBack, onChanged } = props
+      const { sessionId, root, target, onBack, onChanged, onRecap, busyRecap } = props
       const [state, setState] = useState({ status: 'loading' })
       const [editing, setEditing] = useState(false)
       const [draft, setDraft] = useState({})
@@ -4069,7 +4069,30 @@ const API_BACKUP = '/api/inkwell/backup'
         data.subtitle ? h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, data.subtitle) : null,
       )
 
-      const notice = data.blocked ? h('div', { style: S.blocked }, data.blocked) : null
+      // The gate's sentence alone leaves the reader with nowhere to go. When the
+      // fix is one action, the action is a button.
+      const notice = data.blocked
+        ? h(
+            'div',
+            { style: S.blocked },
+            h('div', null, data.blocked),
+            data.action
+              ? h(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px', flexWrap: 'wrap' } },
+                  h('button', {
+                    type: 'button',
+                    className: 'iw-btn iw-primary',
+                    style: S.primaryButton,
+                    title: data.action.hint,
+                    disabled: busyRecap !== null && busyRecap !== undefined,
+                    onClick: () => onRecap(data.action.number),
+                  }, busyRecap !== null && busyRecap !== undefined && busyRecap === data.action.number ? '正在读…' : data.action.label),
+                  h('span', { style: { ...S.aside, maxWidth: '100%' } }, data.action.hint),
+                )
+              : null,
+          )
+        : null
 
       const historyPanel =
         panel !== 'history'
@@ -5157,6 +5180,8 @@ const API_BACKUP = '/api/inkwell/backup'
             sessionId,
             root: root || '',
             target: detail,
+            onRecap: startRecap,
+            busyRecap: recapJob !== null && recapJob !== undefined && !recapJob.done ? recapJob.number : null,
             onBack: () => setView('tree'),
             // A save can change a count (a chapter's words) or a state chip, so the
             // tree behind the page is re-read rather than left stale.

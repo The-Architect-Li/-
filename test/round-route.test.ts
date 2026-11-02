@@ -142,3 +142,35 @@ describe('POST /round as a job', () => {
     }
   })
 })
+
+describe('the card button on a written chapter', () => {
+  it('answers with a human sentence and an action, not a command line', async () => {
+    // The page the author is looking at must not say
+    // `novel_archive action="apply" from=6 limit=1`.
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-card-'))
+    roots.push(dir)
+    const store = new ProjectStore(dir)
+    await store.init('雾港', 800000)
+    await store.writeProject({ ...(await store.readProject()), phase: 'drafting', premise: '一句话前提。' })
+    await store.writeChapter(
+      { number: 6, title: '血牢', text: '夜雨滂沱。'.repeat(60), words: 2091, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+      { baseRevision: undefined },
+    )
+    const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store })
+    const server = createServer((req, res) => void handler(req, res))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    const base = `http://127.0.0.1:${address.port}${PANEL_PREFIX}`
+    try {
+      const response = await fetch(`${base}/entry?kind=chapter&key=6`)
+      expect(response.status).toBe(200)
+      const payload = (await response.json()) as { data: { blocked?: string; action?: { id: string; number: number; label: string } } }
+      expect(payload.data.blocked ?? '').not.toContain('novel_archive')
+      expect(payload.data.action).toMatchObject({ id: 'recap', number: 6 })
+      expect(payload.data.action?.label).toBe('为这一章建章卡')
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()))
+    }
+  })
+})

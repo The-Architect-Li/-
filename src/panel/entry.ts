@@ -158,6 +158,15 @@ export interface EntryPayload {
    * letting the writer type two thousand words into a refusal.
    */
   blocked?: string
+  /**
+   * A button that unblocks this page, when the fix is one action.
+   *
+   * The gate's sentences are written for a model — `novel_archive action="apply"
+   * from=6 limit=1` is precise and completely useless to a writer who is looking
+   * at their own chapter. This is the same instruction expressed as the thing the
+   * panel can actually do.
+   */
+  action?: { id: 'recap'; number: number; label: string; hint: string }
   /** Absolute project directory, echoed for the footer. */
   root: string
 }
@@ -924,7 +933,7 @@ function presencePage(snapshot: Snapshot, root: string, prose?: readonly Chapter
             label: '为什么是空的',
             items: [
               '已经写了正文，但没有任何一章的章卡写了出场人物。',
-              '补卡：novel_archive action="plan" 看缺哪些，再 action="apply" 让档案员读。',
+              '章卡是这项统计的唯一来源。先在对话里说一句「把章卡补齐」，或者逐章点开建卡。',
             ],
           }],
         }

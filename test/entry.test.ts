@@ -389,3 +389,4 @@ describe('buildEntry', () => {
     expect(buildEntry(book({ characters: [card('', 'minor')] }), 'character', '', [], ROOT)).toBeUndefined()
   })
 })
+
