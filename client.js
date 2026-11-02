@@ -60,6 +60,7 @@ window.__ModuleLoader__.load({
     const API_PENDING = '/api/inkwell/pending'
     const API_SEARCH = '/api/inkwell/search'
     const API_ROUND = '/api/inkwell/round'
+    const API_MOVE = '/api/inkwell/move'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -837,6 +838,23 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** Move one chapter to another position; everything between shifts. */
+    async function moveChapter(sessionId, root, number, to) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_MOVE}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number, to }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** Run one chapter through the whole studio. Minutes, not milliseconds. */
@@ -3622,6 +3640,8 @@ const API_BACKUP = '/api/inkwell/backup'
       // the label on the panel says out loud.
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
+      const [moveBusy, setMoveBusy] = useState(false)
+      const [moveNote, setMoveNote] = useState('')
       const [roundBusy, setRoundBusy] = useState(false)
       const [roundReport, setRoundReport] = useState('')
       const [roundError, setRoundError] = useState('')
@@ -3734,6 +3754,62 @@ const API_BACKUP = '/api/inkwell/backup'
         // The pipeline used to live only in the documentation: write, propose,
         // two reviews, chief, commit — six steps and five tool names, none of
         // them visible here. One button, and the report comes back in the page.
+        // Chapter numbers are the book's primary key, so moving one is not a
+        // rename: the draft, the card, the ledger, the places, the stages and the
+        // thread anchors all follow. The route does that in one pass and backs up
+        // first; the arrows only say which way.
+        data && isChapter
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.iconButton, ...(moveBusy ? { opacity: 0.6 } : {}) },
+                disabled: moveBusy || Number(target.key) <= 1,
+                title: '和上一章交换位置',
+                onClick: () => {
+                  const n = Number(target.key)
+                  setMoveBusy(true)
+                  setMoveNote('')
+                  moveChapter(sessionId, root, n, n - 1)
+                    .then((output) => {
+                      setMoveNote(`已挪到第 ${output.number} 位，动了 ${output.moved} 章。备份：${output.backup}`)
+                      if (onChanged) onChanged()
+                    })
+                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
+                    .finally(() => setMoveBusy(false))
+                  return undefined
+                },
+              },
+              '↑',
+            )
+          : null,
+        data && isChapter
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.iconButton, ...(moveBusy ? { opacity: 0.6 } : {}) },
+                disabled: moveBusy,
+                title: '和下一章交换位置',
+                onClick: () => {
+                  const n = Number(target.key)
+                  setMoveBusy(true)
+                  setMoveNote('')
+                  moveChapter(sessionId, root, n, n + 1)
+                    .then((output) => {
+                      setMoveNote(`已挪到第 ${output.number} 位，动了 ${output.moved} 章。备份：${output.backup}`)
+                      if (onChanged) onChanged()
+                    })
+                    .catch((failure) => setMoveNote(String((failure && failure.message) || failure)))
+                    .finally(() => setMoveBusy(false))
+                  return undefined
+                },
+              },
+              '↓',
+            )
+          : null,
         data && isChapter
           ? h(
               'button',
@@ -3972,6 +4048,7 @@ const API_BACKUP = '/api/inkwell/backup'
         chart,
         // The round's report lands here: it is a page of text, and the author is
         // already looking at this chapter.
+        moveNote !== '' ? h('div', { style: { ...S.note, padding: '4px 0' } }, moveNote) : null,
         roundBusy
           ? h('div', { style: { ...S.note, padding: '6px 0' } }, '写手、两位审核、总裁决正在依次过这一章，可能要几分钟。没有自动定稿，跑完你自己决定。')
           : null,

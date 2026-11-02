@@ -71,6 +71,7 @@ import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { runRound } from '../tools/dispatch.ts'
+import { moveChapter } from '../domain/reorder.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
@@ -1463,6 +1464,53 @@ export async function cardRoute(
  * @param root - an absolute project directory, when the browser named one.
  * @returns the round's report.
  */
+/**
+ * Move one chapter, from the arrows on its page.
+ *
+ * Same `moveChapter` the tool calls. The response says how many chapters shifted
+ * and where the backup went, because this is the one operation in the panel that
+ * rewrites files the author did not touch: if the result looks wrong, the first
+ * question is 「where is the old version」.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ number, to }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns what moved.
+ */
+export async function moveRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const number = Number(body.number)
+    const to = Number(body.to)
+    if (!Number.isInteger(number) || !Number.isInteger(to) || number < 1 || to < 1) {
+      throw new PanelInputError('move 需要 number 和 to，都是正整数。')
+    }
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
+    const result = await moveChapter(store, number, to)
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          moved: result.moved,
+          mapping: result.mapping,
+          touched: result.touched,
+          backup: result.backup,
+          number: to,
+        },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function roundRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2282,6 +2330,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await addChapterRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/move') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/move 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await moveRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),
