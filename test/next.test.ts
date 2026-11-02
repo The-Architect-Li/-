@@ -103,3 +103,35 @@ describe('nextStep', () => {
     expect(step.why).toContain('第1章')
   })
 })
+
+describe('as a tool', () => {
+  it('is wired: novel_project action="next" actually runs', async () => {
+    // The domain function was tested and green while the tool branch did not
+    // exist — a replace that silently matched nothing. This is the test that
+    // would have caught it: it calls the tool, not the function.
+    const { createHarness, valueOf } = await import('./helpers.ts')
+    const harness = await createHarness({})
+    try {
+      valueOf(await harness.call('novel_project', { action: 'init', title: '雾港' }))
+      const result = valueOf<{ report: string }>(await harness.call('novel_project', { action: 'next' }))
+      expect(result.report).toContain('novel_project action="premise"')
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
+  it('survives a host with no preset registry', async () => {
+    // 「列不出预设」 must be a sentence, not a crash: hosts differ, and a book
+    // still needs to be creatable on the ones that have no presets at all.
+    const { createHarness, valueOf } = await import('./helpers.ts')
+    const harness = await createHarness({})
+    try {
+      await harness.call('novel_project', { action: 'init', title: '雾港' })
+      const result = valueOf<{ report: string }>(await harness.call('novel_project', { action: 'presets' }))
+      expect(typeof result.report).toBe('string')
+      expect(result.report.length).toBeGreaterThan(0)
+    } finally {
+      await harness.cleanup()
+    }
+  })
+})

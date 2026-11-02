@@ -140,9 +140,9 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
       action: {
         type: 'string',
         required: true,
-        enum: ['init', 'status', 'premise', 'advance', 'books', 'open', 'close'],
+        enum: ['init', 'status', 'next', 'presets', 'premise', 'advance', 'books', 'open', 'close'],
         description:
-          'init 初始化 / status 查看状态 / premise 写前提 / advance 推进阶段 / books 列出这台机器上的书 / open 切到某本书 / close 回到会话自己的工作目录',
+          'init 初始化 / status 查看状态 / next 下一步该做什么（给一条命令）/ presets 列出这个宿主的预设 / premise 写前提 / advance 推进阶段 / books 列出这台机器上的书 / open 切到某本书 / close 回到会话自己的工作目录',
       },
       title: { type: 'string', description: 'init 时的书名' },
       targetWords: { type: 'number', description: 'init 时的目标总字数，默认 800000' },
@@ -169,6 +169,50 @@ export function registerProjectTool(ctx: Context, deps: ToolDeps): void {
     },
     async execute(args, exec) {
       const store = deps.storeFor(exec)
+      if (args.action === 'next') {
+        const snapshot = await store.snapshot()
+        const pending = await readPending(store.root)
+        const step = nextStep(snapshot, pending)
+        return {
+          phase: snapshot.project.phase,
+          title: snapshot.project.title,
+          report: [step.command, '', step.why, ...(step.notes.length > 0 ? ['', ...step.notes] : [])].join('\n'),
+        }
+      }
+
+      if (args.action === 'presets') {
+        // Read-only reconnaissance: which presets this host actually has.
+        //
+        // A preset is what tells the model it is working on a novel, and a newly
+        // created book wants to start on one. That is only possible if a preset
+        // exists to point at, and the ids are host-specific — so the honest first
+        // step is to look rather than assume.
+        const registry = ctx.get('agentPresets') as unknown as
+          | { list?: () => Promise<{ id: string; name?: string; description?: string; isDefault?: boolean }[]> }
+          | undefined
+        const phase = await store.readProject().then((project) => project.phase).catch(() => 'unknown')
+        if (typeof registry?.list !== 'function') {
+          return {
+            phase,
+            title: '',
+            report: '这个宿主没有暴露 agentPresets 服务，列不出预设。建书后会跳过「自动选预设」这一步。',
+          }
+        }
+        const list = await registry.list().catch(() => [])
+        return {
+          phase,
+          title: '',
+          report: [
+            `这个宿主有 ${list.length} 个预设：`,
+            ...list.map((item) => `  ${item.id}${item.isDefault ? '（默认）' : ''}　${item.name ?? ''}`),
+            '',
+            list.length === 0
+              ? '一个都没有。要么先在 DSH 里建一个，要么接受「建书后不自动切预设」。'
+              : '建书时会在这些里面挑一个 id 或名字带小说/写作/novel/inkwell 的，用它开会话。',
+          ].join('\n'),
+        }
+      }
+
       if (args.action === 'init') {
         const title = args.title?.trim() || '未命名'
         const project = await store.init(title, args.targetWords ?? 800000)
