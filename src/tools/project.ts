@@ -2,6 +2,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { bookKey } from '../domain/home.ts'
+import { nextStep } from '../domain/next.ts'
+import { readPending } from '../domain/pending.ts'
 import { evaluateAdvance, nextPhase, requirementsFor } from '../domain/phase.ts'
 import { sessionIdOf } from '../domain/scope.ts'
 import { livePins, pinBook, pinnedRoot, sameBook, sessionsFile, unpinBook } from '../domain/session-books.ts'
