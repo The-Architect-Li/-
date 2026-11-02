@@ -20,7 +20,7 @@
  *   node scripts/sync.mjs                # to ~/.dsh/profiles/desktop
  *   DSH_PROFILE=/path/to/profile node scripts/sync.mjs
  */
-import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -31,6 +31,32 @@ const target = join(profile, 'node_modules', 'dsh-inkwell')
 
 /** Every file worth shipping, relative to the package root. */
 const SHIP = ['lib', 'client.js', 'README.md', 'README.zh.md']
+
+/**
+ * Copy one file if the destination is missing or holds different bytes.
+ *
+ * "Different bytes" is the whole point. pnpm's `file:` install hard-links the
+ * package, so a file edited in place is shared and needs nothing — but `tsc`
+ * writes its output by replacing the file, which breaks that link. From then on
+ * the installed copy is frozen at the version it was built with, and a script
+ * that only fills in *missing* files never notices: the source has the change,
+ * the built file has the change, the installed file does not.
+ *
+ * That is how `markOrigin` shipped to git and never reached the running plugin.
+ *
+ * @param from - absolute source path.
+ * @param to - absolute destination path.
+ * @returns 'copied' when bytes changed, 'same' when they already matched.
+ */
+async function syncFile(from, to) {
+  const source = await readFile(from).catch(() => undefined)
+  if (source === undefined) return 'same'
+  const existing = await readFile(to).catch(() => undefined)
+  if (existing !== undefined && existing.equals(source)) return 'same'
+  await mkdir(dirname(to), { recursive: true })
+  await copyFile(from, to)
+  return 'copied'
+}
 
 /**
  * Walk one directory, yielding paths relative to `root`.
@@ -48,38 +74,24 @@ async function* walk(root, prefix = '') {
   }
 }
 
-async function exists(path) {
-  return await stat(path).then(() => true).catch(() => false)
-}
-
 let copied = 0
 let present = 0
 
 for (const entry of SHIP) {
   if (entry === 'lib') {
     for await (const rel of walk(join(here, 'lib'))) {
-      const to = join(target, 'lib', rel)
-      if (await exists(to)) {
-        present += 1
-        continue
-      }
-      await mkdir(dirname(to), { recursive: true })
-      await copyFile(join(here, 'lib', rel), to)
-      copied += 1
+      const result = await syncFile(join(here, 'lib', rel), join(target, 'lib', rel))
+      if (result === 'copied') copied += 1
+      else present += 1
     }
     continue
   }
-  const to = join(target, entry)
-  if (await exists(to)) {
-    present += 1
-    continue
-  }
-  await mkdir(dirname(to), { recursive: true })
-  await copyFile(join(here, entry), to)
-  copied += 1
+  const result = await syncFile(join(here, entry), join(target, entry))
+  if (result === 'copied') copied += 1
+  else present += 1
 }
 
 console.log(`同步到 ${target}`)
-console.log(`  补齐 ${copied} 个文件，${present} 个已存在（硬链接，自动同步）`)
-if (copied === 0) console.log('  没有缺失——装的那份和开发目录一致。')
+console.log(`  更新 ${copied} 个文件，${present} 个内容一致`)
+if (copied === 0) console.log('  装的那份已经是最新的。')
 else console.log('  现在重启 DSH 才会加载新文件。')

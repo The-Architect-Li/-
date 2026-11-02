@@ -84,7 +84,13 @@ function remap(value: unknown, map: ReadonlyMap<number, number>): unknown {
 function remapFile(file: keyof typeof FILES, value: unknown, map: ReadonlyMap<number, number>): unknown {
   if (file === 'index' || file === 'plans') {
     if (!Array.isArray(value)) return value
-    return value.map((item) => (typeof item === 'object' && item !== null ? { ...item, number: remap((item as { number?: unknown }).number, map) } : item))
+    // Sorted after the remap, not before: changing the numbers reorders the list
+    // logically but not physically, and a swapped pair then sits in the file as
+    // 1, 3, 2, 4. Every reader that trusts the file order then shows the chapters
+    // out of sequence.
+    return value
+      .map((item) => (typeof item === 'object' && item !== null ? { ...item, number: remap((item as { number?: unknown }).number, map) } : item))
+      .sort((a, b) => Number((a as { number?: unknown }).number ?? 0) - Number((b as { number?: unknown }).number ?? 0))
   }
   if (file === 'facts') {
     if (!Array.isArray(value)) return value
