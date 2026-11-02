@@ -27,7 +27,11 @@ export interface CardPatch {
 /** A card edit aimed at a chapter that has no outline. */
 export class MissingPlanError extends Error {
   constructor(number: number) {
-    super(`第${number}章还没有章纲，先建一张再写它的章卡。`)
+    // Same trap as the gate: 「没有章纲」 and 「没有章卡」 are not the same lack, and
+    // the way out of each is different.
+    super(
+      `第${number}章还没有章卡。如果这一章已经有正文，别建章纲——让档案员从正文读出来：novel_archive action="apply" from=${number} limit=1`,
+    )
     this.name = 'MissingPlanError'
   }
 }

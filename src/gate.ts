@@ -89,7 +89,19 @@ export async function gateToolCall(
 
     const plan = snapshot.plans.find((item) => item.number === number)
     if (!plan) {
-      return `第${number}章还没有章纲。先调用 novel_outline，action="add_chapter"。没有章纲的章节不允许写。`
+      // Two very different situations produce "no plan", and the advice differs:
+      // a chapter nobody has written needs an outline first, but a chapter that
+      // already has prose — an imported book, or one written before cards existed
+      // — needs its card read off the text. Telling that author to "add a chapter
+      // outline" about a chapter they just read is advice that cannot be followed.
+      const exists = snapshot.chapters.some((chapter) => chapter.number === number)
+      return exists
+        ? [
+            `第${number}章已经有正文，只是没有章卡。`,
+            '正文不用重写，需要的是把这张卡读出来：novel_archive action="apply" from=' + number + ' limit=1',
+            '（卡片从正文里长出来，不是反过来。）',
+          ].join('\n')
+        : `第${number}章还没有章纲。先调用 novel_outline，action="add_chapter"。没有章纲的章节不允许写。`
     }
     if (!plan.approved) {
       return `第${number}章的章纲还没批准。先调用 novel_outline，action="approve_chapter"，确认节拍和出场人物后再动笔。`
