@@ -62,6 +62,7 @@ window.__ModuleLoader__.load({
     const API_ROUND = '/api/inkwell/round'
     const API_MOVE = '/api/inkwell/move'
     const API_MERGE = '/api/inkwell/merge'
+    const API_RECAP = '/api/inkwell/recap'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -839,6 +840,23 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** Re-read one chapter and rewrite its card. A model call, so tens of seconds. */
+    async function recapChapter(sessionId, root, number) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_RECAP}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** Fold the next chapter into this one. Not reversible without the backup. */
@@ -1705,6 +1723,8 @@ const API_BACKUP = '/api/inkwell/backup'
   transition: background-color .13s ease, border-color .13s ease, color .13s ease, box-shadow .13s ease, opacity .13s ease, padding-left .13s ease;
 }
 .iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
+@keyframes iw-spin-turn { to { transform: rotate(360deg); } }
+.iw-spin { animation: iw-spin-turn 0.9s linear infinite; }
 .iw-row:hover .iw-row-menu, .iw-row-menu:focus-visible { opacity: 1; }
 .iw-menu-item:not(:disabled):hover { background: var(--iw-surface-hover); }
 .iw-menu-item:not(:disabled):active { background: var(--iw-surface); }
@@ -4386,6 +4406,8 @@ const API_BACKUP = '/api/inkwell/backup'
       // because the list is virtualised and rows come and go.
       const [menuAt, setMenuAt] = useState(null)
       const [mergeAsk, setMergeAsk] = useState(null)
+      // { number, seconds, done, error } while the archivist is reading.
+      const [recapJob, setRecapJob] = useState(null)
       const [menuNote, setMenuNote] = useState('')
       const [detail, setDetail] = useState(null)
       // The create dialog: the folder the chooser returned, or null when closed.
@@ -4844,6 +4866,30 @@ const API_BACKUP = '/api/inkwell/backup'
        * asked. The list refreshes afterwards because every one of these changes
        * the numbers in it.
        */
+      /**
+       * Run the archivist on one chapter, with a visible clock.
+       *
+       * A blank list for forty seconds is indistinguishable from a broken one, so
+       * the seconds counter is not decoration — it is the only evidence the
+       * author has that anything is happening.
+       */
+      const startRecap = useCallback((number) => {
+        setRecapJob({ number, seconds: 0, done: false, error: '' })
+        const started = Date.now()
+        const ticker = setInterval(() => {
+          setRecapJob((current) => (current === null || current.done ? current : { ...current, seconds: Math.round((Date.now() - started) / 1000) }))
+        }, 1000)
+        recapChapter(sessionId, root, number)
+          .then((output) => {
+            setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: '', summary: output.summary })
+            return refresh()
+          })
+          .catch((failure) => {
+            setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: String((failure && failure.message) || failure), summary: '' })
+          })
+          .finally(() => clearInterval(ticker))
+      }, [sessionId, root, refresh])
+
       const runChapterAction = useCallback((action, number, summarize) => {
         setMenuAt(null)
         const call =
@@ -4858,12 +4904,10 @@ const API_BACKUP = '/api/inkwell/backup'
               setMenuNote(`第 ${number} 章挪到第 ${output.number} 位。备份：${output.backup}`)
               return refresh()
             }
-            const recap = output.recap === undefined || output.recap === null
-              ? ''
-              : output.recap.ok
-                ? `摘要已重写：「${String(output.recap.summary || '').slice(0, 40)}…」`
-                : `摘要没写成：${String(output.recap.error || '未知原因')}`
-            setMenuNote(`第 ${output.dropped} 章并入第 ${output.number} 章，现在共 ${output.total} 章。${recap} 备份：${output.backup}`)
+            setMenuNote(`第 ${output.dropped} 章并入第 ${output.number} 章，现在共 ${output.total} 章。备份：${output.backup}`)
+            // The merge is done and the list is right; the recap is a separate,
+            // slow job that must not hold the merge result hostage.
+            if (summarize === true) startRecap(output.number)
             return refresh()
           })
           .catch((failure) => setMenuNote(String((failure && failure.message) || failure)))
@@ -5390,6 +5434,38 @@ const API_BACKUP = '/api/inkwell/backup'
         // chapter list that quietly renumbered itself is the worst outcome.
         menuNote !== ''
           ? h('div', { style: { ...S.note, margin: '0 0 6px', padding: '6px 8px', fontSize: '12px' } }, menuNote)
+          : null,
+        // The archivist at work: a spinner, what it is doing, and how long it has
+        // been doing it. Silence here reads as a hang.
+        recapJob !== null && recapJob !== undefined
+          ? h(
+              'div',
+              {
+                style: {
+                  ...S.note,
+                  margin: '0 0 6px',
+                  padding: '6px 8px',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  borderStyle: recapJob.error ? 'solid' : 'dashed',
+                },
+              },
+              h('span', { className: recapJob.done ? undefined : 'iw-spin', style: { display: 'inline-block', width: '11px', height: '11px', border: '1.5px solid var(--iw-line-strong)', borderTopColor: 'var(--iw-accent)', borderRadius: '50%', flex: '0 0 auto' } }),
+              h(
+                'span',
+                { style: { flex: '1 1 auto', minWidth: 0 } },
+                recapJob.done
+                  ? recapJob.error === ''
+                    ? `第 ${recapJob.number} 章摘要已重写（${recapJob.seconds}s）：「${String(recapJob.summary || '').slice(0, 44)}…」`
+                    : `第 ${recapJob.number} 章摘要没写成：${recapJob.error}`
+                  : `档案员正在读第 ${recapJob.number} 章的合并结果，重写摘要… ${recapJob.seconds}s`,
+              ),
+              recapJob.done
+                ? h('button', { type: 'button', className: 'iw-btn', style: { ...S.iconButton, padding: '0 5px' }, onClick: () => setRecapJob(null) }, '×')
+                : null,
+            )
           : null,
         pendingBanner,
         h(

@@ -1492,6 +1492,53 @@ export async function cardRoute(
  * @param root - an absolute project directory, when the browser named one.
  * @returns what merged.
  */
+/**
+ * Re-read one chapter and rewrite its card, as its own request.
+ *
+ * Split out of `/merge` on purpose. Merging is fast and changes what the list
+ * shows, so it answers immediately; summarising takes a model call and changes
+ * nothing the author is looking at. Fused into one request, the author sat in
+ * front of a spinner with no way to tell whether the merge had happened, whether
+ * the archivist was reading, or whether it had hung.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, which owns the agent.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the new recap, or why there is none.
+ */
+export async function recapRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const number = Number(body.number)
+    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('recap 需要 number。')
+    const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
+    const ctx = deps.ctxOf?.()
+    if (agent === undefined || ctx === undefined) {
+      throw new PanelInputError(
+        `面板拿不到这个会话的 agent，摘要没法重写。跑一次：novel_archive action="apply" from=${number} limit=1`,
+        409,
+      )
+    }
+    const store = storeFor(deps, sessionId, root)
+    const recap = await archiveChapter(
+      ctx as never,
+      { config: deps.config, storeFor: () => store } as never,
+      store,
+      number,
+      { agent, signal: new AbortController().signal },
+    )
+    if (!recap.ok) throw new PanelInputError(recap.error ?? '摘要没写成。', 409)
+    return { status: 200, body: { ok: true, data: { number, summary: recap.summary } } }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function mergeRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -1507,28 +1554,6 @@ export async function mergeRoute(
       throw new PanelInputError(String((error as Error).message ?? error), 409)
     })
 
-    // The merge leaves the card without a recap: two recaps are not one, and
-    // nobody can write the joined one from here. If the author said yes in the
-    // dialog, the archivist reads the merged prose now — while they are still
-    // looking at the result, instead of three weeks later when the row says
-    // 「待补摘要」 and nobody remembers why.
-    let recap: { ok: boolean; summary: string; error?: string } | undefined
-    if (body.summarize === true) {
-      const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
-      const ctx = deps.ctxOf?.()
-      if (agent === undefined || ctx === undefined) {
-        recap = { ok: false, summary: '', error: '面板拿不到这个会话的 agent，摘要没重写。用 novel_archive action="apply" from=' + number + ' limit=1 补。' }
-      } else {
-        recap = await archiveChapter(
-          ctx as never,
-          { config: deps.config, storeFor: () => store } as never,
-          store,
-          number,
-          { agent, signal: new AbortController().signal },
-        )
-      }
-    }
-
     return {
       status: 200,
       body: {
@@ -1540,7 +1565,6 @@ export async function mergeRoute(
           total: result.mapping.length === 0 ? 0 : (await store.chapters()).length,
           backup: result.backup,
           touched: result.touched,
-          ...(recap === undefined ? {} : { recap }),
         },
       },
     }
@@ -2405,6 +2429,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await addChapterRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/recap') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/recap 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await recapRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),
