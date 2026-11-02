@@ -13,6 +13,7 @@
  * says how many chapters had cards at all: on a book where the archivist has
  * never run, "nobody appears" would be a lie dressed as a finding.
  */
+import { discoverOpeners } from './scan.ts'
 import type { ChapterDraft, ChapterMeta, ChapterPlan } from './types.ts'
 
 /** One character's presence across the book. */
@@ -117,6 +118,67 @@ export function presenceOf(
 }
 
 /**
+ * Two-character words that open sentences without being names.
+ *
+ * Without this the candidate list is unusable: 「现在」 opened 407 of 521 chapters
+ * in the book this was measured on, and a list whose first line is that is a
+ * list nobody reads to the second line — where 苏幼绾 was.
+ *
+ * Only words that cannot be a person are here. 「少女」 and 「银发」 are left in
+ * deliberately: they are wrong as names, but they are wrong in a way the author
+ * recognises in half a second, and removing them would mean guessing at every
+ * description the book uses for a character.
+ */
+const NOT_A_NAME = new Set([
+  '现在', '这时', '此时', '此刻', '同时', '之后', '然后', '接着', '随后', '于是',
+  '终于', '忽然', '突然', '顿时', '登时', '随即', '立刻', '马上', '片刻', '半晌',
+  '一时', '半晌', '半晌', '众人', '所有', '有人', '那人', '此人', '他们', '她们',
+  '我们', '你们', '这里', '那里', '哪里', '什么', '怎么', '为何', '如果', '虽然',
+  '可是', '但是', '而且', '并且', '因为', '所以', '只是', '不过', '然后', '只是',
+])
+
+/**
+ * Two-character openings that behave like names but have no card.
+ *
+ * The presence report is only as complete as the cast list, and an imported book
+ * arrives with a short one. On the 521-chapter book this was written against,
+ * the cards named nine people while two of them — 苏幼绾 and 梅昭昭 — opened
+ * sentences in 203 and 156 chapters respectively and had no card at all. The
+ * report was therefore missing its second and third most frequent characters,
+ * and nothing said so.
+ *
+ * No model is involved: {@link discoverOpeners} already finds openings that recur
+ * across chapters, which is what a name does and an adverb does not. What comes
+ * back is a **candidate list to look at**, not a fact — 「少女」 and 「现在」 show up
+ * too, and only the author can say which are people.
+ *
+ * @param drafts - every chapter with its text.
+ * @param people - the cast the book already has.
+ * @param ratio - share of chapters an opening must appear in, passed through.
+ * @returns candidates with how many chapters they appear in, busiest first.
+ */
+export function uncardedNames(
+  drafts: readonly ChapterDraft[],
+  people: readonly { name: string; aliases?: readonly string[] }[],
+  ratio = 0.15,
+): { name: string; chapters: number }[] {
+  const known = people.flatMap((person) => [person.name, ...(person.aliases ?? [])]).filter((name) => name !== '')
+  const candidates = discoverOpeners(drafts, ratio).filter(
+    (name) => /^[\u4e00-\u9fa5]{2}$/.test(name) && !NOT_A_NAME.has(name),
+  )
+  const out: { name: string; chapters: number }[] = []
+  for (const candidate of candidates) {
+    // 「路长」 is the front of 「路长远」, who has a card. A prefix match either way
+    // means the book already knows this person.
+    if (known.some((name) => name.startsWith(candidate) || candidate.startsWith(name))) continue
+    let count = 0
+    for (const draft of drafts) if (draft.text.includes(candidate)) count += 1
+    if (count >= 5) out.push({ name: candidate, chapters: count })
+  }
+  return out.sort((a, b) => b.chapters - a.chapters)
+}
+
+/**
  * How long a silence has to be before it is worth mentioning.
  *
  * Long enough that a character resting for a volume is not a problem, short
@@ -161,7 +223,11 @@ export function silentPeople(
  * @param silentAfter - the threshold the trailing note quotes.
  * @returns the text.
  */
-export function describePresence(report: PresenceReport, silentAfter: number = SILENT_AFTER): string {
+export function describePresence(
+  report: PresenceReport,
+  silentAfter: number = SILENT_AFTER,
+  loose?: readonly { name: string; chapters: number }[],
+): string {
   if (report.written === 0) {
     return '还没有写过正文，谈不上谁出场。'
   }
@@ -201,6 +267,15 @@ export function describePresence(report: PresenceReport, silentAfter: number = S
       lines.push(`  ${person.name}　${person.chapters.length} 章　首次第${person.first}章`)
     }
     lines.push('')
+  }
+
+  // Candidates the cards do not know. Printed last because they are the one part
+  // of this report that is a guess: a name in the prose is evidence, but only the
+  // author can say whether it is a person.
+  if (loose !== undefined && loose.length > 0) {
+    lines.push('', '这些词在句首反复出现，不像卡上的人——可能是漏掉的角色：')
+    for (const item of loose.slice(0, 8)) lines.push(`  ${item.name}　${item.chapters} 章`)
+    lines.push('（「少女」「现在」这类也会混进来，你自己看一眼。确实是人的话：novel_canon action="upsert_character" name=…）')
   }
 
   const oneOff = report.people.filter((person) => person.chapters.length === 1)

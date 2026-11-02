@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { axisLine, describeShape, shapeOf, sparkline } from '../src/domain/shape.ts'
-import { SILENT_AFTER, describePresence, presenceOf, silentPeople } from '../src/domain/presence.ts'
+import { SILENT_AFTER, describePresence, presenceOf, silentPeople, uncardedNames } from '../src/domain/presence.ts'
 import type { ChapterMeta, ChapterPlan, VolumeOutline } from '../src/domain/types.ts'
 
 function chapter(number: number, words: number): ChapterMeta {
@@ -128,5 +128,53 @@ describe('presenceOf', () => {
     expect(report.people[0]?.name).toBe('阿鸢'.length === 2 ? '老周' : '老周')
     expect(report.people[0]?.silent).toBe(28)
     expect(SILENT_AFTER).toBeGreaterThan(0)
+  })
+})
+
+describe('uncardedNames', () => {
+  function draft(number: number, text: string) {
+    return { number, title: `第${number}章`, text, words: text.length, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 }
+  }
+
+  /** Twelve chapters where the same people open sentences. */
+  function book(extra: (index: number) => string = () => '') {
+    return Array.from({ length: 12 }, (_, index) =>
+      draft(index + 1, `苏幼绾推开门。梅昭昭站起来。现在他走了。少女抬头。${extra(index)}`),
+    )
+  }
+
+  it('finds a name the cards do not know', () => {
+    // The real case: nine cards, and the second most frequent character in the
+    // book had none, so the presence report silently left her out.
+    const loose = uncardedNames(book(), [])
+    expect(loose.map((item) => item.name)).toContain('苏幼')
+  })
+
+  it('does not report a name the cards already cover, however it is spelled', () => {
+    // 「苏幼」 is the front of 「苏幼绾」; a card for her settles it.
+    const loose = uncardedNames(book(), [{ name: '苏幼绾' }])
+    expect(loose.map((item) => item.name)).not.toContain('苏幼')
+  })
+
+  it('leaves adverbs out, because a list that starts with one is not read', () => {
+    // 「现在」 opened 407 of 521 chapters and pushed the real answer off the screen.
+    const loose = uncardedNames(book(), [])
+    expect(loose.map((item) => item.name)).not.toContain('现在')
+  })
+
+  it('keeps descriptions in, since only the author can rule on them', () => {
+    // 「少女」 is wrong as a name, but it is wrong in a way a person sees at once.
+    const loose = uncardedNames(book(), [])
+    expect(loose.map((item) => item.name)).toContain('少女')
+  })
+
+  it('says nothing about a book too short to establish a name', () => {
+    expect(uncardedNames([draft(1, '苏幼绾推开门。')], [])).toEqual([])
+  })
+
+  it('reports how many chapters the candidate appears in', () => {
+    const loose = uncardedNames(book(), [])
+    const su = loose.find((item) => item.name === '苏幼')
+    expect(su?.chapters).toBe(12)
   })
 })

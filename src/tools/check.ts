@@ -9,7 +9,7 @@ import { checkRelations } from '../domain/relations.ts'
 import { discoverOpeners, properNames, scanChapter } from '../domain/scan.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { STALE_AFTER, openThreads, staleThreads } from '../domain/threads.ts'
-import { describePresence, presenceOf, silentPeople } from '../domain/presence.ts'
+import { SILENT_AFTER, describePresence, presenceOf, silentPeople, uncardedNames } from '../domain/presence.ts'
 import { describeShape, shapeOf } from '../domain/shape.ts'
 import type { Finding } from '../domain/types.ts'
 import { auditLedger } from './ledger.ts'
@@ -183,14 +183,14 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       if (args.action === 'presence') {
         // Cards first, prose as a fallback: a book that has never run the
         // archivist still knows who walked on, because their names are in it.
-        const report = presenceOf(snapshot.plans, snapshot.chapters, {
-          drafts,
-          people: snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases })),
-        })
+        const people = snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases }))
+        const report = presenceOf(snapshot.plans, snapshot.chapters, { drafts, people })
+        // Who the cards do not know, found by arithmetic rather than a model.
+        const loose = uncardedNames(drafts, people)
         return {
           errors: 0,
-          warnings: silentPeople(report).length,
-          report: describePresence(report),
+          warnings: silentPeople(report).length + loose.length,
+          report: describePresence(report, SILENT_AFTER, loose),
         }
       }
 

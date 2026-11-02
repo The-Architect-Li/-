@@ -24,7 +24,7 @@ import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { buildSpine, whenLabel } from '../domain/spine.ts'
 import { STALE_AFTER, ageInChapters, stateOf } from '../domain/threads.ts'
-import { SILENT_AFTER, presenceOf, silentPeople } from '../domain/presence.ts'
+import { SILENT_AFTER, presenceOf, silentPeople, uncardedNames } from '../domain/presence.ts'
 import { shapeOf } from '../domain/shape.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
@@ -906,6 +906,8 @@ function presencePage(snapshot: Snapshot, root: string, prose?: readonly Chapter
     people: snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases })),
   })
   const silent = silentPeople(report)
+  const people = snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases }))
+  const loose = (prose ?? []).length > 0 ? uncardedNames(prose ?? [], people) : []
   const busiest = [...report.people].sort((a, b) => b.chapters.length - a.chapters.length).slice(0, 12)
   return {
     kind: 'presence',
@@ -938,6 +940,12 @@ function presencePage(snapshot: Snapshot, root: string, prose?: readonly Chapter
               label: '出场最多',
               items: busiest.map((person) => `${person.name}　${person.chapters.length} 章　首次第${person.first}章`),
             },
+            ...(loose.length > 0
+              ? [{
+                  label: '不像卡上的人，但句首反复出现（可能是漏掉的角色）',
+                  items: loose.slice(0, 10).map((item) => `${item.name}　${item.chapters} 章`),
+                }]
+              : []),
           ],
         }),
     edit: { inputs: [] },
