@@ -419,3 +419,53 @@ async function runLore(
     failed: [],
   }
 }
+
+/**
+ * Re-read one chapter and rewrite its card.
+ *
+ * Used where a chapter's prose has just changed for a reason that has nothing to
+ * do with writing: merging two chapters produces text nobody has summarised, and
+ * the recap that used to describe half of it is now wrong. Waiting for the author
+ * to remember `novel_archive` is how a book ends up with cards nobody trusts.
+ *
+ * Deliberately one chapter at a time. There is exactly one of these in flight
+ * when it is called from the merge dialog, and batching would make the dialog
+ * wait on chapters the author did not touch.
+ *
+ * @param ctx - plugin context, for spawning.
+ * @param deps - config and store resolution.
+ * @param store - the book.
+ * @param number - the chapter to summarise.
+ * @param exec - execution context carrying the parent agent.
+ * @returns the new recap, and whether it landed.
+ */
+export async function archiveChapter(
+  ctx: Context,
+  deps: ToolDeps,
+  store: ProjectStore,
+  number: number,
+  exec: { agent?: unknown; signal: AbortSignal },
+): Promise<{ ok: boolean; summary: string; error?: string }> {
+  const chapter = await store.chapter(number)
+  if (chapter === undefined) return { ok: false, summary: '', error: `第${number}章没有正文。` }
+  const plans = await store.plans()
+  const existing = plans.find((plan) => plan.number === number)
+  const role = ROLES.archivist
+  const route = resolveRoleRoute('archivist', deps.config, (await store.readProject()).roles)
+  const prompt = buildArchivePrompt(
+    [{ number, title: chapter.title, text: chapter.text }],
+    role.persona,
+    role.outputContract,
+  )
+  try {
+    const output = await runRole(ctx, role.persona, prompt, exec as never, route, 'inkwell-recap')
+    const [card] = parseArchiveOutput(output)
+    if (card === undefined || card.number !== number) {
+      return { ok: false, summary: '', error: '档案员这次没给出这一章的卡（输出没解析出来）。' }
+    }
+    await store.upsertPlan(mergeArchiveCard(existing, card, chapter.title, UNASSIGNED, chapter.revision ?? 0))
+    return { ok: true, summary: card.summary }
+  } catch (error) {
+    return { ok: false, summary: '', error: String((error as Error).message ?? error) }
+  }
+}

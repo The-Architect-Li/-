@@ -72,6 +72,7 @@ import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { runRound } from '../tools/dispatch.ts'
 import { mergeChapters, moveChapter } from '../domain/reorder.ts'
+import { archiveChapter } from '../tools/archive.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
@@ -1502,7 +1503,32 @@ export async function mergeRoute(
     if (!Number.isInteger(number) || number < 1) throw new PanelInputError('merge 需要 number：第几章把下一章并进来。')
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
-    const result = await mergeChapters(store, number)
+    const result = await mergeChapters(store, number).catch((error) => {
+      throw new PanelInputError(String((error as Error).message ?? error), 409)
+    })
+
+    // The merge leaves the card without a recap: two recaps are not one, and
+    // nobody can write the joined one from here. If the author said yes in the
+    // dialog, the archivist reads the merged prose now — while they are still
+    // looking at the result, instead of three weeks later when the row says
+    // 「待补摘要」 and nobody remembers why.
+    let recap: { ok: boolean; summary: string; error?: string } | undefined
+    if (body.summarize === true) {
+      const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
+      const ctx = deps.ctxOf?.()
+      if (agent === undefined || ctx === undefined) {
+        recap = { ok: false, summary: '', error: '面板拿不到这个会话的 agent，摘要没重写。用 novel_archive action="apply" from=' + number + ' limit=1 补。' }
+      } else {
+        recap = await archiveChapter(
+          ctx as never,
+          { config: deps.config, storeFor: () => store } as never,
+          store,
+          number,
+          { agent, signal: new AbortController().signal },
+        )
+      }
+    }
+
     return {
       status: 200,
       body: {
@@ -1514,6 +1540,7 @@ export async function mergeRoute(
           total: result.mapping.length === 0 ? 0 : (await store.chapters()).length,
           backup: result.backup,
           touched: result.touched,
+          ...(recap === undefined ? {} : { recap }),
         },
       },
     }
@@ -1536,7 +1563,11 @@ export async function moveRoute(
     }
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
-    const result = await moveChapter(store, number, to)
+    // A refusal here is about the book's state, not a broken server: 「第 99 章
+    // 不存在」 should reach the panel as a sentence, not as HTTP 500.
+    const result = await moveChapter(store, number, to).catch((error) => {
+      throw new PanelInputError(String((error as Error).message ?? error), 409)
+    })
     return {
       status: 200,
       body: {

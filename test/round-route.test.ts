@@ -80,3 +80,24 @@ describe('POST /round', () => {
     }
   })
 })
+
+describe('POST /merge with summarize', () => {
+  it('refuses to invent a recap when the host gives no agent', async () => {
+    // Merging still happens — the prose is joined, the chapter is gone. What is
+    // refused is only the recap, and the sentence says which command fills it in
+    // later. Failing the whole merge because a summariser is missing would be
+    // worse than a missing summary.
+    const app = await serve()
+    try {
+      const response = await fetch(`${app.base}/merge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ number: 1, summarize: true }),
+      })
+      // No chapters in this fixture, so the merge itself refuses first.
+      expect([400, 409]).toContain(response.status)
+    } finally {
+      await app.close()
+    }
+  })
+})

@@ -761,7 +761,7 @@ const API_BACKUP = '/api/inkwell/backup'
       const response = await fetch(`${API_CARD}?${params.join('&')}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
-        body: JSON.stringify({ number }),
+        body: JSON.stringify({ number, ...(summarize === true ? { summarize: true } : {}) }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
@@ -842,7 +842,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     /** Fold the next chapter into this one. Not reversible without the backup. */
-    async function mergeChapter(sessionId, root, number) {
+    async function mergeChapter(sessionId, root, number, summarize) {
       const params = []
       if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
       if (root) params.push(`root=${encodeURIComponent(root)}`)
@@ -1427,6 +1427,39 @@ const API_BACKUP = '/api/inkwell/backup'
         color: 'var(--iw-fg-3)',
         opacity: 0.45,
         cursor: 'default',
+      },
+      askBox: {
+        position: 'fixed',
+        zIndex: 62,
+        left: '50%',
+        top: '22%',
+        transform: 'translateX(-50%)',
+        width: 'min(360px, 88vw)',
+        padding: '14px 16px',
+        borderRadius: '11px',
+        border: '1px solid var(--iw-line-strong)',
+        backgroundColor: 'rgba(26, 26, 31, 0.98)',
+        boxShadow: '0 16px 44px rgba(0,0,0,.55)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+      },
+      askTitle: {
+        fontSize: '13.5px',
+        fontWeight: '600',
+        color: 'var(--iw-fg)',
+      },
+      askBody: {
+        fontSize: '12px',
+        lineHeight: '1.55',
+        color: 'var(--iw-fg-2)',
+      },
+      askButtons: {
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '6px',
+        paddingTop: '4px',
+        flexWrap: 'wrap',
       },
       markBadge: {
         flex: '0 0 auto',
@@ -4352,6 +4385,7 @@ const API_BACKUP = '/api/inkwell/backup'
       // Which row's ⋯ menu is open. Held here, not in Row: a row cannot own state
       // because the list is virtualised and rows come and go.
       const [menuAt, setMenuAt] = useState(null)
+      const [mergeAsk, setMergeAsk] = useState(null)
       const [menuNote, setMenuNote] = useState('')
       const [detail, setDetail] = useState(null)
       // The create dialog: the folder the chooser returned, or null when closed.
@@ -4810,22 +4844,26 @@ const API_BACKUP = '/api/inkwell/backup'
        * asked. The list refreshes afterwards because every one of these changes
        * the numbers in it.
        */
-      const runChapterAction = useCallback((action, number) => {
+      const runChapterAction = useCallback((action, number, summarize) => {
         setMenuAt(null)
-        setMenuNote('')
         const call =
           action === 'up'
             ? moveChapter(sessionId, root, number, number - 1)
             : action === 'down'
               ? moveChapter(sessionId, root, number, number + 1)
-              : mergeChapter(sessionId, root, number)
+              : mergeChapter(sessionId, root, number, summarize === true)
         call
           .then((output) => {
-            setMenuNote(
-              action === 'merge'
-                ? `第 ${output.dropped} 章并入第 ${output.number} 章，现在共 ${output.total} 章。备份：${output.backup}`
-                : `第 ${number} 章挪到第 ${output.number} 位。备份：${output.backup}`,
-            )
+            if (action !== 'merge') {
+              setMenuNote(`第 ${number} 章挪到第 ${output.number} 位。备份：${output.backup}`)
+              return refresh()
+            }
+            const recap = output.recap === undefined || output.recap === null
+              ? ''
+              : output.recap.ok
+                ? `摘要已重写：「${String(output.recap.summary || '').slice(0, 40)}…」`
+                : `摘要没写成：${String(output.recap.error || '未知原因')}`
+            setMenuNote(`第 ${output.dropped} 章并入第 ${output.number} 章，现在共 ${output.total} 章。${recap} 备份：${output.backup}`)
             return refresh()
           })
           .catch((failure) => setMenuNote(String((failure && failure.message) || failure)))
@@ -5307,8 +5345,45 @@ const API_BACKUP = '/api/inkwell/backup'
                 className: 'iw-menu-item',
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.down),
-                onClick: () => runChapterAction('merge', menuAt.key),
+                onClick: () => {
+                  const key = menuAt.key
+                  setMenuAt(null)
+                  setMergeAsk({ number: key })
+                },
               }, '⇤　并入下章'),
+            )
+          : null,
+        // Merging deletes a chapter and empties a recap. Asking afterwards is
+        // useless — by then the prose is joined and the number is gone — so the
+        // dialog comes first and offers to have the archivist read the result.
+        mergeAsk !== null && mergeAsk !== undefined
+          ? h('div', { key: 'merge-scrim', style: S.menuScrim, onClick: () => setMergeAsk(null) })
+          : null,
+        mergeAsk !== null && mergeAsk !== undefined
+          ? h(
+              'div',
+              { key: 'merge-ask', style: S.askBox, onClick: (event) => event.stopPropagation() },
+              h('div', { style: S.askTitle }, `把第 ${mergeAsk.number + 1} 章并进第 ${mergeAsk.number} 章？`),
+              h('div', { style: S.askBody }, '两段正文会直接接起来，第 ' + (mergeAsk.number + 1) + ' 章的编号消失，后面的章各前移一位。动手前整本书先备份。'),
+              h('div', { style: S.askBody }, '并完之后这张章卡的摘要会空着——两章的前情提要合成一段是重写，不是拼接。'),
+              h('div', { style: { ...S.askBody, color: 'var(--iw-fg)', paddingTop: '4px' } }, '要不要现在让档案员读一遍合并后的正文，把摘要补上？（一次模型调用，几秒到几十秒）'),
+              h(
+                'div',
+                { style: S.askButtons },
+                h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setMergeAsk(null) }, '取消'),
+                h('button', {
+                  type: 'button',
+                  className: 'iw-btn',
+                  style: S.iconButton,
+                  onClick: () => { const n = mergeAsk.number; setMergeAsk(null); setMenuNote('正在合并，并按你的选择处理摘要…'); runChapterAction('merge', n, false) },
+                }, '只合并'),
+                h('button', {
+                  type: 'button',
+                  className: 'iw-btn iw-primary',
+                  style: S.primaryButton,
+                  onClick: () => { const n = mergeAsk.number; setMergeAsk(null); setMenuNote('正在合并，然后让档案员读一遍合并后的正文…'); runChapterAction('merge', n, true) },
+                }, '合并并重写摘要'),
+              ),
             )
           : null,
         // The result of a move or a merge, where the author did it. A silent

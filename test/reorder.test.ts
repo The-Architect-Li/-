@@ -325,7 +325,7 @@ describe('everything that points at a chapter follows it', () => {
       ...(await store.places()).flatMap((place) => (place.states ?? []).map((state) => state.chapter)),
       ...(await store.characters()).flatMap((char) => (char.stages ?? []).map((stage) => stage.chapter)),
       ...(await store.timeline()).anchors.map((anchor) => anchor.chapter),
-    ].filter((number) => typeof number === 'number' && number > 0)
+    ].filter((number): number is number => typeof number === 'number' && number > 0)
     expect(pointed.filter((number) => !alive.has(number))).toEqual([])
   })
 })
