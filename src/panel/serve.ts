@@ -1637,12 +1637,14 @@ export async function readEntry(
       && kind !== 'timeline'
       && kind !== 'kind'
       && kind !== 'threads'
+      && kind !== 'shape'
+      && kind !== 'presence'
     ) {
       throw new PanelInputError(
-        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline／kind／threads。`,
+        `未知的条目类型 ${kind ?? '（空）'}，只支持 character／world／chapter／card／place／story／timeline／kind／threads／shape／presence。`,
       )
     }
-    if ((key === undefined || key === '') && kind !== 'timeline' && kind !== 'threads') {
+    if ((key === undefined || key === '') && kind !== 'timeline' && kind !== 'threads' && kind !== 'shape' && kind !== 'presence') {
       throw new PanelInputError('缺少 key：角色名、世界观名、地点名、故事点 id 或章号。')
     }
     const store = storeFor(deps, sessionId, root)

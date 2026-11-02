@@ -9,6 +9,8 @@ import { checkRelations } from '../domain/relations.ts'
 import { discoverOpeners, properNames, scanChapter } from '../domain/scan.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { STALE_AFTER, openThreads, staleThreads } from '../domain/threads.ts'
+import { describePresence, presenceOf, silentPeople } from '../domain/presence.ts'
+import { describeShape, shapeOf } from '../domain/shape.ts'
 import type { Finding } from '../domain/types.ts'
 import { auditLedger } from './ledger.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
@@ -31,8 +33,8 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       action: {
         type: 'string',
         required: true,
-        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'stale', 'relations', 'threads', 'all'],
-        description: '检查类型；threads 报「埋了超过 30 章还没收」的伏笔',
+        enum: ['contract', 'scan', 'ledger', 'timeline', 'records', 'cards', 'stale', 'relations', 'threads', 'presence', 'shape', 'all'],
+        description: '检查类型；threads=拖太久的伏笔 / presence=谁几百章没露面 / shape=全书节奏图',
       },
       number: { type: 'number', description: '章号；all 时可省略，省略则检查全书' },
     },
@@ -175,6 +177,24 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
                 '',
                 '改法：读一遍正文，novel_outline action="card" 重写 story/events/scene（只改你给的字段）；或者如果你确认卡里写的仍然对，也照样重写一次把它盖成当前版本。',
               ].join('\n'),
+        }
+      }
+
+      if (args.action === 'presence') {
+        const report = presenceOf(snapshot.plans, snapshot.chapters)
+        return {
+          errors: 0,
+          warnings: silentPeople(report).length,
+          report: describePresence(report),
+        }
+      }
+
+      if (args.action === 'shape') {
+        const report = shapeOf(snapshot.chapters, snapshot.plans, snapshot.volumes)
+        return {
+          errors: 0,
+          warnings: report.drySpells.filter((spell) => spell.length >= 5).length,
+          report: describeShape(report),
         }
       }
 

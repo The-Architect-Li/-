@@ -1925,6 +1925,56 @@ const API_BACKUP = '/api/inkwell/backup'
      * @param props - the section, collapse state and selection.
      * @returns the section element.
      */
+    /**
+     * One bar chart, drawn as SVG.
+     *
+     * Bars are proportional to the tallest, with a tooltip carrying the exact
+     * number: the shape is what the eye needs, the number is what the author
+     * checks. Kept deliberately plain — a chart that needs a legend to read is
+     * a chart that will not be read.
+     *
+     * @param props - the chart payload from the entry route.
+     * @returns the chart.
+     */
+    function BarChart(props) {
+      const { chart } = props
+      const values = chart.values
+      const labels = Array.isArray(chart.labels) ? chart.labels : []
+      const max = Math.max(...values, 1)
+      const width = 320
+      const height = 72
+      const gap = values.length > 60 ? 0.4 : 1
+      const barWidth = Math.max(0.8, (width - gap * (values.length - 1)) / values.length)
+      return h(
+        'div',
+        { style: { padding: '4px 0 8px' } },
+        h(
+          'svg',
+          {
+            viewBox: `0 0 ${width} ${height}`,
+            preserveAspectRatio: 'none',
+            style: { width: '100%', height: '72px', display: 'block', overflow: 'visible' },
+            role: 'img',
+            'aria-label': chart.caption || '全书形状',
+          },
+          ...values.map((value, index) => {
+            const barHeight = Math.max(1, (value / max) * (height - 2))
+            return h('rect', {
+              key: index,
+              x: index * (barWidth + gap),
+              y: height - barHeight,
+              width: barWidth,
+              height: barHeight,
+              rx: barWidth > 3 ? 1 : 0,
+              fill: 'var(--iw-accent)',
+              opacity: 0.75,
+            }, h('title', null, `${labels[index] || ''} ${Math.round(value)}${chart.unit || ''}`))
+          }),
+        ),
+        h('div', { style: { ...S.aside, padding: '2px 0 0', maxWidth: '100%' } }, chart.caption || ''),
+      )
+    }
+
     function Section(props) {
       const { section, collapsed, onToggle, selected, onRowClick } = props
       const open = !collapsed.has(section.id)
@@ -3733,6 +3783,12 @@ const API_BACKUP = '/api/inkwell/backup'
       const lists = Array.isArray(data.lists) ? data.lists : []
       const crumb = Array.isArray(data.breadcrumb) ? data.breadcrumb.filter((part) => part) : []
 
+      // The chart is the page's whole point on the shape view: five hundred
+      // numbers is not a shape, a picture of them is.
+      const chart = data && data.chart && Array.isArray(data.chart.values) && data.chart.values.length > 0
+        ? h(BarChart, { chart: data.chart })
+        : null
+
       const crumbLine =
         crumb.length > 0
           ? h(
@@ -3913,6 +3969,7 @@ const API_BACKUP = '/api/inkwell/backup'
         head,
         crumbLine,
         heading,
+        chart,
         // The round's report lands here: it is a page of text, and the author is
         // already looking at this chapter.
         roundBusy

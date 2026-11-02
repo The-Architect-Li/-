@@ -56,6 +56,8 @@ export type PanelEntryKind =
   | 'relations'
   | 'kind'
   | 'threads'
+  | 'shape'
+  | 'presence'
 
 /** One drawer: a top-level row group with its own count. */
 export interface PanelSection {
@@ -245,6 +247,16 @@ function castSection(snapshot: Snapshot): PanelSection {
       { id: 'cast.overview', label: '概览', aside: `${snapshot.characters.length} 人` },
       // One line for the whole web: since v0.21 a relation is an edge, so this page
       // can show every pair once instead of asking the author to open each card.
+      // Who is still here. The one row in this drawer that is arithmetic rather
+      // than a card, and the only place a forgotten character shows up.
+      {
+        id: 'cast.presence',
+        label: '出场',
+        kind: 'presence',
+        key: 'presence',
+        aside: snapshot.plans.length === 0 ? '还没有章卡' : `${snapshot.plans.length} 张卡`,
+        tone: snapshot.plans.length === 0 ? ('muted' as const) : ('todo' as const),
+      },
       {
         id: 'cast.relations',
         label: '关系一览',
@@ -365,6 +377,15 @@ function plotSection(snapshot: Snapshot): PanelSection {
         label: '章卡',
         count: snapshot.plans.length,
         children: capped(cards, snapshot.plans.length, MAX_ROWS, 'plot.card'),
+      },
+      {
+        id: 'plot.shape',
+        label: '全书形状',
+        kind: 'shape',
+        key: 'shape',
+        aside: snapshot.chapters.length === 0 ? '还没写' : `${snapshot.chapters.length} 章`,
+        ...(snapshot.chapters.length > 0 ? { chip: '看曲线' } : {}),
+        tone: snapshot.chapters.length === 0 ? ('muted' as const) : ('done' as const),
       },
       {
         id: 'plot.threads',

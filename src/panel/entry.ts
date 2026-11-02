@@ -23,11 +23,25 @@ import { describeRelation, relationsOf, sameName } from '../domain/relations.ts'
 import { describeWindow, resolveTimeline, windowAt } from '../domain/clock.ts'
 import { buildSpine, whenLabel } from '../domain/spine.ts'
 import { STALE_AFTER, ageInChapters, stateOf } from '../domain/threads.ts'
+import { SILENT_AFTER, presenceOf, silentPeople } from '../domain/presence.ts'
+import { shapeOf } from '../domain/shape.ts'
 import { staleRecords } from '../domain/staleness.ts'
 import { CHARACTER_ROLES } from '../domain/types.ts'
 import type { ChapterPlan, DraftRound, ReviewRound, Snapshot } from '../domain/types.ts'
 
 /** One labelled line, e.g. `说话方式` → `短句，问句多`. */
+/** One bar-chart the panel draws. */
+export interface EntryChart {
+  /** Bar heights, in the same unit as `unit`. */
+  values: number[]
+  /** What each bar covers, e.g. `第1–20章`. */
+  labels: string[]
+  /** Appended to the value in the tooltip, e.g. `字`. */
+  unit: string
+  /** Caption under the chart. */
+  caption: string
+}
+
 export interface EntryField {
   label: string
   value: string
@@ -126,6 +140,13 @@ export interface EntryPayload {
   lists: EntryList[]
   /** The rail, on the timeline page only. */
   spine?: EntrySpine
+  /**
+   * A bar chart, on the pages where the answer is a curve.
+   *
+   * 「哪一段拖」「后段是不是变短了」 cannot be answered by a list of five hundred
+   * numbers; it is a shape, and the page should draw it rather than describe it.
+   */
+  chart?: EntryChart
   /** Inputs this page accepts. Always present: an empty list means read-only. */
   edit: EntryEdit
   /**
@@ -816,6 +837,110 @@ function threadsPage(snapshot: Snapshot, root: string): EntryPayload {
   }
 }
 
+/**
+ * The shape page: the whole book as one curve.
+ *
+ * A bar per bucket of chapters, height by average length, plus the places where
+ * the book stopped pulling and how big each volume is. Nothing here is a
+ * judgement — it is the picture an editor would sketch on the back of an
+ * envelope before saying anything.
+ *
+ * @param snapshot - the book.
+ * @param root - project directory, for the footer.
+ * @returns the page.
+ */
+function shapePage(snapshot: Snapshot, root: string): EntryPayload {
+  const shape = shapeOf(snapshot.chapters, snapshot.plans, snapshot.volumes)
+  const worst = shape.drySpells.slice(0, 4)
+  return {
+    kind: 'shape',
+    title: '全书形状',
+    subtitle: `${shape.written} 章 · ${(shape.words / 10000).toFixed(1)} 万字 · 每格 ${shape.span} 章`,
+    chip: worst.some((spell) => spell.length >= 5) ? `${worst.filter((spell) => spell.length >= 5).length} 段没钩子` : undefined,
+    breadcrumb: ['剧情设计', '全书形状'],
+    fields: [
+      ...(shape.longest === null ? [] : [{ label: '最长的一章', value: `第${shape.longest.number}章 ${shape.longest.words} 字` }]),
+      ...(shape.shortest === null ? [] : [{ label: '最短的一章', value: `第${shape.shortest.number}章 ${shape.shortest.words} 字` }]),
+      { label: '有章卡的章', value: `${shape.carded} / ${shape.written}` },
+    ],
+    chart: {
+      values: shape.buckets.map((bucket) => bucket.words),
+      labels: shape.buckets.map((bucket) => `第${bucket.from}–${bucket.to}章`),
+      unit: '字',
+      caption: shape.carded === 0
+        ? '每格是这一段章节的平均字数。章卡还没有，所以钩子断档看不出。'
+        : '每格是这一段章节的平均字数；下面列出连续没有钩子的段落。',
+    },
+    lists: [
+      ...(worst.length > 0
+        ? [{
+            label: '章末没有钩子的连续段落',
+            items: worst.map((spell) => `第${spell.from}–${spell.to}章　连续 ${spell.length} 章`),
+          }]
+        : []),
+      ...(shape.volumes.length > 0
+        ? [{
+            label: '分卷体量',
+            items: shape.volumes.map((volume) => `第${volume.number}卷 ${volume.title}　第${volume.from}–${volume.to}章　${(volume.words / 10000).toFixed(1)} 万字`),
+          }]
+        : [{ label: '分卷', items: ['这本书还没有分卷——分卷标出故事的结构边界，也让「第几卷开始」有答案。'] }]),
+    ],
+    edit: { inputs: [] },
+    root,
+  }
+}
+
+/**
+ * The presence page: who the book still has, and who it left behind.
+ *
+ * Sorted by silence, because the question the page answers is 「我是不是把谁忘了」.
+ *
+ * @param snapshot - the book.
+ * @param root - project directory, for the footer.
+ * @returns the page.
+ */
+function presencePage(snapshot: Snapshot, root: string): EntryPayload {
+  const report = presenceOf(snapshot.plans, snapshot.chapters)
+  const silent = silentPeople(report)
+  const busiest = [...report.people].sort((a, b) => b.chapters.length - a.chapters.length).slice(0, 12)
+  return {
+    kind: 'presence',
+    title: '出场',
+    subtitle: report.covered === 0
+      ? '还没有章卡，算不出场'
+      : `${report.people.length} 个人物 · 覆盖 ${report.covered} / ${report.written} 章`,
+    chip: silent.length > 0 ? `${silent.length} 人消失太久` : undefined,
+    breadcrumb: ['人物设计', '出场'],
+    fields: [{ label: '统计来源', value: '章卡里的出场名单（不是正文检索）' }],
+    ...(report.covered === 0
+      ? {
+          lists: [{
+            label: '为什么是空的',
+            items: [
+              '已经写了正文，但没有任何一章的章卡写了出场人物。',
+              '补卡：novel_archive action="plan" 看缺哪些，再 action="apply" 让档案员读。',
+            ],
+          }],
+        }
+      : {
+          lists: [
+            ...(silent.length > 0
+              ? [{
+                  label: `已经 ${SILENT_AFTER} 章以上没出现的`,
+                  items: silent.map((person) => `${person.name}　最后一次第${person.last}章　已 ${person.silent} 章`),
+                }]
+              : [{ label: '没人被落下', items: [`没有人物超过 ${SILENT_AFTER} 章没出现。`] }]),
+            {
+              label: '出场最多',
+              items: busiest.map((person) => `${person.name}　${person.chapters.length} 章　首次第${person.first}章`),
+            },
+          ],
+        }),
+    edit: { inputs: [] },
+    root,
+  }
+}
+
 export function buildEntry(
   snapshot: Snapshot,
   kind: PanelEntryKind,
@@ -831,6 +956,8 @@ export function buildEntry(
   if (kind === 'world') return worldPage(snapshot, key, root)
   if (kind === 'kind') return kindPage(snapshot, key, root)
   if (kind === 'threads') return threadsPage(snapshot, root)
+  if (kind === 'shape') return shapePage(snapshot, root)
+  if (kind === 'presence') return presencePage(snapshot, root)
   if (kind === 'place') return placePage(snapshot, key, root)
   if (kind === 'story') return storyPage(snapshot, key, root)
   if (kind === 'timeline') return timelinePage(snapshot, root)
