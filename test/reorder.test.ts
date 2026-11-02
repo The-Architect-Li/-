@@ -202,3 +202,31 @@ describe('mergeChapters', () => {
     expect(kept).toContain('这是第2章的正文')
   })
 })
+
+describe('a moved chapter says where it came from', () => {
+  it('marks the chapter that moved, and only that one', async () => {
+    // The others only shifted by one; claiming 「原来在第 4 章」 about a chapter
+    // nobody chose to move would be noise on every row.
+    const store = await book()
+    await moveChapter(store, 5, 2)
+    const index = await store.chapters()
+    expect(index.find((chapter) => chapter.number === 2)?.origin).toMatchObject({ kind: 'moved', from: [5] })
+    expect(index.find((chapter) => chapter.number === 5)?.origin).toBeUndefined()
+  })
+
+  it('marks a merge with both of its source numbers', async () => {
+    const store = await book()
+    await mergeChapters(store, 3)
+    const merged = (await store.chapters()).find((chapter) => chapter.number === 3)
+    expect(merged?.origin).toMatchObject({ kind: 'merged', from: [3, 4] })
+  })
+
+  it('survives a round trip through the index file', async () => {
+    // The panel reads this from disk, not from memory — a field that only exists
+    // in the return value would never reach the row.
+    const store = await book()
+    await moveChapter(store, 2, 4)
+    const raw = JSON.parse(await readFile(join(store.root, 'chapters/index.json'), 'utf8')) as { number: number; origin?: unknown }[]
+    expect(raw.find((chapter) => chapter.number === 4)?.origin).toBeTruthy()
+  })
+})

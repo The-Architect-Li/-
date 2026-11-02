@@ -1428,6 +1428,18 @@ const API_BACKUP = '/api/inkwell/backup'
         opacity: 0.45,
         cursor: 'default',
       },
+      markBadge: {
+        flex: '0 0 auto',
+        fontSize: '10.5px',
+        lineHeight: '15px',
+        padding: '0 4px',
+        borderRadius: '4px',
+        color: 'var(--iw-accent)',
+        border: '1px solid var(--iw-accent-line)',
+        backgroundColor: 'var(--iw-accent-soft)',
+        cursor: 'help',
+        userSelect: 'none',
+      },
       sectionCount: {
         fontSize: '11px',
         color: 'var(--iw-fg-3)',
@@ -1991,7 +2003,10 @@ const API_BACKUP = '/api/inkwell/backup'
           role: 'button',
           tabIndex: 0,
           'aria-pressed': isSelected ? 'true' : 'false',
-          title: row.aside ? `${row.label} · ${row.aside}` : row.label,
+          title: [
+            row.aside ? `${row.label} · ${row.aside}` : row.label,
+            ...(row.mark !== undefined && row.mark !== null ? [row.mark.hint] : []),
+          ].join('\n'),
           onClick: () => onRowClick(row),
           onKeyDown: (event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return
@@ -2009,6 +2024,11 @@ const API_BACKUP = '/api/inkwell/backup'
           glyph,
         ),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
+        // 「移」/「并」: a reorder leaves no trace in the prose, so the row has to
+        // carry the evidence. Hovering the row gives the sentence.
+        row.mark !== undefined && row.mark !== null
+          ? h('span', { style: S.markBadge, title: row.mark.hint }, row.mark.label)
+          : null,
         row.aside ? h('span', { style: S.aside }, row.aside) : null,
         row.chip ? h('span', { style: { ...S.pill, ...(toneStyle || {}) } }, row.chip) : null,
         typeof row.count === 'number' ? h('span', { style: S.count }, num(row.count)) : null,

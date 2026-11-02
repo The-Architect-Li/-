@@ -397,6 +397,28 @@ export interface ChapterMeta {
    * invent one, and every reader treats absent as 0.
    */
   revision?: number
+  /**
+   * How this chapter got its current number, when that is not the number it was
+   * written under.
+   *
+   * A reorder leaves no trace in the prose: same words, same title, only the
+   * number is new. Readers notice as 「我明明记得这章在前面」, and so does the author
+   * three months later. This is that trace.
+   *
+   * Overwritten rather than appended: the question is 「这章原来在第几」, not
+   * 「它一共被挪过几次」.
+   */
+  origin?: ChapterOrigin
+}
+
+/** Where a chapter came from, when it did not start life at this number. */
+export interface ChapterOrigin {
+  /** `moved` came from another position; `merged` swallowed its neighbour. */
+  kind: 'moved' | 'merged'
+  /** Chapter numbers it used to live at. */
+  from: number[]
+  /** When the change happened, ISO 8601. */
+  at: string
 }
 
 /** A completed chapter on disk. */

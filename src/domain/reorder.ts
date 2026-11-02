@@ -28,6 +28,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { countChars } from './text.ts'
+import type { ChapterOrigin } from './types.ts'
 import type { ProjectStore } from './store.ts'
 
 /** One file that was rewritten, for the report. */
@@ -270,6 +271,10 @@ export async function moveChapter(store: ProjectStore, from: number, to: number)
     await rename(moved, join(store.root, 'drafts', String(map.get(number)!).padStart(3, '0'))).catch(() => undefined)
   }
 
+  // Mark the chapter that actually moved. The rest only shifted by one, and
+  // saying 「原来在第 N 章」 about a chapter nobody chose to move would be noise.
+  await markOrigin(store, map.get(from) ?? from, { kind: 'moved', from: [from], at: new Date().toISOString() })
+
   return {
     moved: map.size,
     mapping: [...map.entries()].map(([oldNumber, newNumber]) => `${oldNumber}→${newNumber}`),
@@ -407,7 +412,15 @@ export async function mergeChapters(store: ProjectStore, number: number): Promis
     .map((chapter) => (chapter.number > number + 1 ? { ...chapter, number: chapter.number - 1 } : chapter))
     .map((chapter) =>
       chapter.number === number
-        ? { ...chapter, words: countChars(joined), summary: '', writtenAt: new Date().toISOString(), revision: (chapter.revision ?? 0) + 1 }
+        ? {
+            ...chapter,
+            words: countChars(joined),
+            summary: '',
+            writtenAt: new Date().toISOString(),
+            revision: (chapter.revision ?? 0) + 1,
+            // Both numbers: the question is 「这一章原来是哪两章」.
+            origin: { kind: 'merged' as const, from: [number, number + 1], at: new Date().toISOString() },
+          }
         : chapter,
     )
     .sort((a, b) => a.number - b.number)
@@ -434,4 +447,29 @@ export async function mergeChapters(store: ProjectStore, number: number): Promis
     words: countChars(joined),
     dropped: number + 1,
   }
+}
+
+/**
+ * Record where a chapter came from, on its index entry.
+ *
+ * Written straight to the index rather than through `writeChapter`, which would
+ * also bump the revision: a move does not change the text, and a revision bump
+ * would make the next save look like a concurrent edit.
+ *
+ * @param store - the book.
+ * @param number - the chapter's current number.
+ * @param origin - what it used to be.
+ */
+async function markOrigin(store: ProjectStore, number: number, origin: ChapterOrigin): Promise<void> {
+  const raw = await readFile(join(store.root, FILES.index), 'utf8').catch(() => undefined)
+  if (raw === undefined || raw.trim() === '') return
+  const index = JSON.parse(raw) as { number: number; origin?: ChapterOrigin }[]
+  let hit = false
+  const next = index.map((chapter) => {
+    if (chapter.number !== number) return chapter
+    hit = true
+    return { ...chapter, origin }
+  })
+  if (!hit) return
+  await writeFile(join(store.root, FILES.index), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
 }

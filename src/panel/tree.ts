@@ -38,6 +38,14 @@ export interface PanelRow {
    * must not offer a move that would land on nothing.
    */
   moves?: { up: boolean; down: boolean }
+  /**
+   * A small badge saying this chapter was moved or merged, with the sentence its
+   * tooltip shows.
+   *
+   * A reorder leaves no trace in the prose, so without this a chapter that
+   * travelled from 80 to 3 looks exactly like one written at 3.
+   */
+  mark?: { label: string; hint: string }
   tone?: PanelTone
   /**
    * What clicking this leaf opens, when it stands for a thing with its own page.
@@ -435,12 +443,19 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
     const chapter = written.get(number)
     const draftCount = rounds.get(number)?.length ?? 0
     const title = plan?.title || chapter?.title || ''
+    const origin = chapter?.origin
+    const mark = origin === undefined
+      ? undefined
+      : origin.kind === 'merged'
+        ? { label: '并', hint: `由第${origin.from.join('、')}章合并而来` }
+        : { label: '移', hint: `原来在第${origin.from.join('、')}章` }
     const base = {
       id: `text.chapter.${number}`,
       label: `第${number}章 ${title}`.trim(),
       kind: 'chapter' as const,
       key: String(number),
       moves: { up: number > lowest, down: number < highest },
+      ...(mark === undefined ? {} : { mark }),
     }
     if (chapter) {
       // A card written from an older draft no longer describes the prose. The
