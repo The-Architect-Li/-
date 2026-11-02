@@ -174,3 +174,35 @@ describe('the card button on a written chapter', () => {
     }
   })
 })
+
+describe('search is not capped where the cap cannot be seen past', () => {
+  it('returns far more than the old sixty, so the page can scroll through them', async () => {
+    // 425 chapters matched 「路长远」 and the panel showed sixty with no way to
+    // reach the rest: a cap with no scroll is a wrong answer, not a small one.
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-search-'))
+    roots.push(dir)
+    const store = new ProjectStore(dir)
+    await store.init('雾港', 800000)
+    for (let number = 1; number <= 120; number += 1) {
+      await store.writeChapter(
+        { number, title: `第${number}章`, text: `路长远走进来。${'雾'.repeat(80)}`, words: 90, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+        { baseRevision: undefined },
+      )
+    }
+    const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store })
+    const server = createServer((req, res) => void handler(req, res))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    const base = `http://127.0.0.1:${address.port}${PANEL_PREFIX}`
+    try {
+      const response = await fetch(`${base}/search?q=${encodeURIComponent('路长远')}`)
+      expect(response.status).toBe(200)
+      const payload = (await response.json()) as { data: { hits: unknown[]; matched: number } }
+      expect(payload.data.matched).toBe(120)
+      expect(payload.data.hits.length).toBe(120)
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()))
+    }
+  })
+})

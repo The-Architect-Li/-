@@ -1734,7 +1734,11 @@ export async function searchRoute(
     if (terms.length === 0) return { status: 400, body: { ok: false, error: { message: '要搜什么？' } } }
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) return { status: 200, body: { ok: true, data: { terms, hits: [], matched: 0, scanned: 0 } } }
-    const result = searchChapters(await store.allChapters(), terms, { limit: 60 })
+    // Sixty was a display cap with no way to see past it: the page had no
+    // scroll container, so a search that matched 425 chapters simply stopped at
+    // 60 and said so. The cap is now high enough that the browser's own scrolling
+    // is the only limit the author meets, and the page is a real scroll region.
+    const result = searchChapters(await store.allChapters(), terms, { limit: 400 })
     return {
       status: 200,
       body: {

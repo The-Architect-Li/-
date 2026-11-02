@@ -4340,6 +4340,10 @@ const API_BACKUP = '/api/inkwell/backup'
       const { sessionId, root, onBack, onOpenChapter } = props
       const [query, setQuery] = useState('')
       const [state, setState] = useState({ status: 'idle' })
+      // How many hits are mounted. Each hit carries up to three prose samples, so
+      // all 400 at once is thousands of nodes for a page the author reads top-down
+      // anyway. Raise it when they reach the bottom.
+      const [shown, setShown] = useState(60)
       const run = (value) => {
         const term = String(value || '').trim()
         if (term === '') {
@@ -4347,14 +4351,21 @@ const API_BACKUP = '/api/inkwell/backup'
           return
         }
         setState({ status: 'loading' })
+        setShown(60)
         loadSearch(sessionId, root, term)
           .then((data) => setState({ status: 'ready', data }))
           .catch((failure) => setState({ status: 'error', message: String((failure && failure.message) || failure) }))
       }
+      // A fixed header over its own scroll region. Without this the results grew
+      // past the panel and were clipped — a search matching 425 chapters showed
+      // about seven of them and could not be scrolled any further.
       return h(
         'div',
-        { style: { padding: '0 8px 10px' } },
+        { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
         h(
+          'div',
+          { style: { padding: '0 8px', flex: '0 0 auto' } },
+          h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 8px' } },
           h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
@@ -4375,8 +4386,20 @@ const API_BACKUP = '/api/inkwell/backup'
           },
         }),
         h('div', { style: { ...S.aside, padding: '6px 0 4px' } }, describeSearchState(state)),
+        ),
+        h(
+          'div',
+          {
+            style: { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 8px' },
+            onScroll: (event) => {
+              const box = event.currentTarget
+              if (box.scrollTop + box.clientHeight < box.scrollHeight - 200) return
+              const total = (state.status === 'ready' && state.data.hits ? state.data.hits.length : 0)
+              if (shown < total) setShown(Math.min(total, shown + 60))
+            },
+          },
         state.status === 'ready'
-          ? state.data.hits.map((hit) =>
+          ? state.data.hits.slice(0, shown).map((hit) =>
               h(
                 'div',
                 { key: hit.number, style: { padding: '4px 0 6px', borderTop: '1px solid rgba(127,127,127,.18)' } },
@@ -4405,7 +4428,11 @@ const API_BACKUP = '/api/inkwell/backup'
               ),
             )
           : null,
+        state.status === 'ready' && (state.data.hits || []).length > shown
+          ? h('div', { style: { ...S.aside, textAlign: 'center', padding: '10px 0' } }, `往下滚，还有 ${(state.data.hits || []).length - shown} 章`)
+          : null,
         h('div', { style: S.spacerBlock }),
+        ),
       )
     }
 
@@ -4416,7 +4443,10 @@ const API_BACKUP = '/api/inkwell/backup'
       if (state.status === 'error') return `没搜成（${state.message}）`
       const data = state.data || {}
       if ((data.matched || 0) === 0) return `没有找到。看过的范围：${data.scanned || 0} 章。`
-      const more = data.truncated ? `，只列前 ${(data.hits || []).length} 章` : ''
+      // 「只列前 60 章」 was true and useless: there was no way to see the rest.
+      // Now the list is scrollable, so the sentence reports the total and lets the
+      // scrolling do the rest.
+      const more = data.truncated ? `（只收了前 ${(data.hits || []).length} 章，把词再具体一点）` : ''
       return `${data.matched} 章命中${more}`
     }
 
