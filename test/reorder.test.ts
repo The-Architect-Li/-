@@ -230,3 +230,24 @@ describe('a moved chapter says where it came from', () => {
     expect(raw.find((chapter) => chapter.number === 4)?.origin).toBeTruthy()
   })
 })
+
+describe('a merged chapter is not a stale card', () => {
+  it('moves the card revision forward with the prose', async () => {
+    // Merging rewrites the card in the same breath (beats joined, characters
+    // deduped, later hook kept), so the card describes the merged text. Leaving
+    // `cardRevision` behind made the row say 「卡过期」 the instant the merge
+    // finished — the author had not touched the chapter at all.
+    const store = await book()
+    await mergeChapters(store, 3)
+    const chapter = (await store.chapters()).find((item) => item.number === 3)
+    const plan = (await store.plans()).find((item) => item.number === 3)
+    expect((chapter?.revision ?? 0)).toBeLessThanOrEqual(plan?.cardRevision ?? 0)
+  })
+
+  it('still leaves the recap empty, because two recaps are not one', async () => {
+    const store = await book()
+    await mergeChapters(store, 3)
+    const plan = (await store.plans()).find((item) => item.number === 3)
+    expect(plan?.summary).toBe('')
+  })
+})

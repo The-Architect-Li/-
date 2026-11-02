@@ -388,6 +388,10 @@ export async function mergeChapters(store: ProjectStore, number: number): Promis
         characters: [...new Set([...keepPlan.characters, ...(absorbPlan?.characters ?? [])])],
         // A recap of two chapters is a new recap; nobody can write it from here.
         summary: '',
+        // The card was rewritten in this same operation, so it describes the
+        // merged prose — claiming it is stale would be wrong. What is missing is
+        // the recap, which is a different thing and says so on the page.
+        cardRevision: (keep.revision ?? 0) + 1,
       }
   const nextPlans = plans
     .filter((plan) => plan.number !== number + 1)

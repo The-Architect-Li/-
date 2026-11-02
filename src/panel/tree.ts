@@ -461,11 +461,15 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       // A card written from an older draft no longer describes the prose. The
       // row says so rather than leaving the author to compare two pages.
       const stale = cardIsStale(plan, chapter)
+      // A merged chapter keeps its card but has no recap: the old summary
+      // described half the text. That is not the same as being stale — the card
+      // is current, it is incomplete — and it needs its own word.
+      const needsRecap = !stale && plan !== undefined && (plan.summary ?? '').trim() === ''
       return {
         ...base,
-        chip: stale ? '卡过期' : '已完成',
+        chip: stale ? '卡过期' : needsRecap ? '待补摘要' : '已完成',
         aside: formatWords(chapter.words),
-        tone: stale ? 'warn' : 'done',
+        tone: stale || needsRecap ? 'warn' : 'done',
       }
     }
     if (draftCount > 0) return { ...base, chip: `${draftCount} 稿`, tone: 'warn' }
