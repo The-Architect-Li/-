@@ -102,3 +102,64 @@ export async function saveChapterBody(
   const clock = config.autoClock ? await adoptClock(store, number, text) : undefined
   return { draft: { ...draft, ...meta }, findings, ...(clock === undefined ? {} : { clock }) }
 }
+
+/**
+ * Save a chapter as a draft: contract check, deterministic scan, no commitment.
+ *
+ * Extracted from the tool because a whole round of the pipeline needs it: the
+ * writer hands back prose, and the next thing that must happen is exactly this
+ * — keep it as a draft, run the checks, and let the reviewers look. A caller
+ * that has to remember the order (scan with these names, rank, save, then
+ * dispatch) is a caller that will get it slightly wrong in one of the branches.
+ *
+ * Nothing here refuses the text. A draft is a candidate, and the reviewers are
+ * the ones who judge it; a contract error is recorded on the round so the
+ * author can see it, not thrown at the writer.
+ *
+ * @param store - the book.
+ * @param config - resolved configuration.
+ * @param input - chapter number, prose, and optional title/summary.
+ * @returns the round number, the findings, and their counts.
+ */
+export async function proposeDraft(
+  store: ProjectStore,
+  config: InkwellConfig,
+  input: { number: number; text: string; title?: string | undefined; summary?: string | undefined },
+): Promise<{ round: number; words: number; findings: Finding[]; errors: number; warnings: number }> {
+  const plan = (await store.plans()).find((item) => item.number === input.number)
+  if (plan === undefined) throw new Error(`第${input.number}章没有章纲。先 novel_outline add_chapter，再派发。`)
+  const contract = checkContract(plan, input.text, config)
+  const previous = await store.allChapters()
+  const round = (await store.draftsOf(input.number)).length + 1
+  const words = countChars(input.text)
+  const summary = input.summary?.trim() || deriveSummary(input.text)
+  const proper = [
+    ...properNames({
+      characters: await store.characters(),
+      places: await store.places(),
+      world: await store.world(),
+    }),
+    ...discoverOpeners(previous),
+  ]
+  const findings = rank([
+    ...contract,
+    ...scanChapter(
+      { number: input.number, title: input.title?.trim() || plan.title, text: input.text, words, summary, writtenAt: new Date().toISOString() },
+      previous,
+      config,
+      { proper },
+    ),
+  ])
+  const errors = findings.filter((finding) => finding.severity === 'error').length
+  const warnings = findings.filter((finding) => finding.severity === 'warn').length
+  await store.saveDraft({
+    number: input.number,
+    round,
+    text: input.text,
+    words,
+    summary,
+    autoFindings: findings,
+    writtenAt: new Date().toISOString(),
+  })
+  return { round, words, findings, errors, warnings }
+}

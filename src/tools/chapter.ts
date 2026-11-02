@@ -1,13 +1,12 @@
 /** `novel_chapter`: write, propose, commit, read, and list chapter bodies. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { checkContract, rank } from '../domain/contract.ts'
+import { checkContract } from '../domain/contract.ts'
 import { recordCoverage } from '../domain/records.ts'
-import { ChapterBlockedError, deriveSummary, saveChapterBody } from '../domain/save.ts'
-import { discoverOpeners, properNames, scanChapter } from '../domain/scan.ts'
+import { ChapterBlockedError, proposeDraft, saveChapterBody } from '../domain/save.ts'
 import { describeSearch, parseTerms, searchChapters } from '../domain/search.ts'
 import type { ProjectStore } from '../domain/store.ts'
-import { countChars, splitParagraphs } from '../domain/text.ts'
+import { splitParagraphs } from '../domain/text.ts'
 import type { ClockAdoption } from '../domain/timeline-edit.ts'
 import type { ChapterDraft, Finding, ReviewItem, ReviewRound } from '../domain/types.ts'
 import { formatFindings, tally, type ToolDeps } from './deps.ts'
@@ -236,33 +235,18 @@ export function registerChapterTool(ctx: Context, deps: ToolDeps): void {
       const contract = checkContract(plan, text, deps.config)
 
       if (args.action === 'propose') {
-        // A draft is saved as-is so the review pipeline can judge it. The
-        // deterministic findings ride along on the round, never blocking.
-        const previous = await store.allChapters()
-        const round = (await store.draftsOf(number)).length + 1
-        const words = countChars(text)
-        const proper = [
-          ...properNames({
-            characters: await store.characters(),
-            places: await store.places(),
-            world: await store.world(),
-          }),
-          ...discoverOpeners(previous),
-        ]
-        const findings = rank([
-          ...contract,
-          ...scanChapter({ number, title: args.title?.trim() || plan.title, text, words, summary: args.summary?.trim() || deriveSummary(text), writtenAt: new Date().toISOString() }, previous, deps.config, { proper }),
-        ])
-        const counts = tally(findings)
-        await store.saveDraft({
+        // The same function `novel_dispatch action="round"` calls, so a draft
+        // filed by hand and a draft filed by a round are the same object.
+        const filed = await proposeDraft(store, deps.config, {
           number,
-          round,
           text,
-          words,
-          summary: args.summary?.trim() || deriveSummary(text),
-          autoFindings: findings,
-          writtenAt: new Date().toISOString(),
+          ...(args.title === undefined ? {} : { title: args.title }),
+          ...(args.summary === undefined ? {} : { summary: args.summary }),
         })
+        const round = filed.round
+        const words = filed.words
+        const findings = filed.findings
+        const counts = { errors: filed.errors, warnings: filed.warnings }
         return {
           number,
           words,
