@@ -1743,6 +1743,9 @@ const API_BACKUP = '/api/inkwell/backup'
 .iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
 @keyframes iw-spin-turn { to { transform: rotate(360deg); } }
 .iw-spin { animation: iw-spin-turn 0.9s linear infinite; }
+.iw-receipt { transition: border-color .2s ease; }
+.iw-receipt .iw-receipt-action { opacity: 0; max-height: 0; overflow: hidden; transition: opacity .18s ease; }
+.iw-receipt:hover .iw-receipt-action { opacity: 1; max-height: 60px; }
 .iw-row:hover .iw-row-menu, .iw-row-menu:focus-visible { opacity: 1; }
 .iw-menu-item:not(:disabled):hover { background: var(--iw-surface-hover); }
 .iw-menu-item:not(:disabled):active { background: var(--iw-surface); }
@@ -3813,7 +3816,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Detail(props) {
-      const { sessionId, root, target, onBack, onChanged, onRecap, busyRecap, recapResult } = props
+      const { sessionId, root, target, onBack, onChanged, onRecap, busyRecap, recapResult, epoch } = props
       const [state, setState] = useState({ status: 'loading' })
       const [editing, setEditing] = useState(false)
       const [draft, setDraft] = useState({})
@@ -3844,7 +3847,7 @@ const API_BACKUP = '/api/inkwell/backup'
             setState({ status: 'error', message: String((failure && failure.message) || failure) })
           })
         return () => controller.abort()
-      }, [sessionId, root, target.kind, target.key])
+      }, [sessionId, root, target.kind, target.key, epoch])
 
       const data = state.status === 'ready' ? state.data : null
       const inputs = data && data.edit && Array.isArray(data.edit.inputs) ? data.edit.inputs : []
@@ -4071,7 +4074,38 @@ const API_BACKUP = '/api/inkwell/backup'
 
       // The gate's sentence alone leaves the reader with nowhere to go. When the
       // fix is one action, the action is a button.
-      const notice = data.blocked
+      // Once the card lands, the warning is no longer true: the chapter has a card.
+      // So the whole box goes, and what replaces it is a receipt that fades on its
+      // own — a sentence the author has already read does not need to be dismissed.
+      const justBuilt = recapResult !== null && recapResult !== undefined && recapResult.done && recapResult.error === '' && data.action !== undefined
+        ? recapResult
+        : null
+      const notice = justBuilt !== null && justBuilt !== undefined
+        ? h(
+            'div',
+            {
+              className: justBuilt.fading ? undefined : 'iw-receipt',
+              style: { ...S.blocked, borderStyle: 'solid', opacity: justBuilt.fading ? 0 : 1, transition: 'opacity 1.2s ease' },
+            },
+            h('div', null, `章卡已写好：${String(justBuilt.summary || '').slice(0, 70)}…`),
+            // The button stays, but quietly: it appears when the pointer is over the
+            // receipt, so a rebuild is still one click away without a spent button
+            // sitting there inviting a second model call.
+            data.action
+              ? h(
+                  'div',
+                  { className: 'iw-receipt-action', style: { paddingTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+                  h('button', {
+                    type: 'button',
+                    className: 'iw-btn',
+                    style: S.iconButton,
+                    onClick: () => onRecap(data.action.number),
+                  }, '重建这张卡'),
+                  h('span', { style: { ...S.aside, maxWidth: '100%' } }, '鼠标移开就收起来'),
+                )
+              : null,
+          )
+        : data.blocked
         ? h(
             'div',
             { style: S.blocked },
@@ -4095,7 +4129,7 @@ const API_BACKUP = '/api/inkwell/backup'
             // view, and somebody watching this button should not have to leave it to
             // find out that the read failed.
             busyRecap === null || busyRecap === undefined
-              ? recapResult !== null && recapResult !== undefined && recapResult.number === data.action?.number
+              ? recapResult !== null && recapResult !== undefined && recapResult.number === data.action?.number && recapResult.error !== ''
                 ? h('div', {
                     style: {
                       paddingTop: '8px',
@@ -4548,6 +4582,10 @@ const API_BACKUP = '/api/inkwell/backup'
       const [mergeAsk, setMergeAsk] = useState(null)
       // { number, seconds, done, error } while the archivist is reading.
       const [recapJob, setRecapJob] = useState(null)
+      // Bumped when a card lands, so the open detail page re-reads itself instead of
+      // keeping its cached warning: the page would otherwise show 「还没有章卡」 right
+      // under a receipt saying the card was written.
+      const [entryEpoch, setEntryEpoch] = useState(0)
       const [menuNote, setMenuNote] = useState('')
       const [detail, setDetail] = useState(null)
       // The create dialog: the folder the chooser returned, or null when closed.
@@ -5034,6 +5072,11 @@ const API_BACKUP = '/api/inkwell/backup'
           .then((output) => {
             settled = true
             setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: '', summary: output.summary })
+            // A receipt, not a notification centre. Long enough to read the opening
+            // of the summary, short enough that it is gone before it becomes clutter.
+            setEntryEpoch((n) => n + 1)
+            setTimeout(() => setRecapJob((current) => (current === null ? current : { ...current, fading: true })), 3000)
+            setTimeout(() => setRecapJob((current) => (current === null || current.error !== '' ? current : null)), 4300)
             return refresh()
           })
           .catch((failure) => {
@@ -5242,6 +5285,7 @@ const API_BACKUP = '/api/inkwell/backup'
             onRecap: startRecap,
             busyRecap: recapJob !== null && recapJob !== undefined && !recapJob.done ? recapJob.number : null,
             recapResult: recapJob !== null && recapJob !== undefined && recapJob.done ? recapJob : null,
+            epoch: entryEpoch,
             onBack: () => setView('tree'),
             // A save can change a count (a chapter's words) or a state chip, so the
             // tree behind the page is re-read rather than left stale.
