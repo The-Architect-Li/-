@@ -458,7 +458,18 @@ export async function archiveChapter(
     role.outputContract,
   )
   try {
-    const output = await runRole(ctx, role.persona, prompt, exec as never, route, 'inkwell-recap')
+    // A hard ceiling. Waiting forever is what the panel showed as 「正在读…」 with no
+    // end: `run.result` has no timeout of its own, so a child that never settles
+    // holds the HTTP request open indefinitely and the button never comes back.
+    // Two minutes is well past how long one chapter takes and still finite.
+    const output = await Promise.race([
+      runRole(ctx, role.persona, prompt, exec as never, route, 'inkwell-recap'),
+      new Promise<string>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error(`档案员两分钟没有返回（第${number}章）。可能模型侧卡住了，换一个模型或稍后再试。`)), 120_000)
+        // Do not keep the process alive for this timer.
+        if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+      }),
+    ])
     const [card] = parseArchiveOutput(output)
     if (card === undefined || card.number !== number) {
       return { ok: false, summary: '', error: '档案员这次没给出这一章的卡（输出没解析出来）。' }

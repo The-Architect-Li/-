@@ -1525,13 +1525,17 @@ export async function recapRoute(
       )
     }
     const store = storeFor(deps, sessionId, root)
+    // The signal is not decorative: it cancels the child when the two-minute cap
+    // fires, so a stuck model does not leave a subagent running behind a closed
+    // request.
+    const controller = new AbortController()
     const recap = await archiveChapter(
       ctx as never,
       { config: deps.config, storeFor: () => store } as never,
       store,
       number,
-      { agent, signal: new AbortController().signal },
-    )
+      { agent, signal: controller.signal },
+    ).finally(() => controller.abort())
     if (!recap.ok) throw new PanelInputError(recap.error ?? '摘要没写成。', 409)
     return { status: 200, body: { ok: true, data: { number, summary: recap.summary } } }
   } catch (error) {

@@ -3813,7 +3813,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Detail(props) {
-      const { sessionId, root, target, onBack, onChanged, onRecap, busyRecap } = props
+      const { sessionId, root, target, onBack, onChanged, onRecap, busyRecap, recapResult } = props
       const [state, setState] = useState({ status: 'loading' })
       const [editing, setEditing] = useState(false)
       const [draft, setDraft] = useState({})
@@ -4090,6 +4090,22 @@ const API_BACKUP = '/api/inkwell/backup'
                   }, busyRecap !== null && busyRecap !== undefined && busyRecap === data.action.number ? '正在读…' : data.action.label),
                   h('span', { style: { ...S.aside, maxWidth: '100%' } }, data.action.hint),
                 )
+              : null,
+            // The result has to land on this page too: the list above is a different
+            // view, and somebody watching this button should not have to leave it to
+            // find out that the read failed.
+            busyRecap === null || busyRecap === undefined
+              ? recapResult !== null && recapResult !== undefined && recapResult.number === data.action?.number
+                ? h('div', {
+                    style: {
+                      paddingTop: '8px',
+                      fontSize: '12px',
+                      color: recapResult.error === '' ? 'var(--iw-fg)' : 'var(--iw-danger-fg)',
+                    },
+                  }, recapResult.error === ''
+                    ? `已写好：${String(recapResult.summary || '').slice(0, 60)}…`
+                    : recapResult.error)
+                : null
               : null,
           )
         : null
@@ -5000,15 +5016,28 @@ const API_BACKUP = '/api/inkwell/backup'
       const startRecap = useCallback((number) => {
         setRecapJob({ number, seconds: 0, done: false, error: '' })
         const started = Date.now()
+        let settled = false
         const ticker = setInterval(() => {
-          setRecapJob((current) => (current === null || current.done ? current : { ...current, seconds: Math.round((Date.now() - started) / 1000) }))
+          const elapsed = Math.round((Date.now() - started) / 1000)
+          // Client-side backstop. The server has its own two-minute cap, but if the
+          // request never comes back at all — a dropped connection, a proxy that
+          // holds it — the button would stay on 「正在读…」 forever.
+          if (!settled && elapsed > 150) {
+            settled = true
+            clearInterval(ticker)
+            setRecapJob({ number, seconds: elapsed, done: true, error: '等了两分半还没回来，先当成失败。可以再点一次，或者检查档案员的模型。', summary: '' })
+            return
+          }
+          setRecapJob((current) => (current === null || current.done ? current : { ...current, seconds: elapsed }))
         }, 1000)
         recapChapter(sessionId, root, number)
           .then((output) => {
+            settled = true
             setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: '', summary: output.summary })
             return refresh()
           })
           .catch((failure) => {
+            settled = true
             setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: String((failure && failure.message) || failure), summary: '' })
           })
           .finally(() => clearInterval(ticker))
@@ -5212,6 +5241,7 @@ const API_BACKUP = '/api/inkwell/backup'
             target: detail,
             onRecap: startRecap,
             busyRecap: recapJob !== null && recapJob !== undefined && !recapJob.done ? recapJob.number : null,
+            recapResult: recapJob !== null && recapJob !== undefined && recapJob.done ? recapJob : null,
             onBack: () => setView('tree'),
             // A save can change a count (a chapter's words) or a state chip, so the
             // tree behind the page is re-read rather than left stale.
