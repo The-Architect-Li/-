@@ -1392,10 +1392,16 @@ const API_BACKUP = '/api/inkwell/backup'
         padding: '4px',
         borderRadius: '9px',
         border: '1px solid var(--iw-line-strong)',
-        // `--iw-bg` does not exist in this panel's palette — the menu came out
-        // fully transparent and the row underneath showed through its text.
-        // `surface-active` is the opaque step the hover states already use.
-        background: 'var(--iw-surface-active)',
+        // The panel is a glass UI: every surface token is a few percent of
+        // CanvasText mixed with `transparent`, which is right for rows sitting on
+        // the panel but wrong for a popover — at 14% the row underneath reads
+        // straight through the menu. So: an opaque system colour as the floor,
+        // the theme tint layered on top of it. Same palette, no see-through.
+        // `backgroundColor`, not the `background` shorthand: the shorthand resets
+        // background-image, and whichever of the two the renderer applies last
+        // wins. This pair has to survive in one order only.
+        backgroundColor: 'Canvas',
+        backgroundImage: 'linear-gradient(var(--iw-surface-active), var(--iw-surface-active))',
         boxShadow: '0 10px 28px rgba(0,0,0,.45)',
         display: 'flex',
         flexDirection: 'column',
