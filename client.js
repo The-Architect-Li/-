@@ -59,6 +59,7 @@ window.__ModuleLoader__.load({
     const API_NEW = '/api/inkwell/new'
     const API_PENDING = '/api/inkwell/pending'
     const API_SEARCH = '/api/inkwell/search'
+    const API_ROUND = '/api/inkwell/round'
     const API_ENTRY = '/api/inkwell/entry'
     const API_BOOKS = '/api/inkwell/books'
     const API_PIN = '/api/inkwell/pin'
@@ -836,6 +837,23 @@ const API_BACKUP = '/api/inkwell/backup'
       world: '新建设定',
       volume: '新建分卷',
       story: '新建故事点',
+    }
+
+    /** Run one chapter through the whole studio. Minutes, not milliseconds. */
+    async function runRoundRequest(sessionId, root, number) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_ROUND}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
     }
 
     /** Full-text search over every chapter. */
@@ -3554,6 +3572,9 @@ const API_BACKUP = '/api/inkwell/backup'
       // the label on the panel says out loud.
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
+      const [roundBusy, setRoundBusy] = useState(false)
+      const [roundReport, setRoundReport] = useState('')
+      const [roundError, setRoundError] = useState('')
 
       const openHistory = async () => {
         if (panel === 'history') { setPanel('none'); return }
@@ -3659,6 +3680,35 @@ const API_BACKUP = '/api/inkwell/backup'
           : null,
         data && isChapter
           ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openCard }, panel === 'card' ? '收起' : '派单书')
+          : null,
+        // The pipeline used to live only in the documentation: write, propose,
+        // two reviews, chief, commit — six steps and five tool names, none of
+        // them visible here. One button, and the report comes back in the page.
+        data && isChapter
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.iconButton, ...(roundBusy ? { opacity: 0.6 } : {}) },
+                disabled: roundBusy,
+                title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
+                onClick: () => {
+                  setRoundBusy(true)
+                  setRoundReport('')
+                  setRoundError('')
+                  runRoundRequest(sessionId, root, Number(target.key))
+                    .then((output) => {
+                      setRoundReport(output.report || '')
+                      if (onChanged) onChanged()
+                    })
+                    .catch((failure) => setRoundError(String((failure && failure.message) || failure)))
+                    .finally(() => setRoundBusy(false))
+                  return undefined
+                },
+              },
+              roundBusy ? '跑一轮中…' : '走一轮',
+            )
           : null,
         data && editable
           ? editing
@@ -3863,6 +3913,22 @@ const API_BACKUP = '/api/inkwell/backup'
         head,
         crumbLine,
         heading,
+        // The round's report lands here: it is a page of text, and the author is
+        // already looking at this chapter.
+        roundBusy
+          ? h('div', { style: { ...S.note, padding: '6px 0' } }, '写手、两位审核、总裁决正在依次过这一章，可能要几分钟。没有自动定稿，跑完你自己决定。')
+          : null,
+        roundError !== '' ? h('div', { style: { ...S.error, padding: '6px 0' } }, roundError) : null,
+        roundReport !== ''
+          ? h(
+              'div',
+              { style: { padding: '6px 0 10px', borderTop: '1px solid rgba(127,127,127,.18)' } },
+              h('div', { style: { ...S.fieldLabel, paddingBottom: '4px' } }, '这一轮的结果'),
+              ...roundReport.split('\n').map((line, index) =>
+                h('div', { key: `r${index}`, style: { ...S.aside, maxWidth: '100%', padding: '1px 0' } }, line === '' ? ' ' : line),
+              ),
+            )
+          : null,
         notice,
         historyPanel,
         cardPanel,

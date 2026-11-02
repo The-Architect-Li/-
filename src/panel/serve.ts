@@ -70,6 +70,7 @@ import { PENDING_LABEL, describePending, readPending, removePending } from '../d
 import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
+import { runRound } from '../tools/dispatch.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
 import {
@@ -126,6 +127,17 @@ export interface PanelDeps {
    * shows the team without a picker rather than failing to load.
    */
   llmOf?: () => LlmCatalogSource | undefined
+  /**
+   * The live agent for one session, when the host exposes one.
+   *
+   * The panel can start a whole round from a button only if it can name the
+   * parent agent: a delegation has to belong to somebody. Absent means the
+   * button is not drawn, because a button that silently does nothing is worse
+   * than no button.
+   */
+  agentOf?: (sessionId: string) => unknown
+  /** Plugin context, needed to spawn the children a round delegates to. */
+  ctxOf?: () => unknown
 }
 
 /** One answered request, before it becomes bytes. */
@@ -1434,6 +1446,55 @@ export async function cardRoute(
  * @param root - an absolute project directory, when the browser named one.
  * @returns the hits, each with its chapter number so a click can open it.
  */
+/**
+ * Run one chapter through the whole studio, from a button.
+ *
+ * The same four spawns `novel_dispatch action="round"` makes, so the panel and
+ * the conversation cannot drift apart. It is synchronous on purpose: the answer
+ * is a report the author reads, and a job id plus a poll interval would be three
+ * more things to get wrong for a request that already takes minutes.
+ *
+ * Returns 409 with a plain sentence when the host cannot give us the parent
+ * agent — a button that does nothing is worse than a sentence saying why.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, which owns the agent.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the round's report.
+ */
+export async function roundRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const number = Number(body.number)
+    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('要跑第几章？number 要是正整数。')
+    const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
+    const ctx = deps.ctxOf?.()
+    if (agent === undefined || ctx === undefined) {
+      throw new PanelInputError(
+        '面板拿不到这个会话的 agent，不能直接派子智能体。改用对话：novel_dispatch action="round" number=' + number,
+        409,
+      )
+    }
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
+    const controller = new AbortController()
+    const result = await runRound(
+      ctx as never,
+      { config: deps.config, storeFor: () => store },
+      { number },
+      { agent, signal: controller.signal },
+    )
+    return { status: 200, body: { ok: true, data: { report: String(result.report ?? ''), words: Number(result.words ?? 0) } } }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function searchRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2215,6 +2276,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await addChapterRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/round') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/round 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await roundRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

@@ -444,7 +444,7 @@ interface RoundReview {
  * @param exec - execution context, for the parent agent.
  * @returns the summary the author reads.
  */
-async function runRound(
+export async function runRound(
   ctx: Context,
   deps: ToolDeps,
   args: { number: number; directive?: string },

@@ -106,6 +106,14 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
           // providers after this plugin was applied, and a picker showing the
           // registry from mount time would offer providers that are gone.
           llmOf: () => ctx.get('llm') as unknown as LlmCatalogSource | undefined,
+          // A round started from the panel delegates from the session's own
+          // agent: `agents.get(id)` is keyed by agent id, which for a session's
+          // agent is the session id.
+          agentOf: (sessionId) => {
+            const agents = ctx.get('agents') as unknown as { get?: (id: string) => unknown } | undefined
+            return typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
+          },
+          ctxOf: () => ctx,
         }),
       }),
       'inkwell: panel route',
