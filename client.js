@@ -60,6 +60,14 @@ window.__ModuleLoader__.load({
     const API_PENDING = '/api/inkwell/pending'
     const API_SEARCH = '/api/inkwell/search'
     const API_ROUND = '/api/inkwell/round'
+
+    /** The four stages of a round, in the order they run. */
+    const ROUND_STAGES = [
+      { id: 'writer', label: '写手', doing: '写手正在写这一章' },
+      { id: 'logic', label: '逻辑审核', doing: '逻辑审核在找漏洞' },
+      { id: 'character', label: '人物审核', doing: '人物审核在核对口吻' },
+      { id: 'chief', label: '总裁决', doing: '总裁决在汇总两份意见' },
+    ]
     const API_MOVE = '/api/inkwell/move'
     const API_MERGE = '/api/inkwell/merge'
     const API_RECAP = '/api/inkwell/recap'
@@ -893,8 +901,8 @@ const API_BACKUP = '/api/inkwell/backup'
       return payload.data
     }
 
-    /** Run one chapter through the whole studio. Minutes, not milliseconds. */
-    async function runRoundRequest(sessionId, root, number) {
+    /** Start one round. Returns a job id; the work continues on the server. */
+    async function startRound(sessionId, root, number) {
       const params = []
       if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
       if (root) params.push(`root=${encodeURIComponent(root)}`)
@@ -903,6 +911,16 @@ const API_BACKUP = '/api/inkwell/backup'
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ number }),
       })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Ask where that job got to. Cheap: it reads a field in memory. */
+    async function readRound(id) {
+      const response = await fetch(`${API_ROUND}?id=${encodeURIComponent(id)}`)
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
         throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
@@ -3838,7 +3856,7 @@ const API_BACKUP = '/api/inkwell/backup'
       // the label on the panel says out loud.
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
-      const [roundBusy, setRoundBusy] = useState(false)
+      const [roundJob, setRoundJob] = useState(null)
       const [roundReport, setRoundReport] = useState('')
       const [roundError, setRoundError] = useState('')
 
@@ -3956,24 +3974,46 @@ const API_BACKUP = '/api/inkwell/backup'
               {
                 type: 'button',
                 className: 'iw-btn',
-                style: { ...S.iconButton, ...(roundBusy ? { opacity: 0.6 } : {}) },
-                disabled: roundBusy,
+                style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}) },
+                disabled: roundJob !== null && roundJob !== undefined && !roundJob.done,
                 title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
                 onClick: () => {
-                  setRoundBusy(true)
                   setRoundReport('')
                   setRoundError('')
-                  runRoundRequest(sessionId, root, Number(target.key))
-                    .then((output) => {
-                      setRoundReport(output.report || '')
-                      if (onChanged) onChanged()
+                  const number = Number(target.key)
+                  setRoundJob({ stage: 'writer', elapsed: 0, number, done: false })
+                  startRound(sessionId, root, number)
+                    .then((started) => {
+                      // Poll until the server says the last role is finished. One
+                      // second is fast enough to see each stage and slow enough
+                      // not to matter.
+                      const timer = setInterval(() => {
+                        readRound(started.id)
+                          .then((state) => {
+                            setRoundJob({ stage: state.stage, elapsed: state.elapsed, number, done: state.done })
+                            if (!state.done) return undefined
+                            clearInterval(timer)
+                            if (state.error !== '') setRoundError(state.error)
+                            else setRoundReport(state.report || '')
+                            if (onChanged) onChanged()
+                            return undefined
+                          })
+                          .catch((failure) => {
+                            clearInterval(timer)
+                            setRoundError(String((failure && failure.message) || failure))
+                            setRoundJob(null)
+                          })
+                      }, 1000)
+                      return undefined
                     })
-                    .catch((failure) => setRoundError(String((failure && failure.message) || failure)))
-                    .finally(() => setRoundBusy(false))
+                    .catch((failure) => {
+                      setRoundError(String((failure && failure.message) || failure))
+                      setRoundJob(null)
+                    })
                   return undefined
                 },
               },
-              roundBusy ? '跑一轮中…' : '走一轮',
+              roundJob !== null && roundJob !== undefined && !roundJob.done ? '跑一轮中…' : '走一轮',
             )
           : null,
         data && editable
@@ -4188,8 +4228,39 @@ const API_BACKUP = '/api/inkwell/backup'
         chart,
         // The round's report lands here: it is a page of text, and the author is
         // already looking at this chapter.
-        roundBusy
-          ? h('div', { style: { ...S.note, padding: '6px 0' } }, '写手、两位审核、总裁决正在依次过这一章，可能要几分钟。没有自动定稿，跑完你自己决定。')
+        // Which role has the pen right now. A round is four model calls; saying
+        // only 「跑一轮中」 for four minutes is indistinguishable from a hang.
+        roundJob !== null && roundJob !== undefined && !roundJob.done
+          ? h(
+              'div',
+              { style: { ...S.note, padding: '8px 10px', margin: '4px 0 8px' } },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '6px' } },
+                h('span', { className: 'iw-spin', style: { display: 'inline-block', width: '11px', height: '11px', border: '1.5px solid var(--iw-line-strong)', borderTopColor: 'var(--iw-accent)', borderRadius: '50%', flex: '0 0 auto' } }),
+                h('span', { style: { fontSize: '12.5px', color: 'var(--iw-fg)' } },
+                  `${ROUND_STAGES.find((item) => item.id === roundJob.stage)?.doing || '正在处理'}… ${roundJob.elapsed}s`),
+              ),
+              h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap' } },
+                ...ROUND_STAGES.map((item) => {
+                  const at = ROUND_STAGES.findIndex((entry) => entry.id === roundJob.stage)
+                  const mine = ROUND_STAGES.findIndex((entry) => entry.id === item.id)
+                  const state = mine < at ? 'done' : mine === at ? 'now' : 'wait'
+                  return h('span', {
+                    key: item.id,
+                    style: {
+                      fontSize: '11.5px',
+                      padding: '1px 7px',
+                      borderRadius: '999px',
+                      border: '1px solid var(--iw-line)',
+                      color: state === 'now' ? 'var(--iw-accent)' : state === 'done' ? 'var(--iw-fg-2)' : 'var(--iw-fg-3)',
+                      borderColor: state === 'now' ? 'var(--iw-accent-line)' : 'var(--iw-line)',
+                      backgroundColor: state === 'now' ? 'var(--iw-accent-soft)' : 'transparent',
+                      opacity: state === 'wait' ? 0.5 : 1,
+                    },
+                  }, `${state === 'done' ? '✓ ' : state === 'now' ? '▶ ' : ''}${item.label}`)
+                }),
+              ),
+              h('div', { style: { ...S.aside, paddingTop: '5px' } }, '没有自动定稿，跑完你自己决定。'),
+            )
           : null,
         roundError !== '' ? h('div', { style: { ...S.error, padding: '6px 0' } }, roundError) : null,
         roundReport !== ''

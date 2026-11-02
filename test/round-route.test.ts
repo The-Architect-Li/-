@@ -70,11 +70,13 @@ describe('POST /round', () => {
     }
   })
 
-  it('is not reachable by GET', async () => {
+  it('answers a GET without an id by saying the job is gone', async () => {
+    // GET is how the panel polls; without an id there is nothing to report, and
+    // saying so beats a 405 that the poller would have to special-case.
     const app = await serve()
     try {
-      const response = await fetch(`${app.base}/round?number=1`)
-      expect(response.status).toBe(405)
+      const response = await fetch(`${app.base}/round`)
+      expect(response.status).toBe(404)
     } finally {
       await app.close()
     }
@@ -96,6 +98,45 @@ describe('POST /merge with summarize', () => {
       })
       // No chapters in this fixture, so the merge itself refuses first.
       expect([400, 409]).toContain(response.status)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+describe('POST /round as a job', () => {
+  it('answers with a job id instead of waiting for four model calls', async () => {
+    // The old shape held the HTTP response open for minutes. The panel could only
+    // say 「跑一轮中」 and hope, and could not distinguish a slow writer from a hang.
+    const app = await serve({ agentOf: () => ({}), ctxOf: () => ({}) })
+    try {
+      const response = await fetch(`${app.base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ number: 1 }),
+      })
+      // This fixture has no chapters, so the round fails — but the failure is now
+      // reported through the job, not as a 500 on the way in.
+      expect([200, 409]).toContain(response.status)
+      if (response.status === 200) {
+        const payload = (await response.json()) as { data: { id: string; stage: string } }
+        expect(typeof payload.data.id).toBe('string')
+        expect(payload.data.stage).toBe('writer')
+        const status = await fetch(`${app.base}/round?id=${encodeURIComponent(payload.data.id)}`)
+        expect(status.status).toBe(200)
+      }
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('says a job is gone rather than inventing progress', async () => {
+    const app = await serve()
+    try {
+      const response = await fetch(`${app.base}/round?id=nope`)
+      expect(response.status).toBe(404)
+      const payload = (await response.json()) as { error: { message: string } }
+      expect(payload.error.message).toContain('不在内存里')
     } finally {
       await app.close()
     }

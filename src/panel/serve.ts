@@ -1610,6 +1610,25 @@ export async function moveRoute(
   }
 }
 
+/**
+ * One run of the studio's four stages, as a job the panel can watch.
+ *
+ * A round is four model calls in a row — minutes of wall time — and folding all
+ * four into one HTTP response meant the panel could only say 「跑一轮中…」 and hope.
+ * The author could not tell a slow writer from a hang, and the writer is usually
+ * the slow one.
+ *
+ * So: this answers immediately with a job id, the work continues in the
+ * background, and `GET /round?id=…` reports which role is holding the pen. The
+ * job lives in memory only — a DSH restart loses the progress view, but a restart
+ * also kills the round itself, so there is nothing to report anyway.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session, which owns the agent.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the job id, or why no job could start.
+ */
 export async function roundRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -1629,16 +1648,78 @@ export async function roundRoute(
     }
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
-    const controller = new AbortController()
-    const result = await runRound(
+
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const job: RoundJob = { id, number, stage: 'writer', started: Date.now(), report: '', error: '', done: false }
+    ROUND_JOBS.set(id, job)
+    // Keep the map from growing without bound in a long-lived panel.
+    if (ROUND_JOBS.size > 20) {
+      const oldest = [...ROUND_JOBS.values()].sort((a, b) => a.started - b.started)[0]
+      if (oldest !== undefined) ROUND_JOBS.delete(oldest.id)
+    }
+
+    void runRound(
       ctx as never,
-      { config: deps.config, storeFor: () => store },
+      { config: deps.config, storeFor: () => store } as never,
       { number },
-      { agent, signal: controller.signal },
+      { agent, signal: new AbortController().signal },
+      (stage) => {
+        const current = ROUND_JOBS.get(id)
+        if (current !== undefined) ROUND_JOBS.set(id, { ...current, stage })
+      },
     )
-    return { status: 200, body: { ok: true, data: { report: String(result.report ?? ''), words: Number(result.words ?? 0) } } }
+      .then((result) => {
+        ROUND_JOBS.set(id, { ...job, stage: 'done', done: true, report: String(result.report ?? ''), error: '' })
+      })
+      .catch((error) => {
+        ROUND_JOBS.set(id, { ...job, stage: 'done', done: true, report: '', error: String((error as Error).message ?? error) })
+      })
+
+    return { status: 200, body: { ok: true, data: { id, number, stage: 'writer' } } }
   } catch (error) {
     return failure(error)
+  }
+}
+
+/** A round in flight: which role has it, and what came out. */
+interface RoundJob {
+  id: string
+  number: number
+  stage: string
+  started: number
+  report: string
+  error: string
+  done: boolean
+}
+
+/** Rounds currently running in this process, by job id. */
+const ROUND_JOBS = new Map<string, RoundJob>()
+
+/**
+ * Report on a running round.
+ *
+ * @param id - the job id from `/round`.
+ * @returns its stage, and the report once it finishes.
+ */
+export async function roundStatusRoute(id: string | undefined): Promise<PanelAnswer> {
+  const job = id === undefined ? undefined : ROUND_JOBS.get(id)
+  if (job === undefined) {
+    return { status: 404, body: { ok: false, error: { message: '这个跑批任务已经不在内存里了（应用可能重启过）。' } } }
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      data: {
+        id: job.id,
+        number: job.number,
+        stage: job.stage,
+        done: job.done,
+        elapsed: Math.round((Date.now() - job.started) / 1000),
+        report: job.report,
+        error: job.error,
+      },
+    },
   }
 }
 
@@ -2490,8 +2571,10 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
       }
 
       if (path === '/round') {
+        // GET polls a job. POST starts one. Same path, two verbs, because the
+        // poll is about the thing the POST created.
         if (isRead) {
-          send(res, { status: 405, body: { ok: false, error: { message: '/round 需要 POST' } } })
+          send(res, await roundStatusRoute(url.searchParams.get('id') ?? undefined))
           return
         }
         send(

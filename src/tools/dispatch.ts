@@ -417,6 +417,9 @@ async function dispatchOne(
     }
 }
 
+/** Where a round is, for whoever is watching it. */
+export type RoundStage = 'writer' | 'logic' | 'character' | 'chief' | 'done'
+
 /** What one review role reported, as the round summarises it. */
 interface RoundReview {
   errors?: number
@@ -449,6 +452,7 @@ export async function runRound(
   deps: ToolDeps,
   args: { number: number; directive?: string },
   exec: { agent?: unknown; signal: AbortSignal },
+  onStage?: (stage: RoundStage) => void,
 ): Promise<Record<string, unknown>> {
   const store = deps.storeFor(exec)
   const number = args.number
@@ -459,6 +463,7 @@ export async function runRound(
     ...extra,
   })
 
+  onStage?.('writer')
   const written = await dispatchOne(ctx, deps, 'writer', pass({}), exec)
   const text = String(written.text ?? '')
   if (text.trim() === '') {
@@ -471,8 +476,11 @@ export async function runRound(
 
   // Sequential, not parallel: one workshop, one notebook, and a report that
   // reads in the order the author thinks.
+  onStage?.('logic')
   const logic = (await dispatchOne(ctx, deps, 'logic', pass({}), exec)) as unknown as RoundReview
+  onStage?.('character')
   const character = (await dispatchOne(ctx, deps, 'character', pass({}), exec)) as unknown as RoundReview
+  onStage?.('chief')
   const chief = (await dispatchOne(
     ctx,
     deps,
