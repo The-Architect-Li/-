@@ -181,7 +181,12 @@ export function registerCheckTool(ctx: Context, deps: ToolDeps): void {
       }
 
       if (args.action === 'presence') {
-        const report = presenceOf(snapshot.plans, snapshot.chapters)
+        // Cards first, prose as a fallback: a book that has never run the
+        // archivist still knows who walked on, because their names are in it.
+        const report = presenceOf(snapshot.plans, snapshot.chapters, {
+          drafts,
+          people: snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases })),
+        })
         return {
           errors: 0,
           warnings: silentPeople(report).length,

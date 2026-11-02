@@ -221,6 +221,15 @@ export function describeShape(report: ShapeReport): string {
     // Saying "each card's hook connects" when there are no cards at all is a
     // sentence that sounds like good news and means nothing.
     lines.push('还没有任何章卡，钩子断档无从判断。章卡到位后这一项才有意义：novel_archive action="plan"', '')
+  } else if (report.carded < report.written / 2) {
+    // One card out of five hundred is not a clean bill of health either: the
+    // absence of dry spells here means the cards are missing, not that the book
+    // pulls on every chapter.
+    lines.push(
+      `只有 ${report.carded} / ${report.written} 章有章卡，钩子这一项只覆盖了这些章，不能当全书的结论。`,
+      '补齐办法：novel_archive action="plan" 看缺哪些，再 action="apply" 让档案员分批读。',
+      '',
+    )
   } else if (report.drySpells.length > 0) {
     const top = report.drySpells.slice(0, 3)
     lines.push(`章末没有钩子的连续段落（${report.drySpells.length} 段）：`)

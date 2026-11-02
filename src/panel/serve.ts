@@ -1661,7 +1661,10 @@ export async function readEntry(
     // rather than costing the browser a second request to show a preview.
     const prose = aboutChapter ? (await store.chapter(number))?.text : undefined
     const reviewRounds = kind === 'chapter' && aboutChapter ? await store.reviews(number) : []
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key ?? '', drafts, store.root, prose, reviewRounds)
+    // The presence page needs the prose itself: with no cards, the only way to
+    // know who walked on is to look. Read here, once, and only for this page.
+    const all = kind === 'presence' ? await store.allChapters() : undefined
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key ?? '', drafts, store.root, prose, reviewRounds, all)
     if (entry === undefined) {
       return {
         status: 404,
@@ -2000,7 +2003,8 @@ export async function writeEntry(
     const drafts: ChapterDrafts[] = aboutChapter ? [{ number, rounds: await store.draftsOf(number) }] : []
     const prose = aboutChapter ? (await store.chapter(number))?.text : undefined
     const reviewRounds = kind === 'chapter' && aboutChapter ? await store.reviews(number) : []
-    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds)
+    const all = (kind as string) === 'presence' ? await store.allChapters() : undefined
+    const entry = buildEntry(snapshot, kind as PanelEntryKind, key, drafts, store.root, prose, reviewRounds, all)
     return { status: 200, body: { ok: true, data: entry ?? null } }
   } catch (error) {
     if (error instanceof PanelInputError) {

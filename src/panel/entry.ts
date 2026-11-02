@@ -15,6 +15,7 @@
  * its edit view are always describing the same book.
  */
 import type { ChapterDrafts } from './model.ts'
+import type { ChapterDraft } from '../domain/types.ts'
 import type { PanelEntryKind } from './tree.ts'
 import { presentInText } from '../domain/cards.ts'
 import { cardIsStale } from '../domain/review-window.ts'
@@ -899,8 +900,11 @@ function shapePage(snapshot: Snapshot, root: string): EntryPayload {
  * @param root - project directory, for the footer.
  * @returns the page.
  */
-function presencePage(snapshot: Snapshot, root: string): EntryPayload {
-  const report = presenceOf(snapshot.plans, snapshot.chapters)
+function presencePage(snapshot: Snapshot, root: string, prose?: readonly ChapterDraft[]): EntryPayload {
+  const report = presenceOf(snapshot.plans, snapshot.chapters, {
+    drafts: prose ?? [],
+    people: snapshot.characters.map((card) => ({ name: card.name, aliases: card.aliases })),
+  })
   const silent = silentPeople(report)
   const busiest = [...report.people].sort((a, b) => b.chapters.length - a.chapters.length).slice(0, 12)
   return {
@@ -949,6 +953,7 @@ export function buildEntry(
   root: string,
   body?: string | undefined,
   reviews: readonly ReviewRound[] = [],
+  prose?: readonly ChapterDraft[] | undefined,
 ): EntryPayload | undefined {
   if (key === '' && kind !== 'timeline') return undefined
   if (kind === 'character') return characterPage(snapshot, key, root)
@@ -957,7 +962,7 @@ export function buildEntry(
   if (kind === 'kind') return kindPage(snapshot, key, root)
   if (kind === 'threads') return threadsPage(snapshot, root)
   if (kind === 'shape') return shapePage(snapshot, root)
-  if (kind === 'presence') return presencePage(snapshot, root)
+  if (kind === 'presence') return presencePage(snapshot, root, prose)
   if (kind === 'place') return placePage(snapshot, key, root)
   if (kind === 'story') return storyPage(snapshot, key, root)
   if (kind === 'timeline') return timelinePage(snapshot, root)

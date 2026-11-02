@@ -13,7 +13,7 @@
  * says how many chapters had cards at all: on a book where the archivist has
  * never run, "nobody appears" would be a lie dressed as a finding.
  */
-import type { ChapterMeta, ChapterPlan } from './types.ts'
+import type { ChapterDraft, ChapterMeta, ChapterPlan } from './types.ts'
 
 /** One character's presence across the book. */
 export interface Presence {
@@ -35,6 +35,10 @@ export interface PresenceReport {
   covered: number
   /** Chapters written at all. */
   written: number
+  /** Chapters whose appearance list came from a card. */
+  fromCards: number
+  /** Chapters where the card was silent and the prose was searched instead. */
+  fromText: number
 }
 
 /**
@@ -48,20 +52,51 @@ export interface PresenceReport {
  * @param chapters - every committed chapter.
  * @returns who appears where, plus how much of the book the cards cover.
  */
-export function presenceOf(plans: readonly ChapterPlan[], chapters: readonly ChapterMeta[]): PresenceReport {
+export function presenceOf(
+  plans: readonly ChapterPlan[],
+  chapters: readonly ChapterMeta[],
+  options: { drafts?: readonly ChapterDraft[]; people?: readonly { name: string; aliases?: readonly string[] }[] } = {},
+): PresenceReport {
   const written = new Set(chapters.map((chapter) => chapter.number))
   const lastChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.number), 0)
   const byName = new Map<string, number[]>()
   let covered = 0
+  let fromCards = 0
+  let fromText = 0
 
-  for (const plan of plans) {
-    if (!written.has(plan.number)) continue
-    const names = plan.characters.map((name) => name.trim()).filter((name) => name !== '')
+  const planOf = new Map(plans.map((plan) => [plan.number, plan]))
+  const proseOf = new Map((options.drafts ?? []).map((draft) => [draft.number, draft.text]))
+  // Names to look for in prose, longest first so 「食心和尚」 wins over 「食心」.
+  const needles = (options.people ?? [])
+    .flatMap((person) => [person.name, ...(person.aliases ?? [])].map((name) => ({ name: person.name, needle: name.trim() })))
+    .filter((item) => item.needle.length >= 2)
+    .sort((a, b) => b.needle.length - a.needle.length)
+
+  for (const number of [...written].sort((a, b) => a - b)) {
+    const plan = planOf.get(number)
+    const fromCard = (plan?.characters ?? []).map((name) => name.trim()).filter((name) => name !== '')
+    let names: string[] = []
+    if (fromCard.length > 0) {
+      names = fromCard
+      fromCards += 1
+    } else {
+      // No card, or a card that never listed anyone. The prose still knows: a
+      // name that appears in a chapter is somebody who walked on in it. This is
+      // a fallback, not a replacement — a card written by the archivist wins,
+      // because it can tell a mention from an entrance.
+      const text = proseOf.get(number)
+      if (text !== undefined && text.trim() !== '') {
+        const found = new Set<string>()
+        for (const { name, needle } of needles) if (text.includes(needle)) found.add(name)
+        names = [...found]
+        if (names.length > 0) fromText += 1
+      }
+    }
     if (names.length === 0) continue
     covered += 1
     for (const name of new Set(names)) {
       const list = byName.get(name) ?? []
-      list.push(plan.number)
+      list.push(number)
       byName.set(name, list)
     }
   }
@@ -78,7 +113,7 @@ export function presenceOf(plans: readonly ChapterPlan[], chapters: readonly Cha
   })
 
   people.sort((a, b) => b.silent - a.silent || b.chapters.length - a.chapters.length || a.name.localeCompare(b.name, 'zh'))
-  return { people, covered, written: written.size }
+  return { people, covered, written: written.size, fromCards, fromText }
 }
 
 /**
@@ -132,13 +167,19 @@ export function describePresence(report: PresenceReport, silentAfter: number = S
   }
   if (report.covered === 0) {
     return [
-      `已经写了 ${report.written} 章，但没有任何一章的章卡写了出场人物，所以算不出谁在场。`,
-      '章卡是这项统计的唯一来源。补卡：novel_archive action="plan" 看缺哪些，再 action="apply" 让档案员读。',
+      `已经写了 ${report.written} 章，但既没有章卡写的出场名单，正文里也没有能找到的角色名，所以算不出谁在场。`,
+      '先让考据员从正文里认出人物：novel_archive action="lore" from=1 limit=40',
+      '有角色卡之后这一项会自动从正文里补出场名单，不需要章卡。',
     ].join('\n')
   }
   const silent = silentPeople(report, silentAfter)
+  const source = report.fromText === 0
+    ? '按章卡的出场名单算'
+    : report.fromCards === 0
+      ? '按正文里出现的角色名算（还没有章卡）'
+      : `章卡 ${report.fromCards} 章 + 正文兜底 ${report.fromText} 章`
   const lines = [
-    `出场统计：${report.people.length} 个人物，覆盖 ${report.covered} / ${report.written} 章（按章卡的出场名单算）。`,
+    `出场统计：${report.people.length} 个人物，覆盖 ${report.covered} / ${report.written} 章（${source}）。`,
     '',
   ]
   if (silent.length > 0) {
