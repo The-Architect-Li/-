@@ -1388,12 +1388,15 @@ const API_BACKUP = '/api/inkwell/backup'
       menuPop: {
         position: 'fixed',
         zIndex: 61,
-        minWidth: '132px',
+        minWidth: '142px',
         padding: '4px',
         borderRadius: '9px',
         border: '1px solid var(--iw-line-strong)',
-        background: 'var(--iw-bg)',
-        boxShadow: '0 8px 24px rgba(0,0,0,.28)',
+        // `--iw-bg` does not exist in this panel's palette — the menu came out
+        // fully transparent and the row underneath showed through its text.
+        // `surface-active` is the opaque step the hover states already use.
+        background: 'var(--iw-surface-active)',
+        boxShadow: '0 10px 28px rgba(0,0,0,.45)',
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
@@ -1646,6 +1649,9 @@ const API_BACKUP = '/api/inkwell/backup'
   transition: background-color .13s ease, border-color .13s ease, color .13s ease, box-shadow .13s ease, opacity .13s ease, padding-left .13s ease;
 }
 .iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
+.iw-row:hover .iw-row-menu, .iw-row-menu:focus-visible { opacity: 1; }
+.iw-menu-item:not(:disabled):hover { background: var(--iw-surface-hover); }
+.iw-menu-item:not(:disabled):active { background: var(--iw-surface); }
 .iw-row:hover { background-color: var(--iw-surface-hover); }
 .iw-row:active { background-color: var(--iw-surface-active); }
 .iw-row:focus-visible { outline: none; border-color: var(--iw-accent-line); box-shadow: 0 0 0 2px var(--iw-accent-soft); }
@@ -2003,7 +2009,7 @@ const API_BACKUP = '/api/inkwell/backup'
               'button',
               {
                 type: 'button',
-                className: 'iw-btn',
+                className: 'iw-btn iw-row-menu',
                 style: S.rowMenu,
                 title: '上移 / 下移 / 并章',
                 onClick: (event) => {
@@ -5253,18 +5259,21 @@ const API_BACKUP = '/api/inkwell/backup'
               },
               h('button', {
                 type: 'button',
+                className: 'iw-menu-item',
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.up ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.up),
                 onClick: () => runChapterAction('up', menuAt.key),
               }, '↑　上移'),
               h('button', {
                 type: 'button',
+                className: 'iw-menu-item',
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.down),
                 onClick: () => runChapterAction('down', menuAt.key),
               }, '↓　下移'),
               h('button', {
                 type: 'button',
+                className: 'iw-menu-item',
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.down),
                 onClick: () => runChapterAction('merge', menuAt.key),
