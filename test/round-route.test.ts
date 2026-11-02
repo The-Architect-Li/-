@@ -206,3 +206,65 @@ describe('search is not capped where the cap cannot be seen past', () => {
     }
   })
 })
+
+describe('the chapter page talks about the card, not about writing prose', () => {
+  /** A book whose chapter 7 has an unapproved card with a recap. */
+  async function withCard(approved: boolean, revised = false) {
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-page-'))
+    roots.push(dir)
+    const store = new ProjectStore(dir)
+    await store.init('雾港', 800000)
+    await store.writeProject({ ...(await store.readProject()), phase: 'drafting', premise: '一句话前提。' })
+    await store.writeChapter(
+      { number: 7, title: '我有一门剑法，你学不学', text: '这是正文。'.repeat(80), words: 2269, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 0 },
+      { baseRevision: undefined },
+    )
+    if (revised) {
+      await store.writeChapter(
+        { number: 7, title: '我有一门剑法，你学不学', text: '改过之后的正文。'.repeat(80), words: 2400, summary: '', writtenAt: '2026-01-02T00:00:00.000Z', revision: 0 },
+        { baseRevision: 1 },
+      )
+    }
+    await store.upsertPlan({
+      number: 7, volume: 1, title: '第7章', pov: '', characters: [], beats: ['a'], hooks: ['h'],
+      approved, summary: '已有的摘要', cardRevision: 1,
+    })
+    const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store })
+    const server = createServer((req, res) => void handler(req, res))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    return { base: `http://127.0.0.1:${address.port}${PANEL_PREFIX}`, close: () => new Promise<void>((done) => server.close(() => done())) }
+  }
+
+  it('does not nag about an unapproved outline when the card is already there', async () => {
+    // The chapter has a card read off its current prose. Telling the author to go
+    // approve an outline before they can do anything is advice for writing new
+    // prose, which is not what the page's button does.
+    const app = await withCard(false)
+    try {
+      const response = await fetch(`${app.base}/entry?kind=chapter&key=7`)
+      const payload = (await response.json()) as { data: { blocked?: string; action?: unknown; fields?: unknown[] } }
+      const raw = await (await fetch(`${app.base}/entry?kind=chapter&key=7`)).json() as { data: { blocked?: string } }
+      expect(raw.data.blocked).toBe(payload.data.blocked)
+      expect(payload.data.action).toBeUndefined()
+      expect(payload.data.blocked ?? '').not.toContain('approve_chapter')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('offers a rebuild when the card describes older prose', async () => {
+    // `writeChapter` computes revision = previous + 1, so a second save is how a
+    // card goes stale in real life: the author edits after the card was read.
+    const app = await withCard(true, true)
+    try {
+      const response = await fetch(`${app.base}/entry?kind=chapter&key=7`)
+      const payload = (await response.json()) as { data: { action?: { id: string; label: string } } }
+      expect(payload.data.action).toMatchObject({ id: 'recap' })
+      expect(payload.data.action?.label).toBe('为这一章建章卡')
+    } finally {
+      await app.close()
+    }
+  })
+})

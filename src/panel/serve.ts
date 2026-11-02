@@ -1908,25 +1908,21 @@ export async function readEntry(
       }
     }
     if (kind === 'chapter') {
-      // Ask the gate now, not after the writer typed. But its answer is written for
-      // a model: `novel_archive action="apply" from=6 limit=1` is exact and useless
-      // to somebody looking at their own chapter. So the panel does not echo the
-      // gate — it reads the situation and says the human version, with the button
-      // that fixes it.
-      const reason = await gateToolCall('novel_chapter', { action: 'write', number }, store, deps.config)
-      if (reason !== null) {
-        const written = snapshot.chapters.some((chapter) => chapter.number === number)
-        const plan = snapshot.plans.find((item) => item.number === number)
-        if (written && plan === undefined) {
-          entry.blocked = '这一章有正文，但还没有章卡。让档案员读一遍，写出摘要、事件、场景、出场人物和钩子。'
-          entry.action = {
-            id: 'recap',
-            number,
-            label: '为这一章建章卡',
-            hint: '读一遍这章正文，写出摘要与关键事件（一次模型调用，十几秒）',
-          }
-        } else {
-          entry.blocked = reason
+      // What this page says is about the card, because the card is what its one
+      // button builds. The gate's verdict — 「章纲还没批准，先 approve_chapter」 — is
+      // about writing new prose, and building a card needs no approval. Echoing it
+      // here told the author to go approve something their next click did not need.
+      const written = snapshot.chapters.some((chapter) => chapter.number === number)
+      const plan = snapshot.plans.find((item) => item.number === number)
+      const chapter = snapshot.chapters.find((item) => item.number === number)
+      const carded = plan !== undefined && (plan.cardRevision ?? 0) >= (chapter?.revision ?? 1)
+      if (written && !carded) {
+        entry.blocked = '这一章有正文，但还没有章卡。让档案员读一遍，写出摘要、事件、场景、出场人物和钩子。'
+        entry.action = {
+          id: 'recap',
+          number,
+          label: '为这一章建章卡',
+          hint: '读一遍这章正文，写出摘要与关键事件（一次模型调用，十几秒）',
         }
       }
     }
