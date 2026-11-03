@@ -1376,52 +1376,7 @@ export async function createRoute(
   }
 }
 
-/**
- * The writer's brief for one chapter, as text the author can copy.
- *
- * Deliberately does not spawn: the panel's job is to show what the writer would
- * be told, so the author can hand it to another session or keep it.
- *
- * @param deps - route dependencies.
- * @param sessionId - the calling session.
- * @param body - `{ number }`.
- * @param root - an absolute project directory, when the browser named one.
- * @returns the brief.
- */
-export async function cardRoute(
-  deps: PanelDeps,
-  sessionId: string | undefined,
-  body: Record<string, unknown>,
-  root: string | undefined,
-): Promise<PanelAnswer> {
-  try {
-    const store = storeFor(deps, sessionId, root)
-    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件，先在面板里新建一本。', 409)
-    const number = Number(body.number)
-    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('章号要是正整数。')
-    const snapshot = await store.snapshot()
-    if (!snapshot.plans.some((plan) => plan.number === number)) {
-      throw new PanelInputError(`第${number}章还没有章纲，写不出派单书。先 novel_outline add_chapter。`, 409)
-    }
-    const brief = buildWriterBrief({
-      snapshot,
-      drafts: await store.allChapters(),
-      chapter: number,
-      config: deps.config,
-      directive: '',
-    })
-    // The warnings ride on top of the card, not below it: this panel is read as
-    // "what will the writer be told", and a rule that did not fit changes that
-    // answer enough that it belongs before the text.
-    const text =
-      brief.warnings.length === 0
-        ? brief.text
-        : ['【注意：这几项没能进这一章的包】', ...brief.warnings.map((line) => `- ${line}`), '', '───', '', brief.text].join('\n')
-    return { status: 200, body: { ok: true, data: { number, text, warnings: brief.warnings } } }
-  } catch (error) {
-    return failure(error)
-  }
-}
+
 
 /**
  * What is waiting for a yes, as the album panel shows it.
@@ -2651,23 +2606,6 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await settlePendingRoute(
-            deps,
-            url.searchParams.get('session') ?? undefined,
-            await readJson(req),
-            url.searchParams.get('root') ?? undefined,
-          ),
-        )
-        return
-      }
-
-      if (path === '/card') {
-        if (isRead) {
-          send(res, { status: 405, body: { ok: false, error: { message: '/card 需要 POST' } } })
-          return
-        }
-        send(
-          res,
-          await cardRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

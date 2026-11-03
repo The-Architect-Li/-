@@ -4177,29 +4177,6 @@ const API_BACKUP = '/api/inkwell/backup'
               h('div', { style: { ...S.editHint, paddingTop: '6px' } }, '回退前的这一版也会进历史，退错了还能再退回来。'),
             )
 
-      const cardPanel =
-        panel !== 'card'
-          ? null
-          : h(
-              'div',
-              { style: { margin: '0 10px 8px', border: '1px solid rgba(127,127,127,.28)', borderRadius: '8px', padding: '8px 10px' } },
-              h('div', { style: { ...S.aside, padding: '0 0 6px' } }, '给写手的派单书 · 复制到对话或存档，不会真的派出'),
-              panelError ? h('div', { style: S.error }, panelError) : null,
-              panelData === null
-                ? h('div', { style: S.note }, '正在生成…')
-                : h('pre', {
-                    style: {
-                      margin: 0, maxHeight: '240px', overflow: 'auto', fontSize: '10.5px', lineHeight: '1.6',
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
-                    },
-                  }, panelData.text || ''),
-              h(
-                'div',
-                { style: { display: 'flex', gap: '6px', paddingTop: '6px' } },
-                h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: copyCard, disabled: panelData === null }, '复制'),
-              ),
-            )
-
       // Chapter prose: the page's main body. Preview renders one paragraph per
       // block; editing swaps in a box, and the count under it is the same
       // whitespace-stripped count the store records.
@@ -4374,7 +4351,6 @@ const API_BACKUP = '/api/inkwell/backup'
           : null,
         notice,
         historyPanel,
-        cardPanel,
         error ? h('div', { style: S.error }, error) : null,
         data.spine ? h(Spine, { key: 'spine', spine: data.spine }) : null,
         ...editForm,

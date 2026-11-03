@@ -82,16 +82,6 @@ describe('one file history', () => {
   })
 })
 
-describe('the writer brief', () => {
-  it('refuses before there is an outline, with the reason', async () => {
-    const base = await book()
-    const response = await write(base, '/card', { number: 1 })
-    expect(response.status).toBe(409)
-    const payload = (await response.json()) as { error: { message: string } }
-    expect(payload.error.message).toContain('还没有章纲')
-  })
-})
-
 /** Walk a book to drafting, the shortest legal path the gate accepts. */
 async function drafting(harness: Harness): Promise<void> {
   valueOf(await harness.call('novel_project', { action: 'init', title: '雾港' }))
