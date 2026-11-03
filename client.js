@@ -4140,14 +4140,8 @@ const API_BACKUP = '/api/inkwell/backup'
             busyRecap === null || busyRecap === undefined
               ? recapResult !== null && recapResult !== undefined && recapResult.number === data.action?.number && recapResult.error !== ''
                 ? h('div', {
-                    style: {
-                      paddingTop: '8px',
-                      fontSize: '12px',
-                      color: recapResult.error === '' ? 'var(--iw-fg)' : 'var(--iw-danger-fg)',
-                    },
-                  }, recapResult.error === ''
-                    ? `已写好：${String(recapResult.summary || '').slice(0, 60)}…`
-                    : recapResult.error)
+                    style: { paddingTop: '8px', fontSize: '12px', color: 'var(--iw-danger-fg)' },
+                  }, `没写成：${recapResult.error} 可再试一次。`)
                 : null
               : null,
           )
@@ -4344,7 +4338,10 @@ const API_BACKUP = '/api/inkwell/backup'
               h('div', { style: { ...S.aside, paddingTop: '5px' } }, '没有自动定稿，跑完你自己决定。'),
             )
           : null,
-        roundError !== null && roundError !== undefined
+        // One window per page. When the yellow banner already owns this chapter's
+        // unblock (it has the button), the red refusal from 「走一轮」 would just repeat
+        // it — so it only speaks when there is no yellow banner to fold into.
+        !data.action && roundError !== null && roundError !== undefined
           ? h(
               'div',
               { style: { ...S.error, padding: '8px 10px', margin: '6px 0' } },
@@ -5083,6 +5080,10 @@ const API_BACKUP = '/api/inkwell/backup'
        */
       const startRecap = useCallback((number) => {
         setRecapJob({ number, seconds: 0, done: false, error: '' })
+        // One window. The red refusal said the same thing this run now says with a
+        // spinner; keeping both on screen after the click is the duplicate the
+        // author already flagged.
+        setRoundError(null)
         const started = Date.now()
         let settled = false
         const ticker = setInterval(() => {
