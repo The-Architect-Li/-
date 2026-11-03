@@ -71,7 +71,7 @@ import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { runReviewRound } from '../tools/dispatch.ts'
-import { mergeChapters, moveChapter } from '../domain/reorder.ts'
+import { deleteChapter, mergeChapters, moveChapter } from '../domain/reorder.ts'
 import { archiveChapter } from '../tools/archive.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
@@ -1535,6 +1535,40 @@ export async function mergeRoute(
   }
 }
 
+/**
+ * Delete one chapter, with every record that cites it, and shift the rest.
+ *
+ * @param deps - route dependencies.
+ * @param sessionId - the calling session.
+ * @param body - `{ number }`.
+ * @param root - an absolute project directory, when the browser named one.
+ * @returns the mapping and the backup path.
+ */
+export async function deleteRoute(
+  deps: PanelDeps,
+  sessionId: string | undefined,
+  body: Record<string, unknown>,
+  root: string | undefined,
+): Promise<PanelAnswer> {
+  try {
+    const number = Number(body.number)
+    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('要删第几章？number 要是正整数。')
+    const store = storeFor(deps, sessionId, root)
+    const result = await deleteChapter(store, number).catch((error) => {
+      throw new PanelInputError(String((error as Error).message ?? error), 409)
+    })
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: { number, total: (await store.chapters()).length, mapping: result.mapping, backup: result.backup, touched: result.touched },
+      },
+    }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function moveRoute(
   deps: PanelDeps,
   sessionId: string | undefined,
@@ -2519,6 +2553,23 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         send(
           res,
           await recapRoute(
+            deps,
+            url.searchParams.get('session') ?? undefined,
+            await readJson(req),
+            url.searchParams.get('root') ?? undefined,
+          ),
+        )
+        return
+      }
+
+      if (path === '/delete') {
+        if (isRead) {
+          send(res, { status: 405, body: { ok: false, error: { message: '/delete 需要 POST' } } })
+          return
+        }
+        send(
+          res,
+          await deleteRoute(
             deps,
             url.searchParams.get('session') ?? undefined,
             await readJson(req),

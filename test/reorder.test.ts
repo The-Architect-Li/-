@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/domain/store.ts'
-import { mergeChapters, moveChapter } from '../src/domain/reorder.ts'
+import { deleteChapter, mergeChapters, moveChapter } from '../src/domain/reorder.ts'
 
 const roots: string[] = []
 
@@ -327,5 +327,39 @@ describe('everything that points at a chapter follows it', () => {
       ...(await store.timeline()).anchors.map((anchor) => anchor.chapter),
     ].filter((number): number is number => typeof number === 'number' && number > 0)
     expect(pointed.filter((number) => !alive.has(number))).toEqual([])
+  })
+})
+
+describe('deleteChapter', () => {
+  it('removes the chapter, renumbers the rest, and drops what cited it', async () => {
+    const store = await book()
+    await store.upsertPlace({
+      name: '三号仓', kind: '地点', detail: '',
+      states: [{ chapter: 3, detail: '在这一章', }, { chapter: 4, detail: '在下一章' }],
+      firstChapter: 3, latestChapter: 4,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never)
+    const result = await deleteChapter(store, 3)
+    const numbers = (await store.chapters()).map((chapter) => chapter.number)
+    expect(numbers).toEqual([1, 2, 3, 4, 5])
+    // Chapter 4 is now numbered 3, and its place-state moved with it; the state
+    // filed at the deleted chapter 3 is gone — it described prose that no longer
+    // exists.
+    const place = (await store.places()).find((item) => item.name === '三号仓')
+    expect(place?.states.map((state) => state.chapter)).toEqual([3])
+    expect(place?.states[0]?.detail).toBe('在下一章')
+    expect(result.backup).toBeTruthy()
+  })
+
+  it('refuses to leave the book empty', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-del-'))
+    roots.push(dir)
+    const store = new ProjectStore(dir)
+    await store.init('雾港', 800000)
+    await store.writeChapter(
+      { number: 1, title: '孤章', text: '唯一一章。', words: 5, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+      { baseRevision: undefined },
+    )
+    await expect(deleteChapter(store, 1)).rejects.toThrow('只剩这一章')
   })
 })

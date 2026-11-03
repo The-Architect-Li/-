@@ -68,6 +68,90 @@ function remap(value: unknown, map: ReadonlyMap<number, number>): unknown {
   return next === undefined ? value : next
 }
 
+/** Sentinel a delete-map uses: this chapter number is gone, records citing it go too. */
+const DELETED = -1
+
+/**
+ * Apply a delete-map to one JSON tree: records whose chapter was deleted are
+ * dropped entirely, the rest shift.
+ *
+ * @param file - which record file this is.
+ * @param value - the parsed JSON.
+ * @param map - old chapter number → new number, or {@link DELETED}.
+ * @returns the transformed value; `undefined` where the caller should drop records.
+ */
+function deleteMapFile(file: keyof typeof FILES, value: unknown, map: ReadonlyMap<number, number>): unknown {
+  const dropCiting = <T>(list: T[], chapterOf: (item: T) => unknown): T[] =>
+    list.filter((item) => remap(chapterOf(item), map) !== DELETED)
+  if (file === 'facts') {
+    if (!Array.isArray(value)) return value
+    return dropCiting(value as unknown[], (item) => (item as { chapter?: unknown }).chapter).map((item) => ({
+      ...(item as Record<string, unknown>),
+      chapter: remap((item as { chapter?: unknown }).chapter, map),
+    }))
+  }
+  if (file === 'threads') {
+    if (!Array.isArray(value)) return value
+    return (value as unknown[]).filter((item) => {
+      if (typeof item !== 'object' || item === null) return true
+      const thread = item as { planted?: unknown; paid?: unknown }
+      return remap(thread.planted, map) !== DELETED
+    })
+  }
+  if (file === 'places') {
+    if (!Array.isArray(value)) return value
+    return (value as unknown[]).map((item) => {
+      if (typeof item !== 'object' || item === null) return item
+      const place = item as { states?: { chapter?: unknown }[] }
+      return {
+        ...place,
+        states: dropCiting(place.states ?? [], (state) => state.chapter).map((state) => ({
+          ...state,
+          chapter: remap(state.chapter, map),
+        })),
+      }
+    })
+  }
+  if (file === 'characters') {
+    if (!Array.isArray(value)) return value
+    return (value as unknown[]).map((item) => {
+      if (typeof item !== 'object' || item === null) return item
+      const card = item as { stages?: { chapter?: unknown }[] }
+      return {
+        ...card,
+        stages: dropCiting(card.stages ?? [], (stage) => stage.chapter).map((stage) => ({
+          ...stage,
+          chapter: remap(stage.chapter, map),
+        })),
+      }
+    })
+  }
+  if (file === 'clock') {
+    if (typeof value !== 'object' || value === null) return value
+    const clock = value as {
+      anchors?: { chapter?: unknown }[]
+      spans?: { fromChapter?: unknown; toChapter?: unknown }[]
+      recalls?: { chapter?: unknown }[]
+    }
+    return {
+      ...clock,
+      anchors: dropCiting(clock.anchors ?? [], (anchor) => anchor.chapter).map((anchor) => ({
+        ...anchor,
+        chapter: remap((anchor as { chapter?: unknown }).chapter, map),
+      })),
+      // A span anchored at both ends of a deleted chapter has no duration left.
+      spans: (clock.spans ?? [])
+        .filter((span) => remap(span.fromChapter, map) !== DELETED && remap(span.toChapter, map) !== DELETED)
+        .map((span) => ({ ...span, fromChapter: remap(span.fromChapter, map), toChapter: remap(span.toChapter, map) })),
+      recalls: dropCiting(clock.recalls ?? [], (recall) => recall.chapter).map((recall) => ({
+        ...recall,
+        chapter: remap((recall as { chapter?: unknown }).chapter, map),
+      })),
+    }
+  }
+  return value
+}
+
 /**
  * Apply a mapping to a plain JSON tree, wherever a chapter number lives.
  *
@@ -470,6 +554,115 @@ export async function mergeChapters(store: ProjectStore, number: number): Promis
  * @param number - the chapter's current number.
  * @param origin - what it used to be.
  */
+/**
+ * Delete one chapter outright: the prose, its drafts, its reviews, its card, and
+ * every record that cites its number. Everything after it steps up one.
+ *
+ * This is the one destructive operation the panel offers without a surviving
+ * trace in the text — merge folds content forward, move rearranges, delete just
+ * takes away. Two things keep it honest: the full backup taken before anything
+ * moves, and the confirm dialog in front of the button. The author should never
+ * discover either was missing after the fact.
+ *
+ * Records that cite the deleted chapter (facts filed there, a thread planted
+ * there, a place-state, a timeline anchor) are deleted with it — they describe
+ * prose that no longer exists. Records of later chapters shift with their
+ * chapters.
+ *
+ * @param store - the book.
+ * @param number - the chapter to delete.
+ * @returns what changed and where the backup lives.
+ */
+export async function deleteChapter(store: ProjectStore, number: number): Promise<Reordered> {
+  if (!Number.isInteger(number) || number < 1) throw new Error(`章号要是正整数，收到 ${String(number)}。`)
+  const index = await store.chapters()
+  const gone = index.find((chapter) => chapter.number === number)
+  if (gone === undefined) throw new Error(`第${number}章没有正文，无从删除。`)
+  const last = index.reduce((max, chapter) => Math.max(max, chapter.number), 0)
+  if (index.length <= 1) throw new Error('全书只剩这一章了。删除后书就是空的——整本删掉吧。')
+
+  // Later chapters step up; the deleted one maps to nothing.
+  const map = new Map<number, number>([[number, DELETED]])
+  for (let next = number + 1; next <= last; next += 1) map.set(next, next - 1)
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const proseFiles = index.map((chapter) => `chapters/${fileName(chapter.number)}`)
+  const backupDir = await backup(store, `delete-${stamp}`, [...Object.values(FILES), ...proseFiles])
+  const touched: string[] = []
+
+  // 1. Records: shift the survivors, drop what cites the deleted chapter.
+  const recordFiles = (Object.entries(FILES) as [keyof typeof FILES, string][]).filter(
+    ([name]) => name !== 'index' && name !== 'plans',
+  )
+  for (const [name, path] of recordFiles) {
+    const raw = await readFile(join(store.root, path), 'utf8').catch(() => undefined)
+    if (raw === undefined || raw.trim() === '') continue
+    const next = deleteMapFile(name, JSON.parse(raw) as unknown, map)
+    const text = `${JSON.stringify(next, null, 2)}\n`
+    if (text === raw) continue
+    await writeFile(join(store.root, path), text, 'utf8')
+    touched.push(path)
+  }
+
+  // 2. Card: the deleted chapter's card goes; later cards step up.
+  const plans = await store.plans()
+  const nextPlans = plans
+    .filter((plan) => plan.number !== number)
+    .map((plan) => ({ ...plan, number: plan.number > number ? plan.number - 1 : plan.number }))
+    .sort((a, b) => a.number - b.number)
+  if (JSON.stringify(nextPlans) !== JSON.stringify(plans)) {
+    await store.writePlans(nextPlans)
+    touched.push(FILES.plans)
+  }
+
+  // 3. Prose and drafts: shift forward, then the tail file goes.
+  for (let from = number + 1; from <= last; from += 1) {
+    const text = await readFile(join(store.root, 'chapters', fileName(from)), 'utf8').catch(() => undefined)
+    if (text !== undefined) await writeFile(join(store.root, 'chapters', fileName(from - 1)), text, 'utf8')
+  }
+  await rm(join(store.root, 'chapters', fileName(last)), { force: true }).catch(() => undefined)
+  touched.push(`chapters/${fileName(number)}`, `chapters/${fileName(last)}`)
+
+  for (let from = number + 1; from <= last; from += 1) {
+    const source = join(store.root, 'drafts', String(from).padStart(3, '0'))
+    await rename(source, join(store.root, 'drafts', `${String(from).padStart(3, '0')}.deleting`)).catch(() => undefined)
+  }
+  for (let from = number + 1; from <= last; from += 1) {
+    const moved = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.deleting`)
+    await rename(moved, join(store.root, 'drafts', String(from - 1).padStart(3, '0'))).catch(() => undefined)
+  }
+  await rm(join(store.root, 'drafts', String(last).padStart(3, '0')), { force: true, recursive: true }).catch(() => undefined)
+
+  // 4. Review records live per chapter: the deleted one goes, the rest follow
+  //    their chapters up. (`move` and `merge` predate this and do not shift
+  //    reviews — a known gap, noted for the next pass.)
+  const reviewFile = store.reviewPath(number)
+  await rm(reviewFile, { force: true }).catch(() => undefined)
+  touched.push(`reviews/${String(number).padStart(3, '0')}.json`)
+  for (let from = number + 1; from <= last; from += 1) {
+    const source = store.reviewPath(from)
+    const text = await readFile(source, 'utf8').catch(() => undefined)
+    if (text === undefined) continue
+    await writeFile(store.reviewPath(from - 1), text, 'utf8')
+    await rm(source, { force: true }).catch(() => undefined)
+  }
+
+  // 5. The index, rebuilt: the deleted chapter out, the rest renumbered.
+  const rebuilt = index
+    .filter((chapter) => chapter.number !== number)
+    .map((chapter) => ({ ...chapter, number: chapter.number > number ? chapter.number - 1 : chapter.number }))
+    .sort((a, b) => a.number - b.number)
+  await writeFile(join(store.root, FILES.index), `${JSON.stringify(rebuilt, null, 2)}\n`, 'utf8')
+  touched.push(FILES.index)
+
+  return {
+    moved: map.size,
+    mapping: [...map.entries()].map(([oldNumber, newNumber]) => (newNumber === DELETED ? `${oldNumber}→删` : `${oldNumber}→${newNumber}`)),
+    touched,
+    backup: backupDir,
+  }
+}
+
 async function markOrigin(store: ProjectStore, number: number, origin: ChapterOrigin): Promise<void> {
   const raw = await readFile(join(store.root, FILES.index), 'utf8').catch(() => undefined)
   if (raw === undefined || raw.trim() === '') return

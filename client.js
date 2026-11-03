@@ -54,7 +54,6 @@ window.__ModuleLoader__.load({
     const API_ROLES = '/api/inkwell/roles'
     const API_HISTORY = '/api/inkwell/history'
     const API_REVERT = '/api/inkwell/revert'
-    const API_CARD = '/api/inkwell/card'
     const API_CHAPTER_PLAN = '/api/inkwell/chapter-plan'
     const API_NEW = '/api/inkwell/new'
     const API_PENDING = '/api/inkwell/pending'
@@ -762,22 +761,6 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     /** The writer's brief for one chapter, without spawning anyone. */
-    async function loadCard(sessionId, root, number) {
-      const params = []
-      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
-      if (root) params.push(`root=${encodeURIComponent(root)}`)
-      const response = await fetch(`${API_CARD}?${params.join('&')}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
-        body: JSON.stringify({ number, ...(summarize === true ? { summarize: true } : {}) }),
-      })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok || payload.ok === false) {
-        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
-      }
-      return payload.data
-    }
-
     /**
      * Create one empty chapter by hand.
      *
@@ -855,6 +838,23 @@ const API_BACKUP = '/api/inkwell/backup'
       if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
       if (root) params.push(`root=${encodeURIComponent(root)}`)
       const response = await fetch(`${API_RECAP}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ number }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Delete one chapter outright. The server backs the book up first. */
+    async function deleteChapterRequest(sessionId, root, number) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_MERGE.replace('/merge', '/delete')}?${params.join('&')}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...WRITE_HEADER },
         body: JSON.stringify({ number }),
@@ -3879,14 +3879,6 @@ const API_BACKUP = '/api/inkwell/backup'
         } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
       }
 
-      const openCard = async () => {
-        if (panel === 'card') { setPanel('none'); return }
-        setPanel('card'); setPanelError(''); setPanelData(null)
-        try {
-          setPanelData(await loadCard(sessionId, root, Number(target.key)))
-        } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
-      }
-
       const revertTo = async (rev) => {
         setPanelBusy(rev); setPanelError('')
         try {
@@ -3896,14 +3888,6 @@ const API_BACKUP = '/api/inkwell/backup'
           if (onChanged) await onChanged()
         } catch (failure) { setPanelError(String((failure && failure.message) || failure)) }
         finally { setPanelBusy('') }
-      }
-
-      const copyCard = async () => {
-        const text = panelData && panelData.text ? panelData.text : ''
-        try {
-          await navigator.clipboard.writeText(text)
-          setPanelError('已复制')
-        } catch (_) { setPanelError('复制失败，手动选中') }
       }
 
       /** Start editing from the values the page was loaded with. */
@@ -3972,9 +3956,6 @@ const API_BACKUP = '/api/inkwell/backup'
         h('span', { style: S.spacer }),
         data && historyTarget
           ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openHistory }, panel === 'history' ? '收起' : '历史')
-          : null,
-        data && isChapter
-          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openCard }, panel === 'card' ? '收起' : '派单书')
           : null,
         // The pipeline used to live only in the documentation: write, propose,
         // two reviews, chief, commit — six steps and five tool names, none of
@@ -4582,6 +4563,7 @@ const API_BACKUP = '/api/inkwell/backup'
       // because the list is virtualised and rows come and go.
       const [menuAt, setMenuAt] = useState(null)
       const [mergeAsk, setMergeAsk] = useState(null)
+      const [deleteAsk, setDeleteAsk] = useState(null)
       // { number, seconds, done, error } while the archivist is reading.
       const [recapJob, setRecapJob] = useState(null)
       // Bumped when a card lands, so the open detail page re-reads itself instead of
@@ -5090,6 +5072,21 @@ const API_BACKUP = '/api/inkwell/backup'
             setRecapJob({ number, seconds: Math.round((Date.now() - started) / 1000), done: true, error: String((failure && failure.message) || failure), summary: '' })
           })
           .finally(() => clearInterval(ticker))
+      }, [sessionId, root, refresh])
+
+      /**
+       * Delete a chapter, after the dialog. The server backs the book up first;
+       * the mapping it returns is echoed here so the renumbering is visible.
+       */
+      const runDelete = useCallback((number) => {
+        setDeleteAsk(null)
+        setMenuNote('正在删除…')
+        deleteChapterRequest(sessionId, root, number)
+          .then((output) => {
+            setMenuNote(`第 ${output.number} 章已删除，后面各章前移一位，现在共 ${output.total} 章。备份：${output.backup}`)
+            return refresh()
+          })
+          .catch((failure) => setMenuNote(`删除失败：${String((failure && failure.message) || failure)}`))
       }, [sessionId, root, refresh])
 
       const runChapterAction = useCallback((action, number, summarize) => {
@@ -5602,6 +5599,16 @@ const API_BACKUP = '/api/inkwell/backup'
                   setMergeAsk({ number: key })
                 },
               }, '⇤　并入下章'),
+              h('button', {
+                type: 'button',
+                className: 'iw-menu-item',
+                style: { ...S.menuItem, color: 'var(--iw-danger-fg, #d66)' },
+                onClick: () => {
+                  const key = menuAt.key
+                  setMenuAt(null)
+                  setDeleteAsk({ number: key })
+                },
+              }, '✕　删除章节'),
             )
           : null,
         // Merging deletes a chapter and empties a recap. Asking afterwards is
@@ -5634,6 +5641,28 @@ const API_BACKUP = '/api/inkwell/backup'
                   style: S.primaryButton,
                   onClick: () => { const n = mergeAsk.number; setMergeAsk(null); setMenuNote('正在合并，然后让档案员读一遍合并后的正文…'); runChapterAction('merge', n, true) },
                 }, '合并并重写摘要'),
+              ),
+            )
+          : null,
+        deleteAsk !== null && deleteAsk !== undefined
+          ? h('div', { key: 'delete-scrim', style: S.menuScrim, onClick: () => setDeleteAsk(null) })
+          : null,
+        deleteAsk !== null && deleteAsk !== undefined
+          ? h(
+              'div',
+              { key: 'delete-ask', style: S.askBox, onClick: (event) => event.stopPropagation() },
+              h('div', { style: { ...S.askTitle, color: 'var(--iw-danger-fg, #d66)' } }, `删除第 ${deleteAsk.number} 章？`),
+              h('div', { style: S.askBody }, '正文、草稿、章卡、审稿记录和记在这一章上的账本条目会一起删掉；后面的章各前移一位。这是唯一一个正文找不回来的操作——动手前整本书已自动备份。'),
+              h(
+                'div',
+                { style: S.askButtons },
+                h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setDeleteAsk(null) }, '取消'),
+                h('button', {
+                  type: 'button',
+                  className: 'iw-btn',
+                  style: { ...S.iconButton, color: 'var(--iw-danger-fg, #d66)', borderColor: 'var(--iw-danger-fg, #d66)' },
+                  onClick: () => { const n = deleteAsk.number; runDelete(n) },
+                }, '确认删除'),
               ),
             )
           : null,
