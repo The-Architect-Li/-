@@ -390,3 +390,17 @@ describe('buildEntry', () => {
   })
 })
 
+
+describe('a chapter page says whether there is prose to review', () => {
+  it('marks a written chapter and a card-only chapter differently', () => {
+    // The 审核一轮 button used to hide when `data.words` was missing — and it was
+    // always missing, because the entry carries the count only inside a subtitle
+    // string. `written` is that fact as a field.
+    const snapshot = book({
+      plans: [plan(1, { title: '裂缝' }), plan(2, { title: '空章' })],
+      chapters: [written(1, '裂缝', 3060)],
+    })
+    expect(buildEntry(snapshot, 'chapter', '1', [], ROOT)?.written).toBe(true)
+    expect(buildEntry(snapshot, 'chapter', '2', [], ROOT)?.written).toBe(false)
+  })
+})

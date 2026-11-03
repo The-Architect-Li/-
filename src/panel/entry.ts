@@ -133,6 +133,8 @@ export interface EntryPayload {
   title: string
   /** The line under the title: role plus goal, or volume plus point of view. */
   subtitle: string
+  /** True when a chapter has prose on disk — the panel's 「can review」 test. */
+  written?: boolean
   /** Right-hand chip, when the thing has a state worth showing. */
   chip?: string
   /** Where the page sits, for the second-level header: `人物设计 › 主角`. */
@@ -430,6 +432,7 @@ function chapterPage(
       .filter((part) => part !== '')
       .join(' · '),
     chip,
+    written,
     breadcrumb: ['正文', volume ? `第${volume.number}卷` : '未分卷'],
     fields: [],
     lists: [],

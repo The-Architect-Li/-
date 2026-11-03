@@ -4161,7 +4161,7 @@ const API_BACKUP = '/api/inkwell/backup'
               {
                 type: 'button',
                 className: 'iw-btn',
-                style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}), ...((data.words ?? 0) > 0 ? {} : { display: 'none' }) },
+                style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}), ...(data.written ? {} : { display: 'none' }) },
                 disabled: roundJob !== null && roundJob !== undefined && !roundJob.done,
                 title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
                 onClick: () => {
