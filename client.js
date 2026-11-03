@@ -159,11 +159,76 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     /** Section glyphs; monochrome so they inherit the theme. */
+    /**
+     * Icon paths, from Lucide (ISC licence) — the same set behind shadcn and most
+     * of the modern web. Inlined rather than fetched: the panel runs offline, has
+     * no bundler, and three separate icon-font CDNs have already been a bad idea.
+     *
+     * Each entry is `{ circles, paths }`; everything is stroked with
+     * `currentColor`, so one shape works in both themes.
+     */
+    const ICONS = {
+      globe: { circles: [[12, 12, 10]], paths: ['M2 12h20', 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'] },
+      users: { circles: [[9, 7, 4]], paths: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M22 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'] },
+      route: { circles: [[6, 19, 3], [18, 5, 3]], paths: ['M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15'] },
+      book: { paths: ['M12 7v14', 'M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'] },
+      chevronDown: { paths: ['m6 9 6 6 6-6'] },
+      chevronRight: { paths: ['m9 18 6-6-6-6'] },
+      dot: { circles: [[12, 12, 1]] },
+      more: { circles: [[12, 12, 1], [19, 12, 1], [5, 12, 1]] },
+      plus: { paths: ['M5 12h14', 'M12 5v14'] },
+      check: { paths: ['M20 6 9 17l-5-5'] },
+      undo: { paths: ['M3 7v6h6', 'M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13'] },
+      arrowUp: { paths: ['m5 12 7-7 7 7', 'M12 19V5'] },
+      arrowDown: { paths: ['M12 5v14', 'm19 12-7 7-7-7'] },
+      merge: { circles: [[18, 18, 3], [6, 6, 3]], paths: ['M6 21V9a9 9 0 0 0 9 9'] },
+      trash: { paths: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'] },
+      refresh: { paths: ['M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16', 'M8 16H3v5'] },
+      audit: { paths: ['M22 11.08V12a10 10 0 1 1-5.93-9.14', 'm9 11 3 3L22 4'] },
+      edit: { paths: ['M21.2 6.8a1 1 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z'] },
+      history: { circles: [], paths: ['M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'M3 3v5h5', 'M12 7v5l4 2'] },
+      back: { paths: ['m12 19-7-7 7-7', 'M19 12H5'] },
+      search: { circles: [[11, 11, 8]], paths: ['m21 21-4.3-4.3'] },
+    }
+
+    /** The drawers' own icons. */
     const SECTION_ICON = {
-      world: '◎',
-      cast: '◍',
-      plot: '◷',
-      text: '✎',
+      world: 'globe',
+      cast: 'users',
+      plot: 'route',
+      text: 'book',
+    }
+
+    /**
+     * One stroked icon.
+     *
+     * @param props - `name` from {@link ICONS}, `size` in px, optional style.
+     * @returns the svg, or nothing when the name is unknown (a missing glyph must
+     *   not take the page down).
+     */
+    function Icon(props) {
+      const { name, size = 14, style } = props
+      const icon = ICONS[name]
+      if (icon === undefined) return null
+      return h(
+        'svg',
+        {
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          'stroke-width': 2,
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          'aria-hidden': 'true',
+          style: { display: 'inline-block', verticalAlign: '-2px', flex: '0 0 auto', ...(style || {}) },
+        },
+        // Entries define only the shapes they need — a book is all paths, a more
+        // button is all circles — so both lists are read defensively.
+        ...(icon.circles ?? []).map((circle, index) => h('circle', { key: `c${index}`, cx: circle[0], cy: circle[1], r: circle[2] })),
+        ...(icon.paths ?? []).map((d, index) => h('path', { key: `p${index}`, d })),
+      )
     }
 
     /** Tone → colour. `currentColor` keeps light and dark themes working. */
@@ -2109,7 +2174,9 @@ const API_BACKUP = '/api/inkwell/backup'
         ...S.row,
         paddingLeft: `${8 + depth * 14}px`,
       }
-      const glyph = hasChildren ? (open ? '▾' : '▸') : row.kind ? '◦' : '▫'
+      // A real chevron for anything that opens; a quiet dot for a leaf that still
+      // stands for something, and the same dot for the rest.
+      const glyph = hasChildren ? (open ? 'chevronDown' : 'chevronRight') : 'dot'
       const head = h(
         'div',
         {
@@ -2148,7 +2215,7 @@ const API_BACKUP = '/api/inkwell/backup'
             className: hasChildren ? 'iw-glyph' : undefined,
             onClick: hasChildren ? (event) => { event.stopPropagation(); onToggle(row.id) } : undefined,
           },
-          glyph,
+          h(Icon, { name: glyph, size: hasChildren ? 13 : 9, style: hasChildren ? undefined : { opacity: 0.55 } }),
         ),
         h('span', { style: { ...S.label, ...(toneStyle || {}) } }, row.label),
         // 「移」/「并」: a reorder leaves no trace in the prose, so the row has to
@@ -2181,7 +2248,7 @@ const API_BACKUP = '/api/inkwell/backup'
                 },
                 onKeyDown: (event) => event.stopPropagation(),
               },
-              '⋯',
+              h(Icon, { name: 'more', size: 15 }),
             )
           : null,
       )
@@ -2281,7 +2348,8 @@ const API_BACKUP = '/api/inkwell/backup'
               onToggle(section.id)
             },
           },
-          h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', fontSize: '12.5px' } }, SECTION_ICON[section.id] || '▫'),
+          h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } },
+            h(Icon, { name: SECTION_ICON[section.id] || 'dot', size: 13 })),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
           props.onBulkToggle
@@ -2306,7 +2374,7 @@ const API_BACKUP = '/api/inkwell/backup'
                     props.onAdd()
                   },
                 },
-                '+',
+                h(Icon, { name: 'plus', size: 13 }),
               )
             : null,
         ),
@@ -4016,11 +4084,13 @@ const API_BACKUP = '/api/inkwell/backup'
       const head = h(
         'div',
         { style: S.head },
-        h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
+        h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' },
+          h(Icon, { name: 'back', size: 13 }), ' 返回'),
         h('span', { style: S.bookTitle }, (data && data.title) || target.label || ''),
         h('span', { style: S.spacer }),
         data && historyTarget
-          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openHistory }, panel === 'history' ? '收起' : '历史')
+          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: openHistory },
+              h(Icon, { name: 'history', size: 13 }), panel === 'history' ? ' 收起' : ' 历史')
           : null,
         // The pipeline used to live only in the documentation: write, propose,
         // two reviews, chief, commit — six steps and five tool names, none of
@@ -4070,7 +4140,8 @@ const API_BACKUP = '/api/inkwell/backup'
                   return undefined
                 },
               },
-              roundJob !== null && roundJob !== undefined && !roundJob.done ? '审核中…' : '审核一轮',
+              h(Icon, { name: 'audit', size: 13 }),
+              roundJob !== null && roundJob !== undefined && !roundJob.done ? ' 审核中…' : ' 审核一轮',
             )
           : null,
         data && editable
@@ -4081,7 +4152,8 @@ const API_BACKUP = '/api/inkwell/backup'
                 h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: cancelEdit, disabled: saving }, '取消'),
                 h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: saveEdit, disabled: saving }, saving ? '保存中…' : '保存'),
               )
-            : h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: beginEdit }, '编辑')
+            : h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: beginEdit },
+                h(Icon, { name: 'edit', size: 13 }), ' 编辑')
           : null,
       )
 
@@ -4466,7 +4538,8 @@ const API_BACKUP = '/api/inkwell/backup'
           h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 8px' } },
-          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' }, '返回'),
+          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onBack, title: '回到目录' },
+            h(Icon, { name: 'back', size: 13 }), ' 返回'),
           h('span', { style: { ...S.bookTitle, fontSize: '13px' } }, '搜正文'),
         ),
         h('input', {
@@ -5635,7 +5708,10 @@ const API_BACKUP = '/api/inkwell/backup'
               onChapterAction: runChapterAction,
               onRecap: startRecap,
               bulk: bulkMode && section.id === 'text',
-              onBulkToggle: bulkMode || section.id === 'text' ? () => { setBulkMode(!bulkMode); setBulkPicked(new Set()) } : undefined,
+              // Only the manuscript drawer supports multi-select. The `|| bulkMode`
+              // that used to be here put a 多选 button on every drawer the moment
+              // one was opened, including 世界观 and 剧情设计.
+              onBulkToggle: section.id === 'text' ? () => { setBulkMode(!bulkMode); setBulkPicked(new Set()) } : undefined,
               bulkActive: bulkMode && section.id === 'text',
               bulkPicked,
               onBulkPick: (key) => setBulkPicked((current) => {
@@ -5683,14 +5759,14 @@ const API_BACKUP = '/api/inkwell/backup'
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.up ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.up),
                 onClick: () => runChapterAction('up', menuAt.key),
-              }, '↑　上移'),
+              }, h(Icon, { name: 'arrowUp', size: 13 }), '　上移'),
               h('button', {
                 type: 'button',
                 className: 'iw-menu-item',
                 style: { ...S.menuItem, ...(menuAt.moves && menuAt.moves.down ? {} : S.menuItemOff) },
                 disabled: !(menuAt.moves && menuAt.moves.down),
                 onClick: () => runChapterAction('down', menuAt.key),
-              }, '↓　下移'),
+              }, h(Icon, { name: 'arrowDown', size: 13 }), '　下移'),
               h('button', {
                 type: 'button',
                 className: 'iw-menu-item',
@@ -5701,7 +5777,7 @@ const API_BACKUP = '/api/inkwell/backup'
                   setMenuAt(null)
                   setMergeAsk({ number: key })
                 },
-              }, '⇤　并入下章'),
+              }, h(Icon, { name: 'merge', size: 13 }), '　并入下章'),
               h('button', {
                 type: 'button',
                 className: 'iw-menu-item',
@@ -5711,7 +5787,19 @@ const API_BACKUP = '/api/inkwell/backup'
                   setMenuAt(null)
                   setDeleteAsk({ number: key })
                 },
-              }, '✕　删除章节'),
+              }, h(Icon, { name: 'trash', size: 13 }), '　删除章节'),
+              // Only where the card is actually stale: on a fresh card this item
+              // would invite a second model call for no reason. (This entry was
+              // lost once to a git checkout of client.js; the backend field and
+              // its test survived, which is how it was noticed.)
+              ...(row.staleCard && typeof onRecap === 'function'
+                ? [h('button', {
+                    type: 'button',
+                    className: 'iw-menu-item',
+                    style: S.menuItem,
+                    onClick: () => { setMenuAt(null); onRecap(menuAt.key) },
+                  }, h(Icon, { name: 'refresh', size: 13 }), '　重建章卡')]
+                : []),
             )
           : null,
         // Merging deletes a chapter and empties a recap. Asking afterwards is
@@ -5880,6 +5968,7 @@ const API_BACKUP = '/api/inkwell/backup'
             },
           },
           h('span', { style: { fontSize: '12px', color: 'var(--iw-accent)' } }, '⌕'),
+          h(Icon, { name: 'search', size: 13, style: { color: 'var(--iw-fg-2)' } }),
           h('span', { style: { fontSize: '12.5px' } }, '搜正文'),
           h('span', { style: S.spacer }),
           h('span', { style: S.aside }, `${num(data.written)} 章可搜`),
