@@ -571,14 +571,20 @@ export async function deleteChapters(store: ProjectStore, numbers: readonly numb
   const cleaned = [...new Set(numbers)].filter((number) => Number.isInteger(number) && number >= 1).sort((a, b) => a - b)
   if (cleaned.length === 0) throw new Error('没有要删除的章号。')
   const index = await store.chapters()
-  const all = index.map((chapter) => chapter.number)
-  const existing = cleaned.filter((number) => all.includes(number))
+  // Every chapter number, including chapters that exist only as a card — a
+  // freshly created chapter with no prose yet is still a chapter, and it must
+  // move up with the rest. Counting only the prose files left such a chapter
+  // stranded at 472 while the book shrank to 265.
+  const proseNumbers = index.map((chapter) => chapter.number)
+  const planNumbers = (await store.plans()).map((plan) => plan.number)
+  const all = [...new Set([...proseNumbers, ...planNumbers])].sort((a, b) => a - b)
+  const existing = cleaned.filter((number) => proseNumbers.includes(number) || planNumbers.includes(number))
   if (existing.length === 0) throw new Error('选中的章都没有正文，无从删除。')
   if (all.length - existing.length === 0) throw new Error('全书只剩这一章了。删除后书就是空的——整本删掉吧。')
 
   const map = buildDeleteMap(all, new Set(existing))
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const proseFiles = all.map((chapter) => `chapters/${fileName(chapter)}`)
+  const proseFiles = proseNumbers.map((chapter) => `chapters/${fileName(chapter)}`)
   const backupDir = await backup(store, `delete-batch-${stamp}`, [...Object.values(FILES), ...proseFiles])
   const touched = await applyChapterMap(store, map)
   return {
@@ -608,13 +614,15 @@ export async function mergeChaptersBatch(store: ProjectStore, numbers: readonly 
   const b = cleaned[cleaned.length - 1]!
   if (b - a !== cleaned.length - 1) throw new Error(`合并的章必须连续：选了 ${cleaned.join('、')}，中间有缺。`)
   const index = await store.chapters()
-  const all = index.map((chapter) => chapter.number)
+  const proseNumbers = index.map((chapter) => chapter.number)
+  const planNumbers = (await store.plans()).map((plan) => plan.number)
+  const all = [...new Set([...proseNumbers, ...planNumbers])].sort((a, b) => a - b)
   const missing = cleaned.filter((number) => !all.includes(number))
   if (missing.length > 0) throw new Error(`第${missing.join('、')}章没有正文，合并不了。`)
 
   const map = buildMergeMap(all, a, b)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const proseFiles = all.map((chapter) => `chapters/${fileName(chapter)}`)
+  const proseFiles = proseNumbers.map((chapter) => `chapters/${fileName(chapter)}`)
   const backupDir = await backup(store, `merge-batch-${stamp}`, [...Object.values(FILES), ...proseFiles])
 
   // Join the range's prose in order before the map moves anything: the texts

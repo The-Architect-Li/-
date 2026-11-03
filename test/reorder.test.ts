@@ -397,3 +397,23 @@ describe('batch operations', () => {
     await expect(mergeChaptersBatch(store, [3, 5])).rejects.toThrow('必须连续')
   })
 })
+
+describe('a chapter that exists only as a card', () => {
+  it('renumbers with the rest of the book', async () => {
+    // The reported bug: after deleting earlier chapters, a freshly created
+    // chapter with no prose yet stayed at its old number while the book shrank.
+    // It is a chapter — it just has no text — so it has to move too.
+    const store = await book()
+    await store.upsertPlan({
+      number: 99, volume: 1, title: '待写的那一章', pov: '', characters: [], beats: ['a'], hooks: ['h'],
+      approved: false, summary: '', cardRevision: 0,
+    })
+    await deleteChapters(store, [2])
+    const numbers = (await store.chapters()).map((chapter) => chapter.number)
+    expect(numbers).toEqual([1, 2, 3, 4, 5])
+    const plans = (await store.plans()).map((plan) => plan.number).sort((a, b) => a - b)
+    // 99 was the last chapter of the book, however empty: it becomes 6.
+    expect(plans).toContain(6)
+    expect(plans).not.toContain(99)
+  })
+})
