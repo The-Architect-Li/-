@@ -21,10 +21,10 @@ afterEach(async () => {
 })
 
 /** A book with a project file, served over a real port like the panel is. */
-async function serve(extra: Record<string, unknown> = {}): Promise<{ base: string; close: () => Promise<void> }> {
+async function serve(extra: Record<string, unknown> = {}, storeOverride?: ProjectStore): Promise<{ base: string; close: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'inkwell-round-'))
   roots.push(dir)
-  const store = new ProjectStore(join(dir, '.novel'))
+  const store = storeOverride ?? new ProjectStore(join(dir, '.novel'))
   await store.init('雾港', 800000)
   const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store, ...extra })
   const server = createServer((req, res) => void handler(req, res))
@@ -274,40 +274,49 @@ describe('the chapter page talks about the card, not about writing prose', () =>
   })
 })
 
-describe('walking a round on a chapter that has prose but no card', () => {
-  it('refuses before starting, in words, with the button that fixes it', async () => {
-    // 「先 novel_outline add_chapter + approve_chapter，再派发」 about a chapter with
-    // 2146 words in it was a dead end: the outline is not what is missing, the card
-    // is, and the refusal only said so in model-speak. It also failed after the job
-    // started, once the author had already watched the spinner.
+describe('the panel round is review-only', () => {
+  it('starts on a chapter with prose and no card — that is exactly what it is for', async () => {
+    // A chapter that arrived whole needs reading, not rewriting. Requiring a card
+    // (let alone an approved outline) before the reviewers could look was the gate
+    // for a writer this round no longer has.
     const dir = await mkdtemp(join(tmpdir(), 'inkwell-round-gate-'))
     roots.push(dir)
-    const store = new ProjectStore(dir)
+    const store = new ProjectStore(join(dir, '.novel'))
     await store.init('雾港', 800000)
     await store.writeProject({ ...(await store.readProject()), phase: 'drafting', premise: '一句话前提。' })
     await store.writeChapter(
       { number: 20, title: '朱明', text: '这是第二十章的正文。'.repeat(50), words: 2146, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
       { baseRevision: undefined },
     )
-    const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store })
-    const server = createServer((req, res) => void handler(req, res))
-    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()))
-    const address = server.address()
-    if (address === null || typeof address === 'string') throw new Error('no port')
-    const base = `http://127.0.0.1:${address.port}${PANEL_PREFIX}`
+    const app = await serve({ agentOf: () => ({}), ctxOf: () => ({}) }, store)
     try {
-      const response = await fetch(`${base}/round`, {
+      const response = await fetch(`${app.base}/round`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
         body: JSON.stringify({ number: 20 }),
       })
-      expect(response.status).toBe(409)
-      const payload = (await response.json()) as { error: { message: string; action?: { id: string; number: number; label: string } } }
-      expect(payload.error.message).toContain('还没有章卡')
-      expect(payload.error.message).not.toContain('novel_outline')
-      expect(payload.error.action).toMatchObject({ id: 'recap', number: 20 })
+      const payload = (await response.json()) as { data: { id: string; stage: string } }
+      expect(response.status).toBe(200)
+      expect(payload.data.stage).toBe('logic')
     } finally {
-      await new Promise<void>((done) => server.close(() => done()))
+      await app.close()
+    }
+  })
+
+  it('refuses a chapter with no prose, and points writing at the conversation', async () => {
+    const app = await serve({ agentOf: () => ({}), ctxOf: () => ({}) })
+    try {
+      const response = await fetch(`${app.base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ number: 1 }),
+      })
+      expect(response.status).toBe(409)
+      const payload = (await response.json()) as { error: { message: string } }
+      expect(payload.error.message).toContain('没东西可审')
+      expect(payload.error.message).not.toContain('novel_outline')
+    } finally {
+      await app.close()
     }
   })
 })

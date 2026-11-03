@@ -70,7 +70,7 @@ import { PENDING_LABEL, describePending, readPending, removePending } from '../d
 import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
-import { runRound } from '../tools/dispatch.ts'
+import { runReviewRound } from '../tools/dispatch.ts'
 import { mergeChapters, moveChapter } from '../domain/reorder.ts'
 import { archiveChapter } from '../tools/archive.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
@@ -137,7 +137,7 @@ export interface PanelDeps {
    * button is not drawn, because a button that silently does nothing is worse
    * than no button.
    */
-  agentOf?: (sessionId: string) => unknown
+  agentOf?: (sessionId?: string) => unknown
   /** Plugin context, needed to spawn the children a round delegates to. */
   ctxOf?: () => unknown
 }
@@ -1517,7 +1517,9 @@ export async function recapRoute(
   try {
     const number = Number(body.number)
     if (!Number.isInteger(number) || number < 1) throw new PanelInputError('recap 需要 number。')
-    const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
+    // No session does not mean no agent: the single-book panel still has the
+    // conversation's agent to delegate to. The host decides, not the session.
+    const agent = deps.agentOf?.(sessionId)
     const ctx = deps.ctxOf?.()
     if (agent === undefined || ctx === undefined) {
       throw new PanelInputError(
@@ -1646,34 +1648,20 @@ export async function roundRoute(
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
 
-    // Fail before starting anything, with a sentence and a button — not thirty
-    // seconds into the writer's turn. A round rewrites the chapter, which needs an
-    // approved outline to aim at; a chapter that already has prose but no card is
-    // missing the card, not the outline, and the panel has a button for that.
-    const plans = await store.plans()
-    const chapters = await store.chapters()
-    const plan = plans.find((item) => item.number === number)
-    const chapter = chapters.find((item) => item.number === number)
-    if (plan === undefined) {
-      if (chapter !== undefined) {
-        throw new PanelInputError(
-          '这一章有正文，但还没有章卡。走一轮会重写正文，得先有章卡当目标——点「为这一章建章卡」，档案员从正文里读一张出来。',
-          409,
-          { id: 'recap', number, label: '为这一章建章卡', hint: '读一遍这章正文，写出摘要与关键事件（一次模型调用，十几秒）' },
-        )
-      }
+    // The panel's round reviews; it does not write. So the only thing it needs is
+    // prose to read — no outline, no approval, no card. A chapter without prose
+    // has nothing to review, and writing it is the commander's job: say so in the
+    // conversation.
+    const chapter = (await store.chapters()).find((item) => item.number === number)
+    if (chapter === undefined) {
       throw new PanelInputError(
-        `第${number}章还没有章纲，也没有正文。在对话里说「为第${number}章写章纲」，或点开正文抽屉手动建。`,
+        `第${number}章还没有正文，没东西可审。写正文在对话里说——比如「写第${number}章」，指挥官会派写手。`,
         409,
       )
     }
-    if (!plan.approved) {
-      throw new PanelInputError(
-        `第${number}章的章纲还没批准。在章纲页点「批准」，确认节拍和出场人物后再走一轮。`,
-        409,
-      )
-    }
-    const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
+    // No session does not mean no agent: the single-book panel still has the
+    // conversation's agent to delegate to. The host decides, not the session.
+    const agent = deps.agentOf?.(sessionId)
     const ctx = deps.ctxOf?.()
     if (agent === undefined || ctx === undefined) {
       throw new PanelInputError(
@@ -1682,7 +1670,7 @@ export async function roundRoute(
       )
     }
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    const job: RoundJob = { id, number, stage: 'writer', started: Date.now(), report: '', error: '', done: false }
+    const job: RoundJob = { id, number, stage: 'logic', started: Date.now(), report: '', error: '', done: false }
     ROUND_JOBS.set(id, job)
     // Keep the map from growing without bound in a long-lived panel.
     if (ROUND_JOBS.size > 20) {
@@ -1690,7 +1678,7 @@ export async function roundRoute(
       if (oldest !== undefined) ROUND_JOBS.delete(oldest.id)
     }
 
-    void runRound(
+    void runReviewRound(
       ctx as never,
       { config: deps.config, storeFor: () => store } as never,
       { number },
@@ -1707,7 +1695,7 @@ export async function roundRoute(
         ROUND_JOBS.set(id, { ...job, stage: 'done', done: true, report: '', error: String((error as Error).message ?? error) })
       })
 
-    return { status: 200, body: { ok: true, data: { id, number, stage: 'writer' } } }
+    return { status: 200, body: { ok: true, data: { id, number, stage: 'logic' } } }
   } catch (error) {
     return failure(error)
   }

@@ -110,8 +110,12 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
           // agent: `agents.get(id)` is keyed by agent id, which for a session's
           // agent is the session id.
           agentOf: (sessionId) => {
-            const agents = ctx.get('agents') as unknown as { get?: (id: string) => unknown } | undefined
-            return typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
+            const agents = ctx.get('agents') as unknown as { get?: (id?: string) => unknown } | undefined
+            if (typeof agents?.get !== 'function') return undefined
+            // No session id means the panel is running single-book; the host's
+            // agent registry still has to answer, or the panel's review round
+            // cannot delegate at all.
+            return sessionId === undefined ? undefined : agents.get(sessionId)
           },
           ctxOf: () => ctx,
         }),

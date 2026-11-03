@@ -61,9 +61,8 @@ window.__ModuleLoader__.load({
     const API_SEARCH = '/api/inkwell/search'
     const API_ROUND = '/api/inkwell/round'
 
-    /** The four stages of a round, in the order they run. */
+    /** The three stages of a review round, in the order they run. No writer: writing is the commander's job in the conversation. */
     const ROUND_STAGES = [
-      { id: 'writer', label: '写手', doing: '写手正在写这一章' },
       { id: 'logic', label: '逻辑审核', doing: '逻辑审核在找漏洞' },
       { id: 'character', label: '人物审核', doing: '人物审核在核对口吻' },
       { id: 'chief', label: '总裁决', doing: '总裁决在汇总两份意见' },
@@ -3986,14 +3985,14 @@ const API_BACKUP = '/api/inkwell/backup'
               {
                 type: 'button',
                 className: 'iw-btn',
-                style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}) },
+                style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}), ...((data.words ?? 0) > 0 ? {} : { display: 'none' }) },
                 disabled: roundJob !== null && roundJob !== undefined && !roundJob.done,
                 title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
                 onClick: () => {
                   setRoundReport('')
                   setRoundError(null)
                   const number = Number(target.key)
-                  setRoundJob({ stage: 'writer', elapsed: 0, number, done: false })
+                  setRoundJob({ stage: 'logic', elapsed: 0, number, done: false })
                   startRound(sessionId, root, number)
                     .then((started) => {
                       // Poll until the server says the last role is finished. One
@@ -4025,7 +4024,7 @@ const API_BACKUP = '/api/inkwell/backup'
                   return undefined
                 },
               },
-              roundJob !== null && roundJob !== undefined && !roundJob.done ? '跑一轮中…' : '走一轮',
+              roundJob !== null && roundJob !== undefined && !roundJob.done ? '审核中…' : '审核一轮',
             )
           : null,
         data && editable

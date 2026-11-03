@@ -231,9 +231,15 @@ async function dispatchOne(
     const role = ROLES[roleId]
     const number = args.number
     const snapshot = await store.snapshot()
-    const plan = snapshot.plans.find((item) => item.number === number)
-    if (!plan) {
-      throw new Error(`第${number}章没有章纲。先 novel_outline add_chapter + approve_chapter，再派发。`)
+
+    // The outline gate belongs to the writer alone: it aims the prose at beats.
+    // Reviewers read what exists — a draft, or committed prose — and a chapter
+    // without a card is exactly the one that most needs reading.
+    if (roleId === 'writer') {
+      const writerPlan = snapshot.plans.find((item) => item.number === number)
+      if (!writerPlan) {
+        throw new Error(`第${number}章没有章纲。先 novel_outline add_chapter + approve_chapter，再派发。`)
+      }
     }
 
     const drafts = await store.allChapters()
@@ -291,11 +297,19 @@ async function dispatchOne(
       }
     }
 
+    // The text under review: the newest draft when one exists (the writer's
+    // round), otherwise the committed prose itself. Reviewing the latter is how a
+    // chapter that arrived whole — imported, or written before this workshop —
+    // gets read without being rewritten first.
     const draft = await store.latestDraft(number)
-    if (!draft) {
-      throw new Error(`第${number}章还没有草稿。先派 writer，再 novel_chapter action="propose"，然后才能审核。`)
+    const chapterOnDisk = draft ? undefined : (await store.chapter(number))
+    if (!draft && chapterOnDisk === undefined) {
+      throw new Error(`第${number}章既没有草稿也没有正文，没东西可审。在对话里说「为第${number}章写正文」先。`)
     }
-    const draftRecord = { number: draft.number, title: draft.summary ? draft.summary.slice(0, 40) : `第${draft.number}章`, words: draft.words, summary: draft.summary, writtenAt: draft.writtenAt, text: draft.text }
+    const draftRecord = draft
+      ? { number: draft.number, title: draft.summary ? draft.summary.slice(0, 40) : `第${draft.number}章`, words: draft.words, summary: draft.summary, writtenAt: draft.writtenAt, text: draft.text }
+      : { number: chapterOnDisk!.number, title: chapterOnDisk!.title, words: chapterOnDisk!.words, summary: chapterOnDisk!.summary, writtenAt: chapterOnDisk!.writtenAt, text: chapterOnDisk!.text }
+    const reviewRound = draft ? draft.round : (chapterOnDisk!.revision ?? 0)
 
     // The keeper runs on the chapter alone plus the state: it maintains the
     // record, it does not re-read the book. That is the whole point of
@@ -363,7 +377,7 @@ async function dispatchOne(
       const stored = await store.appendReview(number, {
         role: roleId,
         route: routeText,
-        draftRound: draft.round,
+        draftRound: reviewRound,
         items: findings.map((finding) => ({
           severity: finding.severity,
           code: finding.code,
@@ -393,7 +407,7 @@ async function dispatchOne(
     const stored = await store.appendReview(number, {
       role: roleId,
       route: routeText,
-      draftRound: draft.round,
+      draftRound: reviewRound,
       items: findings.map((finding) => ({
         severity: finding.severity,
         code: finding.code,
@@ -419,6 +433,9 @@ async function dispatchOne(
 
 /** Where a round is, for whoever is watching it. */
 export type RoundStage = 'writer' | 'logic' | 'character' | 'chief' | 'done'
+
+/** Where a review-only round is: no writer, by design. */
+export type ReviewStage = 'logic' | 'character' | 'chief' | 'done'
 
 /** What one review role reported, as the round summarises it. */
 interface RoundReview {
@@ -447,6 +464,88 @@ interface RoundReview {
  * @param exec - execution context, for the parent agent.
  * @returns the summary the author reads.
  */
+/**
+ * The panel's round: two reviewers and the chief, reading what is already there.
+ *
+ * Deliberately no writer. Writing is the commander's job — the author says what
+ * they want in the conversation, and `novel_dispatch` spawns the writer. When the
+ * panel also spawned one, the workshop had two entry points that produced prose,
+ * two sets of gates that disagreed, and a button that fired two thousand words the
+ * author never asked for. The panel's round is the quality gate, not the pen.
+ *
+ * Runs on committed prose when no draft exists, so a chapter that arrived whole
+ * can be read without being rewritten first.
+ *
+ * @param ctx - plugin context, for spawning.
+ * @param deps - config and store resolution.
+ * @param args - the chapter number.
+ * @param exec - execution context carrying the parent agent.
+ * @param onStage - progress: which reviewer holds the pen.
+ * @returns findings and a report, shaped like runRound's minus the writer parts.
+ */
+export async function runReviewRound(
+  ctx: Context,
+  deps: ToolDeps,
+  args: { number: number },
+  exec: { agent?: unknown; signal: AbortSignal },
+  onStage?: (stage: ReviewStage) => void,
+): Promise<Record<string, unknown>> {
+  const pass = (extra: Record<string, unknown>) => ({ number: args.number, ...extra })
+
+  onStage?.('logic')
+  const logic = (await dispatchOne(ctx, deps, 'logic', pass({}), exec)) as unknown as RoundReview
+  onStage?.('character')
+  const character = (await dispatchOne(ctx, deps, 'character', pass({}), exec)) as unknown as RoundReview
+  onStage?.('chief')
+  const chief = (await dispatchOne(
+    ctx,
+    deps,
+    'chief',
+    pass({
+      findings: [
+        { role: 'logic', items: logic.findings ?? [] },
+        { role: 'character', items: character.findings ?? [] },
+      ],
+    }),
+    exec,
+  )) as unknown as RoundReview
+
+  const tallyOf = (review: RoundReview) => {
+    const list = (review.findings ?? []) as { severity?: string }[]
+    return {
+      errors: list.filter((item) => item.severity === 'error').length,
+      warnings: list.filter((item) => item.severity === 'warn').length,
+      infos: list.filter((item) => item.severity === 'info').length,
+    }
+  }
+  const line = (review: RoundReview) => {
+    const counts = tallyOf(review)
+    return `${counts.errors} 必改 / ${counts.warnings} 建议改 / ${counts.infos} 可忽略`
+  }
+  const verdict = tallyOf(chief)
+  const blocking = verdict.errors > 0
+  const open = verdict.warnings + verdict.infos
+
+  return {
+    role: 'review',
+    number: args.number,
+    findings: chief.findings ?? [],
+    report: [
+      `第${args.number}章审核完一轮（正文未动，${args.number} 章照旧）。`,
+      '',
+      `逻辑审核　${line(logic)}`,
+      `人物审核　${line(character)}`,
+      `总裁决　　${line(chief)}`,
+      '',
+      blocking
+        ? `总裁决认定 ${verdict.errors} 条必改。下一步：在对话里说「按审核意见改第${args.number}章」，改完再点一次审核。`
+        : open > 0
+          ? `没有必改项，还有 ${open} 条建议。采不采纳由你：在对话里说「按审核意见改第${args.number}章」，或者不管它。`
+          : '三份审核都没意见。这一章不用动。',
+    ].join('\n'),
+  }
+}
+
 export async function runRound(
   ctx: Context,
   deps: ToolDeps,
