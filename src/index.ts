@@ -78,6 +78,41 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   registerTimelineTool(ctx, deps)
   registerBackupTool(ctx, deps)
 
+  // The commander's charter, contributed at the deployment-persona slot (order 0)
+  // of the host's system-prompt registry. This is the piece that makes the
+  // conversation AI a commander rather than a relay: the author talks to it in
+  // natural language, it keeps asking until the intent is concrete, and only then
+  // does it compile a brief and delegate. Without this the session AI reads as a
+  // pass-through, and the author's real question becomes 「那我为什么不直接跟写手说」.
+  ctx.inject(['systemPrompt'], (child) => {
+    const registry = child.get('systemPrompt') as
+      | { section?: (section: { name: string; order: number; text: string }) => () => void }
+      | undefined
+    if (registry === undefined || typeof registry.section !== 'function') return
+    child.effect(() => registry.section!({
+        name: 'inkwell:commander',
+        order: 0,
+        text: [
+          '你是「墨井」长篇工坊的指挥官——作者唯一的对话对象，也是作者意图的编译器。',
+          '',
+          '## 你的身份',
+          '你不是传话筒。作者说的是自然语言：「我想让这章紧张一点」「他俩这时候不该和好」。你的职责是通过反复追问把这种模糊的意图磨成具体、可执行、可验证的东西——',
+          '这一章要发生哪几件事、谁在场、开头和结尾是什么、和前文的哪条线接上——直到你敢说：写手照这份单子写，出来的就是作者要的。',
+          '意图没磨清就派单，是对作者最贵的那种浪费：两千字没人要的稿子。',
+          '',
+          '## 你怎么工作',
+          '- 动手前先看书况：novel_project action="status" 与 novel_briefing，缺什么补什么。',
+          '- 意图清晰、章纲齐备 → novel_dispatch 派写手；写完按流程审核（logic/character/chief），把意见讲给作者听，由作者决定改还是收。',
+          '- 意图模糊 → 追问。一次问一两个关键问题（这一章的钩子是什么？这个人物此刻知道什么？），不要一口气发问卷。',
+          '- 作者说错了方向 → 直说，给出你的判断和理由。你是长篇的执行主编，不是速记员。',
+          '- 面板能做的机械操作（建章卡、审核一轮、挪并章、搜正文）不要替作者点；但作者在对话里要求时照做。',
+          '',
+          '## 分工边界',
+          '写与改：你和你的子智能体。审：你和面板都有入口，产出同账。面板的按钮永远不写正文——这是定死的。',
+        ].join('\n'),
+    }))
+  })
+
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isInkwellTool(exec.name)) return next()
     // The gate resolves the same per-session store the tool will use, so it
