@@ -1135,7 +1135,8 @@ function readTarget(target: string): { kind: 'chapter' | 'canon'; name: string }
 /** Turn a thrown error into the panel's answer shape. */
 function failure(error: unknown): PanelAnswer {
   if (error instanceof PanelInputError) {
-    return { status: error.status, body: { ok: false, error: { message: error.message } } }
+    const action = error.action
+    return { status: error.status, body: { ok: false, error: { message: error.message, ...(action === undefined ? {} : { action }) } } }
   }
   const message = error instanceof Error ? error.message : String(error)
   return { status: 500, body: { ok: false, error: { message } } }
@@ -1642,6 +1643,36 @@ export async function roundRoute(
   try {
     const number = Number(body.number)
     if (!Number.isInteger(number) || number < 1) throw new PanelInputError('要跑第几章？number 要是正整数。')
+    const store = storeFor(deps, sessionId, root)
+    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
+
+    // Fail before starting anything, with a sentence and a button — not thirty
+    // seconds into the writer's turn. A round rewrites the chapter, which needs an
+    // approved outline to aim at; a chapter that already has prose but no card is
+    // missing the card, not the outline, and the panel has a button for that.
+    const plans = await store.plans()
+    const chapters = await store.chapters()
+    const plan = plans.find((item) => item.number === number)
+    const chapter = chapters.find((item) => item.number === number)
+    if (plan === undefined) {
+      if (chapter !== undefined) {
+        throw new PanelInputError(
+          '这一章有正文，但还没有章卡。走一轮会重写正文，得先有章卡当目标——点「为这一章建章卡」，档案员从正文里读一张出来。',
+          409,
+          { id: 'recap', number, label: '为这一章建章卡', hint: '读一遍这章正文，写出摘要与关键事件（一次模型调用，十几秒）' },
+        )
+      }
+      throw new PanelInputError(
+        `第${number}章还没有章纲，也没有正文。在对话里说「为第${number}章写章纲」，或点开正文抽屉手动建。`,
+        409,
+      )
+    }
+    if (!plan.approved) {
+      throw new PanelInputError(
+        `第${number}章的章纲还没批准。在章纲页点「批准」，确认节拍和出场人物后再走一轮。`,
+        409,
+      )
+    }
     const agent = sessionId === undefined ? undefined : deps.agentOf?.(sessionId)
     const ctx = deps.ctxOf?.()
     if (agent === undefined || ctx === undefined) {
@@ -1650,9 +1681,6 @@ export async function roundRoute(
         409,
       )
     }
-    const store = storeFor(deps, sessionId, root)
-    if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
-
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     const job: RoundJob = { id, number, stage: 'writer', started: Date.now(), report: '', error: '', done: false }
     ROUND_JOBS.set(id, job)

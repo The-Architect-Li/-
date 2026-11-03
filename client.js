@@ -913,7 +913,11 @@ const API_BACKUP = '/api/inkwell/backup'
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || payload.ok === false) {
-        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+        // The refusal carries its own fix when the panel can do it — the error
+        // becomes a button, so the author is not sent hunting for a command.
+        const failure = new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+        failure.action = payload && payload.error && payload.error.action
+        throw failure
       }
       return payload.data
     }
@@ -3864,7 +3868,9 @@ const API_BACKUP = '/api/inkwell/backup'
       const isChapter = target.kind === 'chapter'
       const [roundJob, setRoundJob] = useState(null)
       const [roundReport, setRoundReport] = useState('')
-      const [roundError, setRoundError] = useState('')
+      // A refusal with a button: the server says which one action unblocks this,
+      // and the panel draws it where the refusal is — not in some other view.
+      const [roundError, setRoundError] = useState(null)
 
       const openHistory = async () => {
         if (panel === 'history') { setPanel('none'); return }
@@ -3985,7 +3991,7 @@ const API_BACKUP = '/api/inkwell/backup'
                 title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
                 onClick: () => {
                   setRoundReport('')
-                  setRoundError('')
+                  setRoundError(null)
                   const number = Number(target.key)
                   setRoundJob({ stage: 'writer', elapsed: 0, number, done: false })
                   startRound(sessionId, root, number)
@@ -3999,21 +4005,21 @@ const API_BACKUP = '/api/inkwell/backup'
                             setRoundJob({ stage: state.stage, elapsed: state.elapsed, number, done: state.done })
                             if (!state.done) return undefined
                             clearInterval(timer)
-                            if (state.error !== '') setRoundError(state.error)
-                            else setRoundReport(state.report || '')
+                            if (state.error !== '') setRoundError({ message: state.error, action: state.action })
+                            else { setRoundReport(state.report || ''); setRoundError(null) }
                             if (onChanged) onChanged()
                             return undefined
                           })
                           .catch((failure) => {
                             clearInterval(timer)
-                            setRoundError(String((failure && failure.message) || failure))
+                            setRoundError({ message: String((failure && failure.message) || failure) })
                             setRoundJob(null)
                           })
                       }, 1000)
                       return undefined
                     })
                     .catch((failure) => {
-                      setRoundError(String((failure && failure.message) || failure))
+                      setRoundError({ message: String((failure && failure.message) || failure), action: failure && failure.action })
                       setRoundJob(null)
                     })
                   return undefined
@@ -4338,7 +4344,28 @@ const API_BACKUP = '/api/inkwell/backup'
               h('div', { style: { ...S.aside, paddingTop: '5px' } }, '没有自动定稿，跑完你自己决定。'),
             )
           : null,
-        roundError !== '' ? h('div', { style: { ...S.error, padding: '6px 0' } }, roundError) : null,
+        roundError !== null && roundError !== undefined
+          ? h(
+              'div',
+              { style: { ...S.error, padding: '8px 10px', margin: '6px 0' } },
+              h('div', null, roundError.message),
+              roundError.action
+                ? h(
+                    'div',
+                    { style: { display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px', flexWrap: 'wrap' } },
+                    h('button', {
+                      type: 'button',
+                      className: 'iw-btn iw-primary',
+                      style: S.primaryButton,
+                      title: roundError.action.hint,
+                      disabled: busyRecap !== null && busyRecap !== undefined,
+                      onClick: () => onRecap(roundError.action.number),
+                    }, busyRecap !== null && busyRecap !== undefined && busyRecap === roundError.action.number ? '正在读…' : roundError.action.label),
+                    h('span', { style: { ...S.aside, maxWidth: '100%' } }, roundError.action.hint),
+                  )
+                : null,
+            )
+          : null,
         roundReport !== ''
           ? h(
               'div',

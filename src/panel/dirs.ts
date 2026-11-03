@@ -50,14 +50,18 @@ export interface DirListing {
 /** A refused request, with the operator-facing reason. */
 export class PanelInputError extends Error {
   readonly status: number
+  /** The one action that would unblock the author, when the panel can do it. */
+  readonly action?: { id: string; number: number; label: string; hint: string }
 
   /**
    * @param message - why the input was refused.
    * @param status - HTTP status to answer with.
+   * @param action - the button that fixes this, when there is one.
    */
-  constructor(message: string, status = 400) {
+  constructor(message: string, status = 400, action?: { id: string; number: number; label: string; hint: string }) {
     super(message)
     this.status = status
+    this.action = action
   }
 }
 

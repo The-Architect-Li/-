@@ -47,10 +47,15 @@ describe('POST /round', () => {
         body: JSON.stringify({ number: 1 }),
       })
       expect(response.status).toBe(409)
+      // The book's own state is checked before the agent's: an empty book fails on
+      // 「还没有章纲」 first, and that is the more useful sentence. Either way it is
+      // a sentence, not a 500.
       const payload = (await response.json()) as { error: { message: string } }
-      expect(payload.error.message).toContain('拿不到这个会话的 agent')
-      // …and it says what to do instead, with the chapter already in it.
-      expect(payload.error.message).toContain('novel_dispatch action="round" number=1')
+      expect(payload.error.message).not.toBe('')
+      expect(payload.error.message).not.toContain('HTTP')
+      // …and the sentence names the chapter, so the author knows which one is
+      // being refused.
+      expect(payload.error.message).toContain('第1章')
     } finally {
       await app.close()
     }
@@ -265,6 +270,44 @@ describe('the chapter page talks about the card, not about writing prose', () =>
       expect(payload.data.action?.label).toBe('为这一章建章卡')
     } finally {
       await app.close()
+    }
+  })
+})
+
+describe('walking a round on a chapter that has prose but no card', () => {
+  it('refuses before starting, in words, with the button that fixes it', async () => {
+    // 「先 novel_outline add_chapter + approve_chapter，再派发」 about a chapter with
+    // 2146 words in it was a dead end: the outline is not what is missing, the card
+    // is, and the refusal only said so in model-speak. It also failed after the job
+    // started, once the author had already watched the spinner.
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-round-gate-'))
+    roots.push(dir)
+    const store = new ProjectStore(dir)
+    await store.init('雾港', 800000)
+    await store.writeProject({ ...(await store.readProject()), phase: 'drafting', premise: '一句话前提。' })
+    await store.writeChapter(
+      { number: 20, title: '朱明', text: '这是第二十章的正文。'.repeat(50), words: 2146, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+      { baseRevision: undefined },
+    )
+    const handler = createPanelHandler({ config: resolveConfig({}), baseStore: store })
+    const server = createServer((req, res) => void handler(req, res))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('no port')
+    const base = `http://127.0.0.1:${address.port}${PANEL_PREFIX}`
+    try {
+      const response = await fetch(`${base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ number: 20 }),
+      })
+      expect(response.status).toBe(409)
+      const payload = (await response.json()) as { error: { message: string; action?: { id: string; number: number; label: string } } }
+      expect(payload.error.message).toContain('还没有章卡')
+      expect(payload.error.message).not.toContain('novel_outline')
+      expect(payload.error.action).toMatchObject({ id: 'recap', number: 20 })
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()))
     }
   })
 })
