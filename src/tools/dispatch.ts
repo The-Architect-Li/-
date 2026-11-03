@@ -483,6 +483,30 @@ interface RoundReview {
  * @param onStage - progress: which reviewer holds the pen.
  * @returns findings and a report, shaped like runRound's minus the writer parts.
  */
+/**
+ * Cap one reviewer at a wall-clock deadline.
+ *
+ * The round had no ceiling: a model that sat at 「正在分析请求」 held the job open
+ * for half an hour, indistinguishable from a crash. A reviewer that cannot finish
+ * a chapter in two and a half minutes will not produce a better answer at forty.
+ *
+ * @param work - the dispatch promise.
+ * @param seconds - the ceiling.
+ * @param what - the stage's name, for the refusal sentence.
+ * @returns the dispatch result.
+ */
+function withDeadline<T>(work: Promise<T>, seconds: number, what: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<T>((_resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${what}超过 ${seconds} 秒没有返回。模型可能卡在长推理里——给这个角色换一个不思考的模型，或把任务说明收紧到「只输出 JSON」。`))
+      }, seconds * 1000)
+      if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+    }),
+  ])
+}
+
 export async function runReviewRound(
   ctx: Context,
   deps: ToolDeps,
@@ -493,21 +517,25 @@ export async function runReviewRound(
   const pass = (extra: Record<string, unknown>) => ({ number: args.number, ...extra })
 
   onStage?.('logic')
-  const logic = (await dispatchOne(ctx, deps, 'logic', pass({}), exec)) as unknown as RoundReview
+  const logic = (await withDeadline(dispatchOne(ctx, deps, 'logic', pass({}), exec), 150, '逻辑审核')) as unknown as RoundReview
   onStage?.('character')
-  const character = (await dispatchOne(ctx, deps, 'character', pass({}), exec)) as unknown as RoundReview
+  const character = (await withDeadline(dispatchOne(ctx, deps, 'character', pass({}), exec), 150, '人物审核')) as unknown as RoundReview
   onStage?.('chief')
-  const chief = (await dispatchOne(
-    ctx,
-    deps,
-    'chief',
-    pass({
-      findings: [
-        { role: 'logic', items: logic.findings ?? [] },
-        { role: 'character', items: character.findings ?? [] },
-      ],
-    }),
-    exec,
+  const chief = (await withDeadline(
+    dispatchOne(
+      ctx,
+      deps,
+      'chief',
+      pass({
+        findings: [
+          { role: 'logic', items: logic.findings ?? [] },
+          { role: 'character', items: character.findings ?? [] },
+        ],
+      }),
+      exec,
+    ),
+    180,
+    '总裁决',
   )) as unknown as RoundReview
 
   const tallyOf = (review: RoundReview) => {
@@ -576,11 +604,12 @@ export async function runRound(
   // Sequential, not parallel: one workshop, one notebook, and a report that
   // reads in the order the author thinks.
   onStage?.('logic')
-  const logic = (await dispatchOne(ctx, deps, 'logic', pass({}), exec)) as unknown as RoundReview
+  const logic = (await withDeadline(dispatchOne(ctx, deps, 'logic', pass({}), exec), 150, '逻辑审核')) as unknown as RoundReview
   onStage?.('character')
-  const character = (await dispatchOne(ctx, deps, 'character', pass({}), exec)) as unknown as RoundReview
+  const character = (await withDeadline(dispatchOne(ctx, deps, 'character', pass({}), exec), 150, '人物审核')) as unknown as RoundReview
   onStage?.('chief')
-  const chief = (await dispatchOne(
+  const chief = (await withDeadline(
+    dispatchOne(
     ctx,
     deps,
     'chief',
@@ -591,6 +620,9 @@ export async function runRound(
       ],
     }),
     exec,
+    ),
+    180,
+    '总裁决',
   )) as unknown as RoundReview
 
   // Count from the findings themselves: a reviewer returns a list, not a

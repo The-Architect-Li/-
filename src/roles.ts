@@ -221,16 +221,17 @@ export const ROLES: Record<RoleId, RoleDef> = {
  * Roles whose work is reading and copying, not composing.
  *
  * The archivist turns a chapter into a card; the reviewers walk a checklist. None
- * of that is helped by a model deliberating first — it only delays the first
- * token, which is what 「档案员要好久」 actually is. A writer or a chief still
- * inherits the host's own effort; these four default to low unless the author
- * configures something else through `novel_roles`.
+ * of that is helped by a model deliberating first — a 4000-word chapter review
+ * that sat at 「正在分析请求」 for half an hour was doing exactly that. `off`, not
+ * `low`: on the models this studio runs, low still thinks. A writer or a chief
+ * still inherits the host's own effort; these four default to off unless the
+ * author configures something else through `novel_roles`.
  */
 export const LEAN_REASONING: Partial<Record<RoleId, string>> = {
-  archivist: 'low',
-  keeper: 'low',
-  logic: 'low',
-  character: 'low',
+  archivist: 'off',
+  keeper: 'off',
+  logic: 'off',
+  character: 'off',
 }
 
 export function resolveRoleRoute(

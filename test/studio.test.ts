@@ -86,7 +86,7 @@ describe('studio pipeline', () => {
 
     // Reviewers inherit the session model but not its deliberation: a checklist
     // read does not need the model to think first, and the wait was the complaint.
-    expect(h.subagents.calls[1]?.request.agentOptions).toEqual({ reasoningEffort: 'low' })
+    expect(h.subagents.calls[1]?.request.agentOptions).toEqual({ reasoningEffort: 'off' })
 
     const chief = valueOf<{ findings: unknown[] }>(
       await h.call('novel_dispatch', {
