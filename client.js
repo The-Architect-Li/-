@@ -1094,7 +1094,7 @@ const API_BACKUP = '/api/inkwell/backup'
       root: {
         display: 'flex',
         flexDirection: 'column',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '13px',
         lineHeight: 1.6,
         color: 'var(--iw-fg)',
@@ -1204,7 +1204,7 @@ const API_BACKUP = '/api/inkwell/backup'
         color: 'var(--iw-fg-2)',
         backgroundColor: 'transparent',
         borderRadius: '6px',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '12px',
         height: '28px',
         padding: '0 9px',
@@ -1217,7 +1217,7 @@ const API_BACKUP = '/api/inkwell/backup'
         color: 'var(--iw-accent-fg)',
         backgroundColor: 'var(--iw-accent)',
         borderRadius: '6px',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '12px',
         fontWeight: 550,
         height: '28px',
@@ -1238,7 +1238,7 @@ const API_BACKUP = '/api/inkwell/backup'
         borderTop: '1px solid var(--iw-line)',
         backgroundColor: 'transparent',
         color: 'var(--iw-fg)',
-        font: 'inherit',
+        fontFamily: 'inherit',
         textAlign: 'left',
         borderRadius: '0 0 8px 8px',
       },
@@ -1389,7 +1389,7 @@ const API_BACKUP = '/api/inkwell/backup'
       input: {
         width: '100%',
         boxSizing: 'border-box',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '13px',
         height: '30px',
         padding: '0 9px',
@@ -1400,7 +1400,7 @@ const API_BACKUP = '/api/inkwell/backup'
       textarea: {
         width: '100%',
         boxSizing: 'border-box',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '13px',
         lineHeight: '1.75',
         padding: '8px 10px',
@@ -1637,6 +1637,12 @@ const API_BACKUP = '/api/inkwell/backup'
       },
       /** A pill for word-sized inline actions (多选). */
       chipBtn: {
+        // Centred by flex, not by line-height: a pill sized by line-height sits on
+        // the text baseline and reads a few pixels low next to a 13px label.
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
         fontSize: '11px',
         color: 'var(--iw-fg-3)',
         backgroundColor: 'transparent',
@@ -1644,9 +1650,12 @@ const API_BACKUP = '/api/inkwell/backup'
         borderRadius: '999px',
         padding: '0 8px',
         height: '19px',
-        lineHeight: '17px',
+        lineHeight: '1',
         cursor: 'pointer',
-        font: 'inherit',
+        // `font: 'inherit'` is shorthand — written after `fontSize` it silently
+        // resets it to 13.5px, and a 13.5px word inside a 19px pill sits low and
+        // looks broken. Only the family needs inheriting.
+        fontFamily: 'inherit',
       },
       sectionCount: {
         fontSize: '11px',
@@ -1720,7 +1729,7 @@ const API_BACKUP = '/api/inkwell/backup'
         border: 'none',
         backgroundColor: 'transparent',
         color: 'var(--iw-fg)',
-        font: 'inherit',
+        fontFamily: 'inherit',
         textAlign: 'left',
       },
       bookBody: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: '1 1 auto' },
@@ -1776,7 +1785,7 @@ const API_BACKUP = '/api/inkwell/backup'
       linkButton: {
         border: 'none',
         background: 'none',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '11.5px',
         padding: '3px 4px',
         borderRadius: '6px',
@@ -1788,7 +1797,7 @@ const API_BACKUP = '/api/inkwell/backup'
         backgroundColor: 'var(--iw-field)',
         color: 'var(--iw-fg)',
         borderRadius: '7px',
-        font: 'inherit',
+        fontFamily: 'inherit',
         fontSize: '12.5px',
         height: '30px',
         padding: '0 6px',
@@ -5675,7 +5684,7 @@ const API_BACKUP = '/api/inkwell/backup'
                 const input = {
                   width: '100%', boxSizing: 'border-box', marginTop: '2px', padding: '5px 7px',
                   border: '1px solid rgba(127,127,127,.32)', borderRadius: '6px',
-                  background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '12px',
+                  background: 'transparent', color: 'inherit', fontFamily: 'inherit', fontSize: '12px',
                 }
                 return h(
                   'div',
