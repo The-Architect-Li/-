@@ -180,6 +180,36 @@ describe('the card button on a written chapter', () => {
   })
 })
 
+describe('batch delete', () => {
+  it('takes a numbers array without asking for a single number', async () => {
+    // The route validated `body.number` before looking at `body.numbers`, so every
+    // bulk delete came back 「要删第几章？number 要是正整数」 and nothing was deleted.
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-bulk-del-'))
+    roots.push(dir)
+    const store = new ProjectStore(join(dir, '.novel'))
+    await store.init('雾港', 800000)
+    for (const number of [1, 2, 3, 4]) {
+      await store.writeChapter(
+        { number, title: `第${number}章`, text: `这是第${number}章。`.repeat(30), words: 200, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+        { baseRevision: undefined },
+      )
+    }
+    const app = await serve({ agentOf: () => ({}), ctxOf: () => ({}) }, store)
+    try {
+      const response = await fetch(`${app.base}/delete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ numbers: [2, 3] }),
+      })
+      expect(response.status).toBe(200)
+      const payload = (await response.json()) as { data: { total: number } }
+      expect(payload.data.total).toBe(2)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
 describe('search is not capped where the cap cannot be seen past', () => {
   it('returns far more than the old sixty, so the page can scroll through them', async () => {
     // 425 chapters matched 「路长远」 and the panel showed sixty with no way to

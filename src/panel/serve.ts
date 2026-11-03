@@ -1508,11 +1508,13 @@ export async function mergeRoute(
   root: string | undefined,
 ): Promise<PanelAnswer> {
   try {
-    const number = Number(body.number)
-    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('merge 需要 number：第几章把下一章并进来。')
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
+    const number = Number(body.number)
     const numbers = Array.isArray(body.numbers) ? (body.numbers as unknown[]).map((item) => Number(item)) : undefined
+    if (numbers === undefined && (!Number.isInteger(number) || number < 1)) {
+      throw new PanelInputError('merge 需要 number：第几章把下一章并进来。')
+    }
     const result = await (numbers !== undefined
       ? mergeChaptersBatch(store, numbers)
       : mergeChapters(store, number)
@@ -1556,9 +1558,13 @@ export async function deleteRoute(
   root: string | undefined,
 ): Promise<PanelAnswer> {
   try {
-    const number = Number(body.number)
-    if (!Number.isInteger(number) || number < 1) throw new PanelInputError('要删第几章？number 要是正整数。')
+    // Batch first: a `numbers` request carries no `number`, and validating that
+    // field before looking at the array rejected every bulk delete with 「要删第几章」.
     const store = storeFor(deps, sessionId, root)
+    const number = Number(body.number)
+    if (!Array.isArray(body.numbers) && (!Number.isInteger(number) || number < 1)) {
+      throw new PanelInputError('要删第几章？number 要是正整数。')
+    }
     const result = Array.isArray(body.numbers)
       ? await deleteChapters(store, (body.numbers as unknown[]).map((item) => Number(item))).catch((error) => {
           throw new PanelInputError(String((error as Error).message ?? error), 409)
