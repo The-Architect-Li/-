@@ -4163,7 +4163,7 @@ const API_BACKUP = '/api/inkwell/backup'
                 className: 'iw-btn',
                 style: { ...S.iconButton, ...(roundJob !== null && roundJob !== undefined && !roundJob.done ? { opacity: 0.6 } : {}), ...(data.written ? {} : { display: 'none' }) },
                 disabled: roundJob !== null && roundJob !== undefined && !roundJob.done,
-                title: '派写手写这一章，再让两个审核和总裁决各看一遍（几分钟，不会自动定稿）',
+                title: '逻辑审核、人物审核、总裁决各读一遍这一章，指出必改与建议；正文一个字不动（三次模型调用，几分钟）',
                 onClick: () => {
                   setRoundReport('')
                   setRoundError(null)
@@ -4361,7 +4361,7 @@ const API_BACKUP = '/api/inkwell/backup'
       const bodyValue = prose === null ? '' : String(draft[prose.key] === undefined ? prose.value : draft[prose.key])
       const paragraphs = (text) =>
         text.trim() === ''
-          ? [h('div', { key: 'pn', style: S.editHint }, '还没有正文。点“编辑”开始写，或者让聊天窗口派写手。')]
+          ? [h('div', { key: 'pn', style: S.editHint }, '还没有正文。点“编辑”自己写，或者在对话里说一句「写这一章」，指挥官会派写手。')]
           : text
               .split(/\n\s*\n/)
               .filter((line) => line.trim() !== '')
