@@ -102,6 +102,38 @@ describe('panel rows', () => {
     expect(clicked).toEqual([chapterRow])
   })
 
+  it('draws a checkbox in bulk mode and treats a row click as a pick', async () => {
+    // The author's report: 「有多选了，没看到怎么选择」 — the virtualised list never
+    // received `bulk`, so rows rendered without checkboxes. Position and click
+    // target both matter here.
+    const exports = await loadClient()
+    const tree = exports.tree as { Row: (props: Record<string, unknown>) => Element[] }
+    const picked: string[] = []
+    const opened: unknown[] = []
+    const rendered = tree.Row({
+      row: chapterRow,
+      depth: 1,
+      collapsed: new Set<string>(),
+      onToggle: () => undefined,
+      selected: null,
+      onRowClick: (row: unknown) => opened.push(row),
+      bulk: true,
+      bulkPicked: new Set<string>(),
+      onBulkPick: (key: string) => picked.push(key),
+    })
+    const head = rendered[0]
+    if (head === undefined) throw new Error('the row rendered nothing')
+    const children = (head.props.children as Element[]).filter(Boolean) as Element[]
+    const box = children.find((child) => (child?.props as { className?: string })?.className === 'iw-bulk-check')
+    expect(box).toBeTruthy()
+    expect(box?.props.children).toEqual(['☐'])
+    ;(box?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: () => undefined })
+    ;(head.props.onClick as () => void)()
+    // Both paths pick; neither opens the page while the list is a selection surface.
+    expect(picked).toEqual(['1', '1'])
+    expect(opened).toEqual([])
+  })
+
   it('sends group rows to the same handler, which toggles them', async () => {
     const exports = await loadClient()
     const tree = exports.tree as { Row: (props: Record<string, unknown>) => Element[] }

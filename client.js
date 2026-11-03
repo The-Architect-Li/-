@@ -2002,6 +2002,10 @@ const API_BACKUP = '/api/inkwell/backup'
               menuAt,
               onMenuToggle,
               onChapterAction,
+              onRecap,
+              bulk,
+              bulkPicked,
+              onBulkPick,
             }),
           ),
         )
@@ -2119,11 +2123,15 @@ const API_BACKUP = '/api/inkwell/backup'
             row.aside ? `${row.label} · ${row.aside}` : row.label,
             ...(row.mark !== undefined && row.mark !== null ? [row.mark.hint] : []),
           ].join('\n'),
-          onClick: () => onRowClick(row),
+          // In bulk mode a row click is a pick, not a page: the whole list is a
+          // selection surface for the moment, and opening pages from it would
+          // lose the selection the author is building.
+          onClick: () => (bulk && typeof onBulkPick === 'function' ? onBulkPick(row.key) : onRowClick(row)),
           onKeyDown: (event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return
             event.preventDefault()
-            onRowClick(row)
+            if (bulk && typeof onBulkPick === 'function') onBulkPick(row.key)
+            else onRowClick(row)
           },
         },
         bulk
@@ -2285,7 +2293,7 @@ const API_BACKUP = '/api/inkwell/backup'
                 onClick: (event) => { event.stopPropagation(); props.onBulkToggle() },
               }, props.bulkActive ? '退出多选' : '多选')
             : null,
-          props.onAdd
+          props.onAdd && !props.bulkActive
             ? h(
                 'button',
                 {
@@ -5774,7 +5782,26 @@ const API_BACKUP = '/api/inkwell/backup'
         bulkMode
           ? h(
               'div',
-              { style: { ...S.note, margin: '0 0 6px', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+              {
+                // Sticky, not merely first: the toolbar used to sit above the list
+                // and scroll away, so after picking anything the two buttons were
+                // off-screen. It needs its own opaque floor to keep the rows from
+                // showing through while it holds position.
+                style: {
+                  ...S.note,
+                  position: 'sticky',
+                  top: '0',
+                  zIndex: 30,
+                  margin: '0 0 6px',
+                  padding: '8px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  backgroundColor: 'rgba(26, 26, 31, 0.98)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,.35)',
+                },
+              },
               h('span', { style: { fontSize: '12.5px', color: 'var(--iw-fg)' } }, `已选 ${bulkPicked.size} 章`),
               (() => {
                 const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
