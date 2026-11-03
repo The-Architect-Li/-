@@ -147,7 +147,7 @@ export function registerArchiveTool(ctx: Context, deps: ToolDeps): void {
       }
 
       const prompt = buildArchivePrompt(inputs, role.persona, role.outputContract)
-      const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-archive')
+      const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-archive', 'archivist')
       const cards = parseArchiveOutput(output)
 
       const written: number[] = []
@@ -324,7 +324,7 @@ async function runLore(
 
   let lore = emptyLore()
   try {
-    const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-lore')
+    const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-lore', 'lorekeeper')
     lore = parseLoreOutput(output)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -463,7 +463,7 @@ export async function archiveChapter(
     // holds the HTTP request open indefinitely and the button never comes back.
     // Two minutes is well past how long one chapter takes and still finite.
     const output = await Promise.race([
-      runRole(ctx, role.persona, prompt, exec as never, route, 'inkwell-recap'),
+      runRole(ctx, role.persona, prompt, exec as never, route, 'inkwell-recap', 'archivist'),
       new Promise<string>((_, reject) => {
         const timer = setTimeout(() => reject(new Error(`档案员两分钟没有返回（第${number}章）。可能模型侧卡住了，换一个模型或稍后再试。`)), 120_000)
         // Do not keep the process alive for this timer.

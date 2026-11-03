@@ -22,7 +22,9 @@
  * exists says which host it is talking to instead of "not a function".
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { LEAN_REASONING } from './roles.ts'
 import type { resolveRoleRoute } from './roles.ts'
+import type { RoleId } from './domain/types.ts'
 
 /** What the tool harness hands an `execute`, narrowed to what spawning needs. */
 export interface SpawnContext {
@@ -136,7 +138,13 @@ export async function runRole(
   exec: SpawnContext,
   route: ReturnType<typeof resolveRoleRoute>,
   label = 'inkwell-dispatch',
+  roleId?: RoleId,
 ): Promise<string> {
+  // Extraction and checklist roles do not need to deliberate: applying the lean
+  // effort here (not in the route) keeps 「继承当前会话模型」 honest in the roles
+  // view while still skipping the reasoning the author was waiting on.
+  const leanEffort = route?.reasoningEffort ?? (roleId === undefined ? undefined : LEAN_REASONING[roleId])
+  const agentOptions = { ...(route ?? {}), ...(leanEffort === undefined ? {} : { reasoningEffort: leanEffort }) }
   const agent = exec.agent
   if (!agent) {
     throw new Error('这一步必须在会话中调用：当前没有可用的 parent agent。')
@@ -163,7 +171,7 @@ export async function runRole(
       signal: exec.signal,
       persona,
       toolFilter: { allow: [] },
-      agentOptions: route,
+      ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
     })
     const result = await run.result
     await run.dispose?.().catch(() => undefined)
@@ -176,7 +184,7 @@ export async function runRole(
   const request = {
     prompt: [{ type: 'text', text: `${persona}\n\n${promptText}` }],
     parent: agent as never,
-    ...(route === undefined ? {} : { agentOptions: route }),
+    ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
   }
   const spec = { provider: pickProvider(service), label, request, signal: exec.signal, delivery: 'caller' as const }
   let receipt

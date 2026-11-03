@@ -84,8 +84,9 @@ describe('studio pipeline', () => {
     const character = valueOf<{ findings: unknown[] }>(await h.call('novel_dispatch', { action: 'character', number: 1 }))
     expect(character.findings).toHaveLength(0)
 
-    // Reviewers inherit the session model (no per-book route set).
-    expect(h.subagents.calls[1]?.request.agentOptions).toBeUndefined()
+    // Reviewers inherit the session model but not its deliberation: a checklist
+    // read does not need the model to think first, and the wait was the complaint.
+    expect(h.subagents.calls[1]?.request.agentOptions).toEqual({ reasoningEffort: 'low' })
 
     const chief = valueOf<{ findings: unknown[] }>(
       await h.call('novel_dispatch', {

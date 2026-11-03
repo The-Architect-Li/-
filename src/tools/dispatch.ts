@@ -281,7 +281,7 @@ async function dispatchOne(
         config: deps.config,
         directive: args.directive ?? '',
       })
-      const text = await runRole(ctx, role.persona, brief.text, exec, route)
+      const text = await runRole(ctx, role.persona, brief.text, exec, route, 'inkwell-dispatch', 'writer')
       const words = countChars(text)
       return {
         role: roleId,
@@ -371,7 +371,7 @@ async function dispatchOne(
     if (roleId === 'chief') {
       const inputs = (args.findings ?? []) as unknown as FindingInput[]
       const prompt = buildChiefPrompt(draftRecord, inputs, snapshot, deps.config, args.directive ?? '', window)
-      const output = await runRole(ctx, role.persona, prompt, exec, route)
+      const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-review', roleId)
       const { items, parsed } = parseReviewerOutput(output)
       const findings = parsed ? items : [unparsedFinding('chief', output)]
       const stored = await store.appendReview(number, {
@@ -401,7 +401,7 @@ async function dispatchOne(
     }
 
     const prompt = buildReviewerPrompt(roleId as 'logic' | 'character', draftRecord, snapshot, deps.config, args.directive ?? '', neighbour)
-    const output = await runRole(ctx, role.persona, prompt, exec, route)
+    const output = await runRole(ctx, role.persona, prompt, exec, route, 'inkwell-review', roleId)
     const { items, parsed } = parseReviewerOutput(output)
     const findings = parsed ? items : [unparsedFinding(roleId, output)]
     const stored = await store.appendReview(number, {

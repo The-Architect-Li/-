@@ -217,6 +217,22 @@ export const ROLES: Record<RoleId, RoleDef> = {
  * @param projectRoles - the book's overrides from `project.json`.
  * @returns the merged route, or `undefined` when the child should inherit.
  */
+/**
+ * Roles whose work is reading and copying, not composing.
+ *
+ * The archivist turns a chapter into a card; the reviewers walk a checklist. None
+ * of that is helped by a model deliberating first — it only delays the first
+ * token, which is what 「档案员要好久」 actually is. A writer or a chief still
+ * inherits the host's own effort; these four default to low unless the author
+ * configures something else through `novel_roles`.
+ */
+export const LEAN_REASONING: Partial<Record<RoleId, string>> = {
+  archivist: 'low',
+  keeper: 'low',
+  logic: 'low',
+  character: 'low',
+}
+
 export function resolveRoleRoute(
   roleId: RoleId,
   config: InkwellConfig,
@@ -234,6 +250,9 @@ export function resolveRoleRoute(
   if (typeof model === 'string' && model !== '') merged.model = model
   if (typeof maxTokens === 'number') merged.maxTokens = maxTokens
   if (typeof reasoningEffort === 'string' && reasoningEffort !== '') merged.reasoningEffort = reasoningEffort
+  // No default here on purpose: a route that only says 「low effort」 is still an
+  // empty route as far as the roles view is concerned, and 「继承当前会话模型」
+  // must keep meaning that. The lean effort is applied at spawn time instead.
   if (Object.keys(merged).length === 0) return undefined
   return merged
 }
