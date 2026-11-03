@@ -849,6 +849,40 @@ const API_BACKUP = '/api/inkwell/backup'
       return payload.data
     }
 
+    /** Batch delete: one backup, one pass. */
+    async function deleteBatchRequest(sessionId, root, numbers) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_MERGE.replace('/merge', '/delete')}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ numbers }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
+    /** Batch merge a consecutive run into its first chapter. */
+    async function mergeBatchRequest(sessionId, root, numbers) {
+      const params = []
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_MERGE}?${params.join('&')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...WRITE_HEADER },
+        body: JSON.stringify({ numbers }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) {
+        throw new Error((payload && payload.error && payload.error.message) || `HTTP ${response.status}`)
+      }
+      return payload.data
+    }
+
     /** Delete one chapter outright. The server backs the book up first. */
     async function deleteChapterRequest(sessionId, root, number) {
       const params = []
@@ -1746,6 +1780,7 @@ const API_BACKUP = '/api/inkwell/backup'
 .iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
 @keyframes iw-spin-turn { to { transform: rotate(360deg); } }
 .iw-spin { animation: iw-spin-turn 0.9s linear infinite; }
+.iw-bulk-check { cursor: pointer; user-select: none; width: 16px; text-align: center; color: var(--iw-accent); flex: 0 0 auto; }
 .iw-receipt { transition: border-color .2s ease; }
 .iw-receipt .iw-receipt-action { opacity: 0; max-height: 0; overflow: hidden; transition: opacity .18s ease; }
 .iw-receipt:hover .iw-receipt-action { opacity: 1; max-height: 60px; }
@@ -1942,7 +1977,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the scroll box.
      */
     function VirtualRows(props) {
-      const { entries, collapsed, onToggle, selected, onRowClick, label, menuAt, onMenuToggle, onChapterAction, onRecap } = props
+      const { entries, collapsed, onToggle, selected, onRowClick, label, menuAt, onMenuToggle, onChapterAction, onRecap, bulk, bulkPicked, onBulkPick } = props
       const [top, setTop] = useState(0)
       const total = entries.length
       const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
@@ -2061,7 +2096,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the row element, plus its children when expanded.
      */
     function Row(props) {
-      const { row, depth, collapsed, onToggle, selected, onRowClick, flat, menuAt, onMenuToggle, onChapterAction, onRecap } = props
+      const { row, depth, collapsed, onToggle, selected, onRowClick, flat, menuAt, onMenuToggle, onChapterAction, onRecap, bulk, bulkPicked, onBulkPick } = props
       const hasChildren = Array.isArray(row.children) && row.children.length > 0
       const open = hasChildren && !collapsed.has(row.id)
       const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
@@ -2091,6 +2126,13 @@ const API_BACKUP = '/api/inkwell/backup'
             onRowClick(row)
           },
         },
+        bulk
+          ? h('span', {
+              key: 'bulk',
+              className: 'iw-bulk-check',
+              onClick: (event) => { event.stopPropagation(); onBulkPick(row.key) },
+            }, bulkPicked !== undefined && bulkPicked.has !== undefined && bulkPicked.has(row.key) ? '☑' : '☐')
+          : null,
         h(
           'span',
           {
@@ -2211,7 +2253,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Section(props) {
-      const { section, collapsed, onToggle, selected, onRowClick, menuAt, onMenuToggle, onChapterAction, onRecap } = props
+      const { section, collapsed, onToggle, selected, onRowClick, menuAt, onMenuToggle, onChapterAction, onRecap, bulk, bulkPicked, onBulkPick } = props
       const open = !collapsed.has(section.id)
       return h(
         'div',
@@ -2234,6 +2276,15 @@ const API_BACKUP = '/api/inkwell/backup'
           h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', fontSize: '12.5px' } }, SECTION_ICON[section.id] || '▫'),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
+          props.onBulkToggle
+            ? h('button', {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.sectionCount, padding: '0 6px', cursor: 'pointer', ...(props.bulkActive ? { color: 'var(--iw-accent)', borderColor: 'var(--iw-accent-line)' } : {}) },
+                title: '多选章节，批量删除或合并',
+                onClick: (event) => { event.stopPropagation(); props.onBulkToggle() },
+              }, props.bulkActive ? '退出多选' : '多选')
+            : null,
           props.onAdd
             ? h(
                 'button',
@@ -2272,6 +2323,9 @@ const API_BACKUP = '/api/inkwell/backup'
                       onMenuToggle,
                       onChapterAction,
                       onRecap,
+                      bulk,
+                      bulkPicked,
+                      onBulkPick,
                     }),
                   )
                 }
@@ -2283,6 +2337,9 @@ const API_BACKUP = '/api/inkwell/backup'
                   onMenuToggle,
                   onChapterAction,
                   onRecap,
+                  bulk,
+                  bulkPicked,
+                  onBulkPick,
                   collapsed,
                   onToggle,
                   selected,
@@ -4564,6 +4621,10 @@ const API_BACKUP = '/api/inkwell/backup'
       const [menuAt, setMenuAt] = useState(null)
       const [mergeAsk, setMergeAsk] = useState(null)
       const [deleteAsk, setDeleteAsk] = useState(null)
+      // Multi-select over the chapter list: pick many, then delete or merge them
+      // in one backed-up operation instead of one dialog per chapter.
+      const [bulkMode, setBulkMode] = useState(false)
+      const [bulkPicked, setBulkPicked] = useState(() => new Set())
       // { number, seconds, done, error } while the archivist is reading.
       const [recapJob, setRecapJob] = useState(null)
       // Bumped when a card lands, so the open detail page re-reads itself instead of
@@ -5074,6 +5135,30 @@ const API_BACKUP = '/api/inkwell/backup'
           .finally(() => clearInterval(ticker))
       }, [sessionId, root, refresh])
 
+      const runBulkDelete = useCallback((numbers) => {
+        setDeleteAsk(null)
+        setMenuNote('正在批量删除…')
+        deleteBatchRequest(sessionId, root, numbers)
+          .then((output) => {
+            setBulkMode(false); setBulkPicked(new Set())
+            setMenuNote(`已删除 ${numbers.length} 章，现在共 ${output.total} 章。备份：${output.backup}`)
+            return refresh()
+          })
+          .catch((failure) => setMenuNote(`删除失败：${String((failure && failure.message) || failure)}`))
+      }, [sessionId, root, refresh])
+
+      const runBulkMerge = useCallback((numbers) => {
+        setMergeAsk(null)
+        setMenuNote('正在批量合并…')
+        mergeBatchRequest(sessionId, root, numbers)
+          .then(() => {
+            setBulkMode(false); setBulkPicked(new Set())
+            setMenuNote(`已把 ${numbers.length - 1} 章并进第 ${Math.min(...numbers)} 章，摘要需要重建。`)
+            return refresh()
+          })
+          .catch((failure) => setMenuNote(`合并失败：${String((failure && failure.message) || failure)}`))
+      }, [sessionId, root, refresh])
+
       /**
        * Delete a chapter, after the dialog. The server backs the book up first;
        * the mapping it returns is echoed here so the renumbering is visible.
@@ -5541,6 +5626,16 @@ const API_BACKUP = '/api/inkwell/backup'
               onMenuToggle: setMenuAt,
               onChapterAction: runChapterAction,
               onRecap: startRecap,
+              bulk: bulkMode && section.id === 'text',
+              onBulkToggle: bulkMode || section.id === 'text' ? () => { setBulkMode(!bulkMode); setBulkPicked(new Set()) } : undefined,
+              bulkActive: bulkMode && section.id === 'text',
+              bulkPicked,
+              onBulkPick: (key) => setBulkPicked((current) => {
+                const next = new Set(current)
+                if (next.has(String(key))) next.delete(String(key))
+                else next.add(String(key))
+                return next
+              }),
               onAdd:
                 section.id === 'text'
                   ? addChapter
@@ -5651,7 +5746,7 @@ const API_BACKUP = '/api/inkwell/backup'
           ? h(
               'div',
               { key: 'delete-ask', style: S.askBox, onClick: (event) => event.stopPropagation() },
-              h('div', { style: { ...S.askTitle, color: 'var(--iw-danger-fg, #d66)' } }, `删除第 ${deleteAsk.number} 章？`),
+              h('div', { style: { ...S.askTitle, color: 'var(--iw-danger-fg, #d66)' } }, deleteAsk.numbers ? `删除选中的 ${deleteAsk.numbers.length} 章？` : `删除第 ${deleteAsk.number} 章？`),
               h('div', { style: S.askBody }, '正文、草稿、章卡、审稿记录和记在这一章上的账本条目会一起删掉；后面的章各前移一位。这是唯一一个正文找不回来的操作——动手前整本书已自动备份。'),
               h(
                 'div',
@@ -5661,7 +5756,10 @@ const API_BACKUP = '/api/inkwell/backup'
                   type: 'button',
                   className: 'iw-btn',
                   style: { ...S.iconButton, color: 'var(--iw-danger-fg, #d66)', borderColor: 'var(--iw-danger-fg, #d66)' },
-                  onClick: () => { const n = deleteAsk.number; runDelete(n) },
+                  onClick: () => {
+                    if (deleteAsk.numbers) { const nums = [...deleteAsk.numbers]; runBulkDelete(nums) }
+                    else { const n = deleteAsk.number; runDelete(n) }
+                  },
                 }, '确认删除'),
               ),
             )
@@ -5670,6 +5768,41 @@ const API_BACKUP = '/api/inkwell/backup'
         // chapter list that quietly renumbered itself is the worst outcome.
         menuNote !== ''
           ? h('div', { style: { ...S.note, margin: '0 0 6px', padding: '6px 8px', fontSize: '12px' } }, menuNote)
+          : null,
+        // The bulk toolbar: what is picked, and the two operations. Merge needs a
+        // consecutive run — a scattered pick has no single merged chapter to land on.
+        bulkMode
+          ? h(
+              'div',
+              { style: { ...S.note, margin: '0 0 6px', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: '12.5px', color: 'var(--iw-fg)' } }, `已选 ${bulkPicked.size} 章`),
+              (() => {
+                const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
+                const consecutive = nums.length >= 2 && nums[nums.length - 1] - nums[0] === nums.length - 1
+                return [
+                  h('button', {
+                    type: 'button',
+                    className: 'iw-btn',
+                    style: { ...S.iconButton, ...(consecutive ? {} : { opacity: 0.45 }) },
+                    disabled: !consecutive,
+                    title: consecutive ? `把第 ${nums[0]} 到 ${nums[nums.length - 1]} 章并进第 ${nums[0]} 章` : '合并的章必须连续',
+                    onClick: () => runBulkMerge(nums),
+                  }, `合并进第 ${nums[0] || '…'} 章`),
+                ]
+              })(),
+              h('button', {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.iconButton, ...(bulkPicked.size > 0 ? { color: 'var(--iw-danger-fg, #d66)', borderColor: 'var(--iw-danger-fg, #d66)' } : { opacity: 0.45 }) },
+                disabled: bulkPicked.size === 0,
+                onClick: () => {
+                  const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
+                  setDeleteAsk({ numbers: nums })
+                },
+              }, `删除 ${bulkPicked.size} 章`),
+              h('span', { style: { ...S.aside, flex: '1 1 auto', minWidth: '120px' } }, bulkPicked.size >= 2 && (() => { const nums = [...bulkPicked].map(Number).sort((a, b) => a - b); return nums[nums.length - 1] - nums[0] !== nums.length - 1 ? '合并需要连续的章；删除可以随意挑' : '' })() || ''),
+              h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => { setBulkMode(false); setBulkPicked(new Set()) } }, '退出'),
+            )
           : null,
         // The archivist at work: a spinner, what it is doing, and how long it has
         // been doing it. Silence here reads as a hang.

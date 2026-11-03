@@ -390,160 +390,6 @@ export async function swapChapters(store: ProjectStore, a: number, b: number): P
 }
 
 /**
- * Fold the next chapter into this one.
- *
- * The common case is a writer who split a scene across two chapters and now wants
- * one: 「第 80 章并入第 79 章」. What comes back is a single chapter holding both
- * bodies, a card that carries both sets of beats and characters, and every later
- * chapter one number lower — because a book with a hole at 80 is a book whose
- * chapter numbers no longer mean "the tenth thing that happens".
- *
- * Three decisions worth stating:
- *
- * - **The prose is joined, not rewritten.** The two bodies go together with a
- *   paragraph break between them, and not one character is changed. If the seam
- *   reads badly, that is an edit the author makes, not one this tool makes.
- * - **The later body's hook wins.** A chapter ends once, at the end, so the
- *   merged chapter's hook is the one that was pulling at the end of the second
- *   body. The first body's hook stops being a hook and becomes an internal beat.
- * - **The dropped chapter's drafts are kept, not deleted.** They no longer match
- *   the merged prose, so they move to `.history/merge-<stamp>/` where they can be
- *   read, instead of vanishing.
- *
- * @param store - the book.
- * @param number - the chapter that receives the next one.
- * @returns what moved, and where the backup is.
- * @throws when either chapter has no prose, or there is no next chapter.
- */
-export async function mergeChapters(store: ProjectStore, number: number): Promise<Reordered & { words: number; dropped: number }> {
-  if (!Number.isInteger(number) || number < 1) throw new Error(`章号要是正整数，收到 ${String(number)}。`)
-  const index = await store.chapters()
-  const keep = index.find((chapter) => chapter.number === number)
-  const absorb = index.find((chapter) => chapter.number === number + 1)
-  if (keep === undefined) throw new Error(`第${number}章没有正文，没法合并。`)
-  if (absorb === undefined) throw new Error(`第${number + 1}章没有正文。并章只合并相邻的两章，后面没有内容可并。`)
-  const keepDraft = await store.chapter(number)
-  const absorbDraft = await store.chapter(number + 1)
-  if (keepDraft === undefined || absorbDraft === undefined) throw new Error('读不到正文文件，先刷新再看。')
-
-  const last = index.reduce((max, chapter) => Math.max(max, chapter.number), 0)
-  // Everything after the absorbed chapter steps down one; the absorbed chapter
-  // itself points at the one that keeps it, so its records land in the merged
-  // chapter rather than disappearing.
-  const map = new Map<number, number>([[number + 1, number]])
-  for (let next = number + 2; next <= last; next += 1) map.set(next, next - 1)
-
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const proseFiles = index.map((chapter) => `chapters/${fileName(chapter.number)}`)
-  const backupDir = await backup(store, `merge-${stamp}`, [...Object.values(FILES), ...proseFiles])
-
-  const touched: string[] = []
-
-  // 1. Records first, through the same remap as a move: the absorbed chapter's
-  //    facts and threads now belong to the chapter that swallowed it.
-  //
-  //    `index` and `plans` are excluded: both get purpose-built rewrites below,
-  //    and running them through the generic remap first would apply the shift
-  //    twice — which showed up as two chapters numbered 3 after a merge.
-  const recordFiles = (Object.entries(FILES) as [keyof typeof FILES, string][]).filter(
-    ([name]) => name !== 'index' && name !== 'plans',
-  )
-  for (const [name, path] of recordFiles) {
-    const raw = await readFile(join(store.root, path), 'utf8').catch(() => undefined)
-    if (raw === undefined || raw.trim() === '') continue
-    const next = remapFile(name, JSON.parse(raw) as unknown, map)
-    const text = `${JSON.stringify(next, null, 2)}\n`
-    if (text === raw) continue
-    await writeFile(join(store.root, path), text, 'utf8')
-    touched.push(path)
-  }
-
-  // 2. Cards: merge the pair, then shift the rest.
-  const plans = await store.plans()
-  const keepPlan = plans.find((plan) => plan.number === number)
-  const absorbPlan = plans.find((plan) => plan.number === number + 1)
-  const merged = keepPlan === undefined
-    ? undefined
-    : {
-        ...keepPlan,
-        // The second body's hook is the one at the end of the merged chapter.
-        hooks: absorbPlan !== undefined && absorbPlan.hooks.length > 0 ? absorbPlan.hooks : keepPlan.hooks,
-        beats: [...keepPlan.beats, ...(absorbPlan?.beats ?? [])],
-        characters: [...new Set([...keepPlan.characters, ...(absorbPlan?.characters ?? [])])],
-        // A recap of two chapters is a new recap; nobody can write it from here.
-        summary: '',
-        // The card was rewritten in this same operation, so it describes the
-        // merged prose — claiming it is stale would be wrong. What is missing is
-        // the recap, which is a different thing and says so on the page.
-        cardRevision: (keep.revision ?? 0) + 1,
-      }
-  const nextPlans = plans
-    .filter((plan) => plan.number !== number + 1)
-    .map((plan) => (plan.number === number ? (merged ?? plan) : plan))
-    .map((plan) => ({ ...plan, number: plan.number > number + 1 ? plan.number - 1 : plan.number }))
-    .sort((a, b) => a.number - b.number)
-  if (JSON.stringify(nextPlans) !== JSON.stringify(plans)) {
-    await store.writePlans(nextPlans)
-    touched.push(FILES.plans)
-  }
-
-  // 3. Prose. Read the whole run, then write it back shifted — a chapter cannot be
-  //    moved onto a number that has not vacated yet.
-  const parked = new Map<number, string>()
-  for (let from = number + 2; from <= last; from += 1) {
-    const text = await readFile(join(store.root, 'chapters', fileName(from)), 'utf8').catch(() => undefined)
-    if (text !== undefined) parked.set(from - 1, text)
-  }
-  const joined = `${keepDraft.text.trim()}\n\n${absorbDraft.text.trim()}\n`
-  for (const [target, text] of parked) await writeFile(join(store.root, 'chapters', fileName(target)), text, 'utf8')
-  await writeFile(join(store.root, 'chapters', fileName(number)), joined, 'utf8')
-  // The last number is now empty: the book got one chapter shorter.
-  await rm(join(store.root, 'chapters', fileName(last)), { force: true }).catch(() => undefined)
-  touched.push(`chapters/${fileName(number)}`, `chapters/${fileName(last)}`)
-
-  // 4. The index, rebuilt from what is actually on disk.
-  const rebuilt = [...index.filter((chapter) => chapter.number !== number + 1)]
-    .map((chapter) => (chapter.number > number + 1 ? { ...chapter, number: chapter.number - 1 } : chapter))
-    .map((chapter) =>
-      chapter.number === number
-        ? {
-            ...chapter,
-            words: countChars(joined),
-            summary: '',
-            writtenAt: new Date().toISOString(),
-            revision: (chapter.revision ?? 0) + 1,
-            // Both numbers: the question is 「这一章原来是哪两章」.
-            origin: { kind: 'merged' as const, from: [number, number + 1], at: new Date().toISOString() },
-          }
-        : chapter,
-    )
-    .sort((a, b) => a.number - b.number)
-  await writeFile(join(store.root, FILES.index), `${JSON.stringify(rebuilt, null, 2)}\n`, 'utf8')
-  touched.push(FILES.index)
-
-  // 5. Draft rounds. The absorbed chapter's rounds no longer describe any prose,
-  //    so they are parked rather than deleted; the rest shift down with it.
-  for (let from = number + 2; from <= last; from += 1) {
-    const source = join(store.root, 'drafts', String(from).padStart(3, '0'))
-    const destination = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.merging`)
-    await rename(source, destination).catch(() => undefined)
-  }
-  for (let from = number + 2; from <= last; from += 1) {
-    const moved = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.merging`)
-    await rename(moved, join(store.root, 'drafts', String(from - 1).padStart(3, '0'))).catch(() => undefined)
-  }
-
-  return {
-    moved: map.size,
-    mapping: [...map.entries()].map(([oldNumber, newNumber]) => `${oldNumber}→${newNumber}`),
-    touched,
-    backup: backupDir,
-    words: countChars(joined),
-    dropped: number + 1,
-  }
-}
-
-/**
  * Record where a chapter came from, on its index entry.
  *
  * Written straight to the index rather than through `writeChapter`, which would
@@ -555,42 +401,66 @@ export async function mergeChapters(store: ProjectStore, number: number): Promis
  * @param origin - what it used to be.
  */
 /**
- * Delete one chapter outright: the prose, its drafts, its reviews, its card, and
- * every record that cites its number. Everything after it steps up one.
+ * Renumber every surviving chapter into 1..N in order; the selected ones map to
+ * {@link DELETED}. Chapters before the first deletion keep their numbers (the
+ * compression happens to coincide with identity there).
  *
- * This is the one destructive operation the panel offers without a surviving
- * trace in the text — merge folds content forward, move rearranges, delete just
- * takes away. Two things keep it honest: the full backup taken before anything
- * moves, and the confirm dialog in front of the button. The author should never
- * discover either was missing after the fact.
+ * @param all - every chapter number that exists.
+ * @param selected - the chapters an operation removes.
+ * @returns old number → new number, or {@link DELETED}.
+ */
+function buildDeleteMap(all: readonly number[], selected: ReadonlySet<number>): Map<number, number> {
+  const map = new Map<number, number>()
+  let next = 0
+  for (const number of [...all].sort((a, b) => a - b)) {
+    if (selected.has(number)) {
+      map.set(number, DELETED)
+      continue
+    }
+    next += 1
+    map.set(number, next)
+  }
+  return map
+}
+
+/**
+ * Fold chapters `a+1..b` into `a` and shift everything after `b` up by `b-a`.
  *
- * Records that cite the deleted chapter (facts filed there, a thread planted
- * there, a place-state, a timeline anchor) are deleted with it — they describe
- * prose that no longer exists. Records of later chapters shift with their
- * chapters.
+ * @param all - every chapter number that exists.
+ * @param a - the chapter that keeps the merged content.
+ * @param b - the last chapter folded into it.
+ * @returns old number → new number.
+ */
+function buildMergeMap(all: readonly number[], a: number, b: number): Map<number, number> {
+  const map = new Map<number, number>()
+  for (const number of all) {
+    if (number > a && number <= b) map.set(number, a)
+    else if (number > b) map.set(number, number - (b - a))
+    else map.set(number, number)
+  }
+  return map
+}
+
+/**
+ * Apply a chapter map to the whole book: record files, prose, drafts, reviews,
+ * and the index. `DELETED` targets disappear; everything else lands on its new
+ * number. Callers have already taken the backup.
  *
  * @param store - the book.
- * @param number - the chapter to delete.
- * @returns what changed and where the backup lives.
+ * @param map - old number → new number, or {@link DELETED}.
+ * @param mergeCards - when set, the cards of chapters `a+1..b` are folded into
+ *   chapter `a`'s card (beats joined, characters deduped, last hook kept,
+ *   summary emptied) instead of the later ones merely shifting.
+ * @returns the files it wrote.
  */
-export async function deleteChapter(store: ProjectStore, number: number): Promise<Reordered> {
-  if (!Number.isInteger(number) || number < 1) throw new Error(`章号要是正整数，收到 ${String(number)}。`)
-  const index = await store.chapters()
-  const gone = index.find((chapter) => chapter.number === number)
-  if (gone === undefined) throw new Error(`第${number}章没有正文，无从删除。`)
-  const last = index.reduce((max, chapter) => Math.max(max, chapter.number), 0)
-  if (index.length <= 1) throw new Error('全书只剩这一章了。删除后书就是空的——整本删掉吧。')
-
-  // Later chapters step up; the deleted one maps to nothing.
-  const map = new Map<number, number>([[number, DELETED]])
-  for (let next = number + 1; next <= last; next += 1) map.set(next, next - 1)
-
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const proseFiles = index.map((chapter) => `chapters/${fileName(chapter.number)}`)
-  const backupDir = await backup(store, `delete-${stamp}`, [...Object.values(FILES), ...proseFiles])
+async function applyChapterMap(
+  store: ProjectStore,
+  map: ReadonlyMap<number, number>,
+  mergeCards?: { a: number; b: number },
+): Promise<string[]> {
   const touched: string[] = []
 
-  // 1. Records: shift the survivors, drop what cites the deleted chapter.
+  // 1. Records.
   const recordFiles = (Object.entries(FILES) as [keyof typeof FILES, string][]).filter(
     ([name]) => name !== 'index' && name !== 'plans',
   )
@@ -604,63 +474,204 @@ export async function deleteChapter(store: ProjectStore, number: number): Promis
     touched.push(path)
   }
 
-  // 2. Card: the deleted chapter's card goes; later cards step up.
+  // 2. Cards. A merged range folds its cards into the first one; a delete just
+  //    drops the selected ones and renumbers. The fold happens in the OLD number
+  //    space, before the renumber — otherwise the folded card and the keep card
+  //    both land on the same new number and the merge never finds its range.
   const plans = await store.plans()
-  const nextPlans = plans
-    .filter((plan) => plan.number !== number)
-    .map((plan) => ({ ...plan, number: plan.number > number ? plan.number - 1 : plan.number }))
+  const foldedPlans = mergeCards === undefined
+    ? []
+    : plans.filter((plan) => plan.number > mergeCards.a && plan.number <= mergeCards.b)
+  const kept = plans.filter(
+    (plan) =>
+      !(mergeCards !== undefined && plan.number > mergeCards.a && plan.number <= mergeCards.b) &&
+      remap(plan.number, map) !== DELETED,
+  )
+  let nextPlans = kept
+    .map((plan) => ({ ...plan, number: remap(plan.number, map) as number }))
     .sort((a, b) => a.number - b.number)
+  if (mergeCards !== undefined && foldedPlans.length > 0) {
+    const head = nextPlans.find((plan) => plan.number === mergeCards.a)
+    if (head !== undefined) {
+      const lastHook = [...foldedPlans].reverse().find((plan) => plan.hooks.length > 0)?.hooks ?? head.hooks
+      nextPlans = nextPlans.map((plan) =>
+        plan.number === mergeCards.a
+          ? {
+              ...head,
+              hooks: lastHook,
+              beats: [...head.beats, ...foldedPlans.flatMap((plan) => plan.beats)],
+              characters: [...new Set([...head.characters, ...foldedPlans.flatMap((plan) => plan.characters)])],
+              summary: '',
+              // The prose was joined in this same operation; the card describes it.
+              cardRevision: (head.cardRevision ?? 0) + 1,
+            }
+          : plan,
+      )
+    }
+  }
   if (JSON.stringify(nextPlans) !== JSON.stringify(plans)) {
     await store.writePlans(nextPlans)
     touched.push(FILES.plans)
   }
 
-  // 3. Prose and drafts: shift forward, then the tail file goes.
-  for (let from = number + 1; from <= last; from += 1) {
-    const text = await readFile(join(store.root, 'chapters', fileName(from)), 'utf8').catch(() => undefined)
-    if (text !== undefined) await writeFile(join(store.root, 'chapters', fileName(from - 1)), text, 'utf8')
+  // 3. Prose, drafts, reviews: two-phase so a target never gets clobbered by a
+  //    source that has not moved yet.
+  const proseByTarget = new Map<number, string>()
+  for (const [oldNumber, newNumber] of map) {
+    if (newNumber === DELETED || newNumber === oldNumber) continue
+    // A folded chapter's prose does not land on the keep number — the caller
+    // writes the joined text there; a raw copy would overwrite the first body.
+    if (mergeCards !== undefined && newNumber === mergeCards.a && oldNumber > mergeCards.a) continue
+    const text = await readFile(join(store.root, 'chapters', fileName(oldNumber)), 'utf8').catch(() => undefined)
+    if (text !== undefined) proseByTarget.set(newNumber, text)
   }
-  await rm(join(store.root, 'chapters', fileName(last)), { force: true }).catch(() => undefined)
-  touched.push(`chapters/${fileName(number)}`, `chapters/${fileName(last)}`)
+  for (const [target, text] of proseByTarget) await writeFile(join(store.root, 'chapters', fileName(target)), text, 'utf8')
+  for (const [oldNumber, newNumber] of map) {
+    if (newNumber === DELETED) {
+      await rm(join(store.root, 'chapters', fileName(oldNumber)), { force: true }).catch(() => undefined)
+      await rm(join(store.root, 'drafts', String(oldNumber).padStart(3, '0')), { force: true, recursive: true }).catch(() => undefined)
+      await rm(store.reviewPath(oldNumber), { force: true }).catch(() => undefined)
+    } else if (newNumber !== oldNumber) {
+      await rm(store.reviewPath(oldNumber), { force: true }).catch(() => undefined)
+    }
+  }
+  const reviewByTarget = new Map<number, string>()
+  for (const [oldNumber, newNumber] of map) {
+    if (newNumber === DELETED || newNumber === oldNumber) continue
+    const text = await readFile(store.reviewPath(oldNumber), 'utf8').catch(() => undefined)
+    if (text !== undefined) reviewByTarget.set(newNumber, text)
+  }
+  for (const [target, text] of reviewByTarget) await writeFile(store.reviewPath(target), text, 'utf8')
 
-  for (let from = number + 1; from <= last; from += 1) {
-    const source = join(store.root, 'drafts', String(from).padStart(3, '0'))
-    await rename(source, join(store.root, 'drafts', `${String(from).padStart(3, '0')}.deleting`)).catch(() => undefined)
-  }
-  for (let from = number + 1; from <= last; from += 1) {
-    const moved = join(store.root, 'drafts', `${String(from).padStart(3, '0')}.deleting`)
-    await rename(moved, join(store.root, 'drafts', String(from - 1).padStart(3, '0'))).catch(() => undefined)
-  }
-  await rm(join(store.root, 'drafts', String(last).padStart(3, '0')), { force: true, recursive: true }).catch(() => undefined)
-
-  // 4. Review records live per chapter: the deleted one goes, the rest follow
-  //    their chapters up. (`move` and `merge` predate this and do not shift
-  //    reviews — a known gap, noted for the next pass.)
-  const reviewFile = store.reviewPath(number)
-  await rm(reviewFile, { force: true }).catch(() => undefined)
-  touched.push(`reviews/${String(number).padStart(3, '0')}.json`)
-  for (let from = number + 1; from <= last; from += 1) {
-    const source = store.reviewPath(from)
-    const text = await readFile(source, 'utf8').catch(() => undefined)
-    if (text === undefined) continue
-    await writeFile(store.reviewPath(from - 1), text, 'utf8')
-    await rm(source, { force: true }).catch(() => undefined)
-  }
-
-  // 5. The index, rebuilt: the deleted chapter out, the rest renumbered.
+  // 4. Index, rebuilt from the map.
+  const index = await store.chapters()
   const rebuilt = index
-    .filter((chapter) => chapter.number !== number)
-    .map((chapter) => ({ ...chapter, number: chapter.number > number ? chapter.number - 1 : chapter.number }))
+    // A folded chapter's meta record is dropped: its card folded into the keep
+    // chapter's, and keeping both would leave two chapters with one number.
+    .filter((chapter) => {
+      if (mergeCards !== undefined && chapter.number > mergeCards.a && chapter.number <= mergeCards.b) return false
+      return remap(chapter.number, map) !== DELETED
+    })
+    .map((chapter) => ({ ...chapter, number: remap(chapter.number, map) as number }))
     .sort((a, b) => a.number - b.number)
   await writeFile(join(store.root, FILES.index), `${JSON.stringify(rebuilt, null, 2)}\n`, 'utf8')
   touched.push(FILES.index)
+  return touched
+}
 
+/**
+ * Delete chapters outright: the prose, drafts, reviews, cards, and every record
+ * citing their numbers. Survivors renumber into the gaps.
+ *
+ * @param store - the book.
+ * @param numbers - the chapters to delete.
+ * @returns the mapping, backup path, and touched files.
+ */
+export async function deleteChapters(store: ProjectStore, numbers: readonly number[]): Promise<Reordered> {
+  const cleaned = [...new Set(numbers)].filter((number) => Number.isInteger(number) && number >= 1).sort((a, b) => a - b)
+  if (cleaned.length === 0) throw new Error('没有要删除的章号。')
+  const index = await store.chapters()
+  const all = index.map((chapter) => chapter.number)
+  const existing = cleaned.filter((number) => all.includes(number))
+  if (existing.length === 0) throw new Error('选中的章都没有正文，无从删除。')
+  if (all.length - existing.length === 0) throw new Error('全书只剩这一章了。删除后书就是空的——整本删掉吧。')
+
+  const map = buildDeleteMap(all, new Set(existing))
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const proseFiles = all.map((chapter) => `chapters/${fileName(chapter)}`)
+  const backupDir = await backup(store, `delete-batch-${stamp}`, [...Object.values(FILES), ...proseFiles])
+  const touched = await applyChapterMap(store, map)
   return {
-    moved: map.size,
-    mapping: [...map.entries()].map(([oldNumber, newNumber]) => (newNumber === DELETED ? `${oldNumber}→删` : `${oldNumber}→${newNumber}`)),
+    moved: existing.length,
+    mapping: existing.map((number) => `${number}→删`),
     touched,
     backup: backupDir,
   }
+}
+
+/** Single-chapter delete, kept for the routes and tests that speak of one chapter. */
+export async function deleteChapter(store: ProjectStore, number: number): Promise<Reordered> {
+  return deleteChapters(store, [number])
+}
+
+/**
+ * Fold a run of consecutive chapters into the first one, in one backup.
+ *
+ * @param store - the book.
+ * @param numbers - consecutive chapter numbers, in any order.
+ * @returns the mapping, backup path, and touched files.
+ */
+export async function mergeChaptersBatch(store: ProjectStore, numbers: readonly number[]): Promise<Reordered> {
+  const cleaned = [...new Set(numbers)].filter((number) => Number.isInteger(number) && number >= 1).sort((a, b) => a - b)
+  if (cleaned.length < 2) throw new Error('合并至少要两张连续的章。')
+  const a = cleaned[0]!
+  const b = cleaned[cleaned.length - 1]!
+  if (b - a !== cleaned.length - 1) throw new Error(`合并的章必须连续：选了 ${cleaned.join('、')}，中间有缺。`)
+  const index = await store.chapters()
+  const all = index.map((chapter) => chapter.number)
+  const missing = cleaned.filter((number) => !all.includes(number))
+  if (missing.length > 0) throw new Error(`第${missing.join('、')}章没有正文，合并不了。`)
+
+  const map = buildMergeMap(all, a, b)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const proseFiles = all.map((chapter) => `chapters/${fileName(chapter)}`)
+  const backupDir = await backup(store, `merge-batch-${stamp}`, [...Object.values(FILES), ...proseFiles])
+
+  // Join the range's prose in order before the map moves anything: the texts
+  // are read by old number, written to the keep number, and the tail file goes.
+  const parts: string[] = []
+  for (let number = a; number <= b; number += 1) {
+    const chapter = await store.chapter(number)
+    if (chapter === undefined) throw new Error(`读不到第${number}章的正文文件，先刷新再看。`)
+    parts.push(chapter.text.trim())
+  }
+  const joined = `${parts.join('\n\n')}\n`
+
+  const touched = await applyChapterMap(store, map, { a, b })
+  await writeFile(join(store.root, 'chapters', fileName(a)), joined, 'utf8')
+
+  // The merged chapter's own record: word count and a fresh revision, so the
+  // card and staleness logic treat it as the new text it is.
+  const indexNow = await store.chapters()
+  const merged = indexNow.find((chapter) => chapter.number === a)
+  if (merged !== undefined) {
+    const revision = (merged.revision ?? 0) + 1
+    const rebuilt = indexNow.map((chapter) =>
+      chapter.number === a
+        ? {
+            ...chapter,
+            words: countChars(joined),
+            revision,
+            writtenAt: new Date().toISOString(),
+            origin: { kind: 'merged' as const, from: cleaned, at: new Date().toISOString() },
+          }
+        : chapter,
+    )
+    await writeFile(join(store.root, FILES.index), `${JSON.stringify(rebuilt, null, 2)}\n`, 'utf8')
+    // The card now describes the merged prose: its revision must match the
+    // chapter's, or the row will say 「卡过期」 the instant the merge lands.
+    const plans = await store.plans()
+    const nextPlans = plans.map((plan) =>
+      plan.number === a ? { ...plan, cardRevision: revision } : plan,
+    )
+    await store.writePlans(nextPlans)
+  }
+  void merged
+
+  return {
+    moved: cleaned.length - 1,
+    mapping: cleaned.slice(1).map((number) => `${number}→${a}`),
+    touched,
+    backup: backupDir,
+  }
+}
+
+/** Two-chapter merge, kept for the routes and tests that speak of one join. */
+export async function mergeChapters(store: ProjectStore, number: number): Promise<Reordered & { words: number; dropped: number }> {
+  const result = await mergeChaptersBatch(store, [number, number + 1])
+  const index = await store.chapters()
+  const merged = index.find((chapter) => chapter.number === number)
+  return { ...result, words: merged?.words ?? 0, dropped: number + 1 }
 }
 
 async function markOrigin(store: ProjectStore, number: number, origin: ChapterOrigin): Promise<void> {

@@ -132,7 +132,10 @@ describe('panel rows', () => {
       selected: null,
       onRowClick: (row: unknown) => clicked.push(row),
     })
-    const glyph = (rendered[0]?.props.children as Element[])[0]
+    // The row's children start with a bulk checkbox slot that is null outside
+    // multi-select mode, so the glyph is found by class, not by position.
+    const children = (rendered[0]?.props.children as Element[]).filter(Boolean) as Element[]
+    const glyph = children.find((child) => (child?.props as { className?: string })?.className === 'iw-glyph')
     let stopped = false
     ;(glyph?.props.onClick as (event: { stopPropagation: () => void }) => void)({
       stopPropagation: () => {

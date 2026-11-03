@@ -71,7 +71,7 @@ import { renameWorldKind } from '../domain/kinds.ts'
 import { parseTerms, searchChapters } from '../domain/search.ts'
 import { applyPendingBatch } from '../domain/approve.ts'
 import { runReviewRound } from '../tools/dispatch.ts'
-import { deleteChapter, mergeChapters, moveChapter } from '../domain/reorder.ts'
+import { deleteChapter, deleteChapters, mergeChapters, mergeChaptersBatch, moveChapter } from '../domain/reorder.ts'
 import { archiveChapter } from '../tools/archive.ts'
 import { createCatalogCache, type CatalogCache, type CatalogProvider, modelsOf } from './catalog.ts'
 import { readCardPatch, readChapterPatch, readCharacterPatch, readPlacePatch, readStoryPatch, readWorldPatch } from './edit.ts'
@@ -1512,7 +1512,11 @@ export async function mergeRoute(
     if (!Number.isInteger(number) || number < 1) throw new PanelInputError('merge 需要 number：第几章把下一章并进来。')
     const store = storeFor(deps, sessionId, root)
     if (!(await store.exists())) throw new PanelInputError('这本书还没有项目文件。', 409)
-    const result = await mergeChapters(store, number).catch((error) => {
+    const numbers = Array.isArray(body.numbers) ? (body.numbers as unknown[]).map((item) => Number(item)) : undefined
+    const result = await (numbers !== undefined
+      ? mergeChaptersBatch(store, numbers)
+      : mergeChapters(store, number)
+    ).catch((error) => {
       throw new PanelInputError(String((error as Error).message ?? error), 409)
     })
 
@@ -1522,9 +1526,10 @@ export async function mergeRoute(
         ok: true,
         data: {
           number,
-          dropped: result.dropped,
-          words: result.words,
-          total: result.mapping.length === 0 ? 0 : (await store.chapters()).length,
+          ...(numbers !== undefined
+            ? { numbers }
+            : { dropped: (result as { dropped?: number }).dropped ?? number + 1, words: (result as { words?: number }).words ?? 0 }),
+          total: (await store.chapters()).length,
           backup: result.backup,
           touched: result.touched,
         },
@@ -1554,9 +1559,13 @@ export async function deleteRoute(
     const number = Number(body.number)
     if (!Number.isInteger(number) || number < 1) throw new PanelInputError('要删第几章？number 要是正整数。')
     const store = storeFor(deps, sessionId, root)
-    const result = await deleteChapter(store, number).catch((error) => {
-      throw new PanelInputError(String((error as Error).message ?? error), 409)
-    })
+    const result = Array.isArray(body.numbers)
+      ? await deleteChapters(store, (body.numbers as unknown[]).map((item) => Number(item))).catch((error) => {
+          throw new PanelInputError(String((error as Error).message ?? error), 409)
+        })
+      : await deleteChapter(store, number).catch((error) => {
+          throw new PanelInputError(String((error as Error).message ?? error), 409)
+        })
     return {
       status: 200,
       body: {

@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/domain/store.ts'
-import { deleteChapter, mergeChapters, moveChapter } from '../src/domain/reorder.ts'
+import { deleteChapters, mergeChaptersBatch, deleteChapter, mergeChapters, moveChapter } from '../src/domain/reorder.ts'
 
 const roots: string[] = []
 
@@ -361,5 +361,39 @@ describe('deleteChapter', () => {
       { baseRevision: undefined },
     )
     await expect(deleteChapter(store, 1)).rejects.toThrow('只剩这一章')
+  })
+})
+
+describe('batch operations', () => {
+  it('deletes a scattered pick in one pass', async () => {
+    const store = await book()
+    const result = await deleteChapters(store, [3, 5])
+    const numbers = (await store.chapters()).map((chapter) => chapter.number)
+    expect(numbers).toEqual([1, 2, 3, 4])
+    // Old 4 lands on 3, old 6 lands on 4: compression, not per-chapter shifts.
+    expect(result.backup).toBeTruthy()
+  })
+
+  it('folds a consecutive run into its first chapter, prose and cards together', async () => {
+    const store = await book()
+    const result = await mergeChaptersBatch(store, [3, 4, 5])
+    const numbers = (await store.chapters()).map((chapter) => chapter.number)
+    expect(numbers).toEqual([1, 2, 3, 4])
+    const merged = await store.chapter(3)
+    expect(merged?.text).toContain('这是第3章的正文')
+    expect(merged?.text).toContain('这是第5章的正文')
+    expect(merged?.text.indexOf('这是第3章')).toBeLessThan(merged!.text.indexOf('这是第5章'))
+    const plan = (await store.plans()).find((item) => item.number === 3)
+    // Beats of all three cards joined, in order.
+    expect(plan?.beats.length).toBeGreaterThanOrEqual(3)
+    // The card describes the joined prose; no staleness the moment it lands.
+    const chapter = (await store.chapters()).find((item) => item.number === 3)
+    expect((plan?.cardRevision ?? 0)).toBeGreaterThanOrEqual(chapter?.revision ?? 0)
+    expect(result.mapping).toEqual(['4→3', '5→3'])
+  })
+
+  it('refuses a scattered merge', async () => {
+    const store = await book()
+    await expect(mergeChaptersBatch(store, [3, 5])).rejects.toThrow('必须连续')
   })
 })
