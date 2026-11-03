@@ -146,6 +146,8 @@ describe('reviewer window in the prompt', () => {
     expect(result.report).toContain('正文 第1–2章')
   })
 
+  // Twelve chapters through the whole tool layer; 1.9s alone, but the suite runs 70
+  // files in parallel and this one lost the race for CPU at the 5s default.
   it('recaps the older chapters for the chief and states what it could not read', async () => {
     await ready(h, 13)
     for (let number = 1; number <= 12; number += 1) {
@@ -170,7 +172,7 @@ describe('reviewer window in the prompt', () => {
     expect(prompt).toContain('更早的 2 章不在这次审稿范围内')
     // Recaps are cards, so no chapter 3 prose leaks into the prompt.
     expect(prompt).not.toContain('第3章的正文，沈砚讲的是第3件小事。')
-  })
+  }, 20_000)
 })
 
 describe('stale chapter cards', () => {
