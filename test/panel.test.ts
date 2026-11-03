@@ -226,6 +226,28 @@ describe('panel tree', () => {
     expect(found['2']).toBe('已完成')
   })
 
+  it('marks a stale-card row so the ⋯ menu can offer a rebuild', () => {
+    // 「卡过期」 without an exit is a verdict, not a feature: the flag is what turns
+    // the chip into a button.
+    const staleChapter = { ...written(3, '血牢', 4191), revision: 2 }
+    const sections = buildPanelSnapshot(
+      book({ plans: [plan(3, true, '血牢')], chapters: [staleChapter] }),
+      config,
+      [],
+      '/nowhere',
+    ).sections
+    const text = sections.find((section) => section.id === 'text')
+    const stack = [...(text?.rows ?? [])]
+    let row
+    while (stack.length > 0) {
+      const current = stack.shift()!
+      if (current.key === '3') { row = current; break }
+      stack.push(...(current.children ?? []))
+    }
+    expect(row?.staleCard).toBe(true)
+    expect(row?.chip).toBe('卡过期')
+  })
+
   it('shows the same 「并」 badge on the card row as on the chapter row', () => {
     // One chapter, one account of where it came from. A badge visible in one drawer
     // and absent in the other reads as a bug in whichever the author is looking at.

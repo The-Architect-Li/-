@@ -1939,7 +1939,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the scroll box.
      */
     function VirtualRows(props) {
-      const { entries, collapsed, onToggle, selected, onRowClick, label, menuAt, onMenuToggle, onChapterAction } = props
+      const { entries, collapsed, onToggle, selected, onRowClick, label, menuAt, onMenuToggle, onChapterAction, onRecap } = props
       const [top, setTop] = useState(0)
       const total = entries.length
       const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
@@ -2058,7 +2058,7 @@ const API_BACKUP = '/api/inkwell/backup'
      * @returns the row element, plus its children when expanded.
      */
     function Row(props) {
-      const { row, depth, collapsed, onToggle, selected, onRowClick, flat, menuAt, onMenuToggle, onChapterAction } = props
+      const { row, depth, collapsed, onToggle, selected, onRowClick, flat, menuAt, onMenuToggle, onChapterAction, onRecap } = props
       const hasChildren = Array.isArray(row.children) && row.children.length > 0
       const open = hasChildren && !collapsed.has(row.id)
       const toneStyle = (row.tone && TONE_STYLE[row.tone]) || null
@@ -2145,6 +2145,7 @@ const API_BACKUP = '/api/inkwell/backup'
           ...(menuAt === undefined ? {} : { menuAt }),
           ...(onMenuToggle === undefined ? {} : { onMenuToggle }),
           ...(onChapterAction === undefined ? {} : { onChapterAction }),
+          ...(onRecap === undefined ? {} : { onRecap }),
         }),
       )
       return [head, ...children]
@@ -2207,7 +2208,7 @@ const API_BACKUP = '/api/inkwell/backup'
     }
 
     function Section(props) {
-      const { section, collapsed, onToggle, selected, onRowClick, menuAt, onMenuToggle, onChapterAction } = props
+      const { section, collapsed, onToggle, selected, onRowClick, menuAt, onMenuToggle, onChapterAction, onRecap } = props
       const open = !collapsed.has(section.id)
       return h(
         'div',
@@ -2267,6 +2268,7 @@ const API_BACKUP = '/api/inkwell/backup'
                       menuAt,
                       onMenuToggle,
                       onChapterAction,
+                      onRecap,
                     }),
                   )
                 }
@@ -2277,6 +2279,7 @@ const API_BACKUP = '/api/inkwell/backup'
                   menuAt,
                   onMenuToggle,
                   onChapterAction,
+                  onRecap,
                   collapsed,
                   onToggle,
                   selected,
@@ -5537,6 +5540,7 @@ const API_BACKUP = '/api/inkwell/backup'
               menuAt,
               onMenuToggle: setMenuAt,
               onChapterAction: runChapterAction,
+              onRecap: startRecap,
               onAdd:
                 section.id === 'text'
                   ? addChapter

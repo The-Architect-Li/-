@@ -46,6 +46,13 @@ export interface PanelRow {
    * travelled from 80 to 3 looks exactly like one written at 3.
    */
   mark?: { label: string; hint: string }
+  /**
+   * The card describes an older draft than the prose on disk.
+   *
+   * Shown as 「卡过期」; the ⋯ menu uses it to offer a rebuild, so the chip is an
+   * exit and not just a verdict.
+   */
+  staleCard?: boolean
   tone?: PanelTone
   /**
    * What clicking this leaf opens, when it stands for a thing with its own page.
@@ -465,6 +472,9 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
     const chapter = written.get(number)
     const draftCount = rounds.get(number)?.length ?? 0
     const title = plan?.title || chapter?.title || ''
+    // Computed before `base`: a stale card needs the ⋯ menu's rebuild item, so the
+    // flag has to be on the row itself, not only in the chip.
+    const stale = cardIsStale(plan, chapter)
     // Same badge as the card drawer: one chapter, one account of where it came from.
     const base = {
       id: `text.chapter.${number}`,
@@ -473,11 +483,11 @@ function textSection(snapshot: Snapshot, rounds: DraftRounds): PanelSection {
       key: String(number),
       moves: { up: number > lowest, down: number < highest },
       ...chapterMark(snapshot.chapters, number),
+      ...(stale ? { staleCard: true } : {}),
     }
     if (chapter) {
       // A card written from an older draft no longer describes the prose. The
       // row says so rather than leaving the author to compare two pages.
-      const stale = cardIsStale(plan, chapter)
       // A merged chapter keeps its card but has no recap: the old summary
       // described half the text. That is not the same as being stale — the card
       // is current, it is incomplete — and it needs its own word.
