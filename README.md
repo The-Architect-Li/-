@@ -509,14 +509,20 @@ its outline contract and the relevant ledger facts — not one of the eighty cha
 wound was on his left shoulder last chapter" is not a matter of the model being clever; it needs the
 material.
 
-The window is: the last three chapters in full, the seven before them as recaps, all inside 12,000
+The window is: **the previous chapter in full, the nine before it as recaps**, all inside 12,000
 characters.
 
 ```text
-reviewFullChapters: 3     # how many recent chapters arrive in full
-reviewRecapChapters: 7    # how many before those arrive as recaps
+reviewFullChapters: 1     # how many recent chapters arrive in full
+reviewRecapChapters: 9    # how many before those arrive as recaps
 reviewBudgetChars: 12000  # the ceiling over both
 ```
+
+**Why 1+9 instead of 3+7 (v0.31.1).** Every quoted chapter is paid for on every round, and two of the
+three only re-taught what the chapter cards already say in two lines: voice, facts, where the arc
+stands. The chapter that can actually break continuity is the one immediately before the scene, so
+that one arrives in full; the nine behind it arrive as recaps, enough to see the run without rereading
+it.
 
 **When the budget runs out, the oldest chapter drops to a recap — not the nearest one.** The seam is
 where continuity breaks, so the chapter right before the scene loses nothing. Chapters beyond the
@@ -527,10 +533,10 @@ window are named in the prompt ("the earlier N chapters are outside this review"
 marked "taken from the end of the prose, not a written recap" so the reviewer knows which it is.
 
 **The chief gets this window too (v0.22.1).** Cross-chapter continuity is the chief's own job: whether
-a chapter fits the book matters more than how good it is alone. So the chief receives what the two
-reviewers receive — the chapter under review, the previous three in full, seven more as recaps — plus
-their findings to adjudicate. Where the earlier text is not in the window, its role description tells it
-to say it does not know instead of guessing.
+a chapter fits the book matters more than how good it is alone. So the chief receives the whole
+window — the chapter under review, the previous chapter in full, nine more as recaps — plus their
+findings to adjudicate; the two reviewers read only the seam. Where the earlier text is not in the
+window, its role description tells it to say it does not know instead of guessing.
 
 **Edit the prose and the card goes stale.** A card records the prose revision it was written from.
 Rewrite the prose afterwards and it shows up in three places: `novel_check action="cards"` names the

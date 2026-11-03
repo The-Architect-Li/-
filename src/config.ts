@@ -26,8 +26,12 @@ export const DEFAULTS: InkwellConfig = {
   briefingBudgetChars: 6000,
   briefingTailChars: 800,
   briefingLookback: 5,
-  reviewFullChapters: 3,
-  reviewRecapChapters: 7,
+  // The reviewer sees one chapter quoted and nine recapped. Three quoted
+  // chapters read better on paper and worse in practice: the two older ones
+  // cost tokens on every round while the decisions they would inform — voice,
+  // facts, the shape of the arc — are already carried by the chapter cards.
+  reviewFullChapters: 1,
+  reviewRecapChapters: 9,
   reviewBudgetChars: 12000,
   reviewNeighbourChapters: 1,
   autoClock: true,

@@ -112,8 +112,8 @@ describe('buildReviewWindow', () => {
     expect(window.report).toContain('没有可读的近期正文')
   })
 
-  it('defaults to three in full and seven as recaps', () => {
-    expect(REVIEW_WINDOW_DEFAULTS).toEqual({ full: 3, recap: 7, budget: 12_000 })
+  it('defaults to one in full and nine as recaps', () => {
+    expect(REVIEW_WINDOW_DEFAULTS).toEqual({ full: 1, recap: 9, budget: 12_000 })
   })
 })
 

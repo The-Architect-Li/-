@@ -553,9 +553,23 @@ export interface InkwellConfig {
   briefingBudgetChars: number
   briefingTailChars: number
   briefingLookback: number
-  /** Chapters the chief reads in full. */
+  /**
+   * Chapters the chief reads in full.
+   *
+   * One, not three. The seam is where continuity breaks, and the chapter cards
+   * already carry what happened in the chapters before it — quoting three
+   * chapters spends tokens on every round to re-learn what a card says in two
+   * lines. Raise it when a chapter is so densely tied to its neighbours that a
+   * recap cannot hold the thread.
+   */
   reviewFullChapters: number
-  /** Chapters behind those the chief sees only as recaps. */
+  /**
+   * Chapters behind those the chief sees only as recaps.
+   *
+   * Nine, so the chief sees the whole last ten: the seam in prose, the rest of
+   * the run as what happened. That is the window a chapter's decisions are
+   * judged against.
+   */
   reviewRecapChapters: number
   /** Character ceiling for the review window. */
   reviewBudgetChars: number

@@ -139,11 +139,12 @@ describe('reviewer window in the prompt', () => {
     // The persona tells it to judge continuity, and the material is there to judge with.
     expect(prompt).toContain('和前面的章节对不上')
     expect(prompt).toContain('## 前面几章的正文')
-    expect(prompt).toContain('第一章的正文：沈砚说那船货昨夜进的港。')
+    // One chapter in full: the seam. The chapter before that is a recap.
     expect(prompt).toContain('第二章的正文：沈砚翻到借方那栏，上面写着三个人的名字。')
     expect(prompt).toContain('## 各审核员意见')
     expect(prompt).toContain('同一件事问了两遍')
-    expect(result.report).toContain('正文 第1–2章')
+    expect(result.report).toContain('正文 第2章')
+    expect(result.report).not.toContain('正文 第1–2章')
   })
 
   // Twelve chapters through the whole tool layer; 1.9s alone, but the suite runs 70
@@ -155,7 +156,7 @@ describe('reviewer window in the prompt', () => {
       await h.call('novel_outline', { action: 'card', number, summary: `第${number}章：一件小事过去了` })
     }
 
-    // Reviewing chapter 13: three chapters of prose, seven recaps, two unread.
+    // Reviewing chapter 13: one chapter of prose, nine recaps, two unread.
     const proposed = await h.call('novel_chapter', {
       action: 'propose',
       number: 13,
@@ -165,10 +166,13 @@ describe('reviewer window in the prompt', () => {
     await h.call('novel_dispatch', { action: 'chief', number: 13, findings: [] })
     const prompt = promptText(h.subagents.calls.at(-1))
     expect(prompt).toContain('## 前面几章的正文')
-    expect(prompt).toContain('### 第10章')
+    expect(prompt).toContain('### 第12章')
     expect(prompt).toContain('第12章的正文，沈砚讲的是第12件小事。')
     expect(prompt).toContain('## 更早几章的梗概')
     expect(prompt).toContain('第3章：一件小事过去了')
+    // Nine recaps, not twelve: the window stops at chapter 3.
+    expect(prompt).toContain('第11章：一件小事过去了')
+    expect(prompt).not.toContain('第2章：一件小事过去了')
     expect(prompt).toContain('更早的 2 章不在这次审稿范围内')
     // Recaps are cards, so no chapter 3 prose leaks into the prompt.
     expect(prompt).not.toContain('第3章的正文，沈砚讲的是第3件小事。')

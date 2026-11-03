@@ -65,8 +65,14 @@ export interface ReviewWindow {
   report: string
 }
 
-/** Defaults matching the studio's habit: three in full, seven as recaps. */
-export const REVIEW_WINDOW_DEFAULTS: ReviewWindowOptions = { full: 3, recap: 7, budget: 12_000 }
+/**
+ * Defaults matching the studio's habit: one chapter in full, nine as recaps.
+ *
+ * These must stay equal to `DEFAULTS.reviewFullChapters` / `reviewRecapChapters`
+ * in `src/config.ts`; the tool layer always passes the configured numbers, so
+ * this pair only matters to callers that come in with no options at all.
+ */
+export const REVIEW_WINDOW_DEFAULTS: ReviewWindowOptions = { full: 1, recap: 9, budget: 12_000 }
 
 /**
  * Is this chapter's card older than the prose it describes?

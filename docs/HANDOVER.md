@@ -392,7 +392,7 @@ retained Session scope（commands 插件里实测抛 `command.popupFor requires 
   章节页字段一栏（`src/panel/entry.ts`）、正文抽屉行标「卡过期」（`src/panel/tree.ts` 的 `chapterRow`）。
 - **测试**：`test/review-window.test.ts` 10 例（窗口装填、降级、过期标记、`describeRange`、`renderReviewWindow`）、
   `test/review-context.test.ts` 3 例（真 harness 走 `novel_dispatch` 检查提示词里有没有前一章、13 章时
-  3 正文 + 7 梗概 + 2 未读、`novel_check action="cards"` 报过期并在重存后清空）、
+  3 正文 + 7 梗概 + 2 未读（**v0.31.1 起默认改为 1 正文 + 9 梗概**）、`novel_check action="cards"` 报过期并在重存后清空）、
   `test/cards.test.ts` 加 2 例（盖章与只改节拍不盖章）、`test/panel.test.ts` 加 1 例（行标「卡过期」）。
   全量 **462 个用例（39 文件）**。
 - **坑**：`novel_dispatch` 的审核要求待审章**有草稿**（`propose` 过），只 `write` 过不够；
