@@ -1891,7 +1891,19 @@ const API_BACKUP = '/api/inkwell/backup'
 .iw-row { cursor: pointer; user-select: none; border: 1px solid transparent; }
 @keyframes iw-spin-turn { to { transform: rotate(360deg); } }
 .iw-spin { animation: iw-spin-turn 0.9s linear infinite; }
-.iw-bulk-check { cursor: pointer; user-select: none; width: 16px; text-align: center; color: var(--iw-accent); flex: 0 0 auto; }
+.iw-bulk-check {
+  cursor: pointer;
+  user-select: none;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 14px;
+  color: var(--iw-fg-2);
+  flex: 0 0 auto;
+}
+.iw-bulk-check:hover { color: var(--iw-accent); }
 .iw-receipt { transition: border-color .2s ease; }
 .iw-receipt .iw-receipt-action { opacity: 0; max-height: 0; overflow: hidden; transition: opacity .18s ease; }
 .iw-receipt:hover .iw-receipt-action { opacity: 1; max-height: 60px; }
@@ -5746,6 +5758,61 @@ const API_BACKUP = '/api/inkwell/backup'
                 )
               })()
             : null,
+        // The bulk toolbar: what is picked, and the two operations. Merge needs a
+        // consecutive run — a scattered pick has no single merged chapter to land on.
+        bulkMode
+          ? h(
+              'div',
+              {
+                // Sticky, not merely first: the toolbar used to sit above the list
+                // and scroll away, so after picking anything the two buttons were
+                // off-screen. It needs its own opaque floor to keep the rows from
+                // showing through while it holds position.
+                style: {
+                  ...S.note,
+                  position: 'sticky',
+                  top: '0',
+                  zIndex: 30,
+                  margin: '0 0 6px',
+                  padding: '8px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  backgroundColor: 'Canvas',
+                  borderBottom: '1px solid var(--iw-line)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,.10)',
+                },
+              },
+              h('span', { style: { fontSize: '12.5px', color: 'var(--iw-fg)' } }, `已选 ${bulkPicked.size} 章`),
+              (() => {
+                const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
+                const consecutive = nums.length >= 2 && nums[nums.length - 1] - nums[0] === nums.length - 1
+                return [
+                  h('button', {
+                    type: 'button',
+                    className: 'iw-btn',
+                    style: { ...S.iconButton, ...(consecutive ? {} : { opacity: 0.45 }) },
+                    disabled: !consecutive,
+                    title: consecutive ? `把第 ${nums[0]} 到 ${nums[nums.length - 1]} 章并进第 ${nums[0]} 章` : '合并的章必须连续',
+                    onClick: () => runBulkMerge(nums),
+                  }, `合并进第 ${nums[0] || '…'} 章`),
+                ]
+              })(),
+              h('button', {
+                type: 'button',
+                className: 'iw-btn',
+                style: { ...S.iconButton, ...(bulkPicked.size > 0 ? { color: 'var(--iw-danger-fg, #d66)', borderColor: 'var(--iw-danger-fg, #d66)' } : { opacity: 0.45 }) },
+                disabled: bulkPicked.size === 0,
+                onClick: () => {
+                  const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
+                  setDeleteAsk({ numbers: nums })
+                },
+              }, `删除 ${bulkPicked.size} 章`),
+              h('span', { style: { ...S.aside, flex: '1 1 auto', minWidth: '120px' } }, bulkPicked.size >= 2 && (() => { const nums = [...bulkPicked].map(Number).sort((a, b) => a - b); return nums[nums.length - 1] - nums[0] !== nums.length - 1 ? '合并需要连续的章；删除可以随意挑' : '' })() || ''),
+              h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => { setBulkMode(false); setBulkPicked(new Set()) } }, '退出'),
+            )
+          : null,
           sections.map((section) =>
             h(Section, {
               key: section.id,
@@ -5915,60 +5982,6 @@ const API_BACKUP = '/api/inkwell/backup'
         // chapter list that quietly renumbered itself is the worst outcome.
         menuNote !== ''
           ? h('div', { style: { ...S.note, margin: '0 0 6px', padding: '6px 8px', fontSize: '12px' } }, menuNote)
-          : null,
-        // The bulk toolbar: what is picked, and the two operations. Merge needs a
-        // consecutive run — a scattered pick has no single merged chapter to land on.
-        bulkMode
-          ? h(
-              'div',
-              {
-                // Sticky, not merely first: the toolbar used to sit above the list
-                // and scroll away, so after picking anything the two buttons were
-                // off-screen. It needs its own opaque floor to keep the rows from
-                // showing through while it holds position.
-                style: {
-                  ...S.note,
-                  position: 'sticky',
-                  top: '0',
-                  zIndex: 30,
-                  margin: '0 0 6px',
-                  padding: '8px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  flexWrap: 'wrap',
-                  backgroundColor: 'rgba(26, 26, 31, 0.98)',
-                  boxShadow: '0 4px 12px rgba(0,0,0,.35)',
-                },
-              },
-              h('span', { style: { fontSize: '12.5px', color: 'var(--iw-fg)' } }, `已选 ${bulkPicked.size} 章`),
-              (() => {
-                const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
-                const consecutive = nums.length >= 2 && nums[nums.length - 1] - nums[0] === nums.length - 1
-                return [
-                  h('button', {
-                    type: 'button',
-                    className: 'iw-btn',
-                    style: { ...S.iconButton, ...(consecutive ? {} : { opacity: 0.45 }) },
-                    disabled: !consecutive,
-                    title: consecutive ? `把第 ${nums[0]} 到 ${nums[nums.length - 1]} 章并进第 ${nums[0]} 章` : '合并的章必须连续',
-                    onClick: () => runBulkMerge(nums),
-                  }, `合并进第 ${nums[0] || '…'} 章`),
-                ]
-              })(),
-              h('button', {
-                type: 'button',
-                className: 'iw-btn',
-                style: { ...S.iconButton, ...(bulkPicked.size > 0 ? { color: 'var(--iw-danger-fg, #d66)', borderColor: 'var(--iw-danger-fg, #d66)' } : { opacity: 0.45 }) },
-                disabled: bulkPicked.size === 0,
-                onClick: () => {
-                  const nums = [...bulkPicked].map(Number).sort((a, b) => a - b)
-                  setDeleteAsk({ numbers: nums })
-                },
-              }, `删除 ${bulkPicked.size} 章`),
-              h('span', { style: { ...S.aside, flex: '1 1 auto', minWidth: '120px' } }, bulkPicked.size >= 2 && (() => { const nums = [...bulkPicked].map(Number).sort((a, b) => a - b); return nums[nums.length - 1] - nums[0] !== nums.length - 1 ? '合并需要连续的章；删除可以随意挑' : '' })() || ''),
-              h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => { setBulkMode(false); setBulkPicked(new Set()) } }, '退出'),
-            )
           : null,
         // The archivist at work: a spinner, what it is doing, and how long it has
         // been doing it. Silence here reads as a hang.
