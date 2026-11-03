@@ -1191,16 +1191,24 @@ const API_BACKUP = '/api/inkwell/backup'
       },
       chipDot: { color: 'var(--iw-accent)', fontSize: '14px', lineHeight: '10px' },
       spacer: { flex: '1 1 auto' },
+      /**
+       * Secondary button: a ghost.
+       *
+       * The old one wore a white fill and a hard border, which turned every action
+       * into a little box — four drawers' worth of boxes read as a settings panel,
+       * not a book. A ghost has no chrome until the pointer is on it; hierarchy is
+       * carried by weight and colour instead of by frames.
+       */
       iconButton: {
-        border: '1px solid var(--iw-line-strong)',
-        color: 'var(--iw-fg)',
-        backgroundColor: 'var(--iw-surface)',
-        borderRadius: '7px',
+        border: '1px solid transparent',
+        color: 'var(--iw-fg-2)',
+        backgroundColor: 'transparent',
+        borderRadius: '6px',
         font: 'inherit',
         fontSize: '12px',
-        height: '27px',
-        padding: '0 10px',
-        lineHeight: '25px',
+        height: '28px',
+        padding: '0 9px',
+        lineHeight: '26px',
         whiteSpace: 'nowrap',
         boxSizing: 'border-box',
       },
@@ -1208,13 +1216,14 @@ const API_BACKUP = '/api/inkwell/backup'
         border: '1px solid transparent',
         color: 'var(--iw-accent-fg)',
         backgroundColor: 'var(--iw-accent)',
-        borderRadius: '7px',
+        borderRadius: '6px',
         font: 'inherit',
         fontSize: '12px',
         fontWeight: 550,
-        height: '27px',
+        height: '28px',
         padding: '0 12px',
-        lineHeight: '25px',
+        lineHeight: '26px',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, .10)',
         whiteSpace: 'nowrap',
         boxSizing: 'border-box',
       },
@@ -1611,14 +1620,42 @@ const API_BACKUP = '/api/inkwell/backup'
         cursor: 'help',
         userSelect: 'none',
       },
+      /** A round, borderless micro-button for one-glyph actions (the drawer's +). */
+      ghostIcon: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        padding: 0,
+        border: '1px solid transparent',
+        borderRadius: '999px',
+        backgroundColor: 'transparent',
+        color: 'var(--iw-fg-3)',
+        cursor: 'pointer',
+        flex: '0 0 auto',
+      },
+      /** A pill for word-sized inline actions (多选). */
+      chipBtn: {
+        fontSize: '11px',
+        color: 'var(--iw-fg-3)',
+        backgroundColor: 'transparent',
+        border: '1px solid var(--iw-line)',
+        borderRadius: '999px',
+        padding: '0 8px',
+        height: '19px',
+        lineHeight: '17px',
+        cursor: 'pointer',
+        font: 'inherit',
+      },
       sectionCount: {
         fontSize: '11px',
         color: 'var(--iw-fg-3)',
-        backgroundColor: 'var(--iw-surface)',
         borderRadius: '999px',
-        padding: '0 7px',
+        padding: '0 4px',
         lineHeight: '17px',
         fontVariantNumeric: 'tabular-nums',
+        fontWeight: 400,
       },
       note: {
         border: '1px dashed var(--iw-line-strong)',
@@ -1918,7 +1955,10 @@ const API_BACKUP = '/api/inkwell/backup'
 .iw-glyph:focus-visible { outline: 2px solid var(--iw-accent-line); outline-offset: -2px; }
 
 /* Buttons ------------------------------------------------------------------ */
-.iw-btn { cursor: pointer; }
+.iw-btn { cursor: pointer; transition: background-color .12s ease, border-color .12s ease, color .12s ease; }
+.iw-round { border-radius: 999px; }
+.iw-round:hover:not(:disabled) { color: var(--iw-fg); }
+.iw-menu-item { display: flex; align-items: center; gap: 2px; width: 100%; border-radius: 6px; }
 .iw-btn:hover:not(:disabled) { background-color: var(--iw-surface-hover); border-color: var(--iw-line-strong); }
 .iw-btn:active:not(:disabled) { background-color: var(--iw-surface-active); }
 .iw-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--iw-accent-soft); border-color: var(--iw-accent-line); }
@@ -2348,7 +2388,7 @@ const API_BACKUP = '/api/inkwell/backup'
               onToggle(section.id)
             },
           },
-          h('span', { style: { ...S.glyph, color: 'var(--iw-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } },
+          h('span', { style: { ...S.glyph, color: 'var(--iw-fg-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } },
             h(Icon, { name: SECTION_ICON[section.id] || 'dot', size: 13 })),
           h('span', null, section.label),
           h('span', { style: S.sectionCount }, num(section.count)),
@@ -2356,7 +2396,7 @@ const API_BACKUP = '/api/inkwell/backup'
             ? h('button', {
                 type: 'button',
                 className: 'iw-btn',
-                style: { ...S.sectionCount, padding: '0 6px', cursor: 'pointer', ...(props.bulkActive ? { color: 'var(--iw-accent)', borderColor: 'var(--iw-accent-line)' } : {}) },
+                style: { ...S.chipBtn, ...(props.bulkActive ? { color: 'var(--iw-accent)', borderColor: 'var(--iw-accent-line)', backgroundColor: 'var(--iw-accent-soft)' } : {}) },
                 title: '多选章节，批量删除或合并',
                 onClick: (event) => { event.stopPropagation(); props.onBulkToggle() },
               }, props.bulkActive ? '退出多选' : '多选')
@@ -2366,8 +2406,8 @@ const API_BACKUP = '/api/inkwell/backup'
                 'button',
                 {
                   type: 'button',
-                  className: 'iw-btn',
-                  style: { ...S.sectionCount, padding: '0 6px', cursor: 'pointer' },
+                  className: 'iw-btn iw-round',
+                  style: S.ghostIcon,
                   title: props.addTitle || '新增',
                   onClick: (event) => {
                     event.stopPropagation()
@@ -2520,7 +2560,8 @@ const API_BACKUP = '/api/inkwell/backup'
           h('span', { style: S.bookIcon }, '▤'),
           h('span', { style: S.bookTitle }, LABEL),
           h('span', { style: S.spacer }),
-          h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onNew, title: '在某个目录里新建一本书' }, '＋ 新建'),
+          h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: onNew, title: '在某个目录里新建一本书' },
+            h(Icon, { name: 'plus', size: 13 }), ' 新建'),
           h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: onImport, title: '把一个已经有稿件的文件夹导进书库' }, '导入…'),
           h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => setTick((n) => n + 1), title: '重新扫描书库' }, '刷新'),
         ),
@@ -5107,7 +5148,8 @@ const API_BACKUP = '/api/inkwell/backup'
           : null,
         h('span', { style: S.spacer }),
         view === 'tree'
-          ? h('button', { type: 'button', className: 'iw-btn', style: S.iconButton, onClick: () => beginCreate('tree'), title: '选一个文件夹，在里面新建一本书' }, '＋ 新建')
+          ? h('button', { type: 'button', className: 'iw-btn iw-primary', style: S.primaryButton, onClick: () => beginCreate('tree'), title: '选一个文件夹，在里面新建一本书' },
+              h(Icon, { name: 'plus', size: 13 }), ' 新建')
           : null,
         view === 'tree' && root !== ''
           ? h(
