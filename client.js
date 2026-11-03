@@ -1030,6 +1030,24 @@ const API_BACKUP = '/api/inkwell/backup'
       return payload.data
     }
 
+    /**
+     * Ask whether this chapter still has a review running.
+     *
+     * The job lives in the server; the component that started it does not survive
+     * leaving the page. Coming back should pick the job up again, not pretend the
+     * button was never pressed while the subagents keep working.
+     */
+    async function readRoundForChapter(sessionId, root, number) {
+      const params = [`number=${number}`]
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`)
+      if (root) params.push(`root=${encodeURIComponent(root)}`)
+      const response = await fetch(`${API_ROUND}?${params.join('&')}`)
+      if (response.status === 404) return undefined
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok === false) return undefined
+      return payload.data
+    }
+
     /** Full-text search over every chapter. */
     async function loadSearch(sessionId, root, query) {
       const params = [`q=${encodeURIComponent(query)}`]
@@ -4059,6 +4077,9 @@ const API_BACKUP = '/api/inkwell/backup'
       const historyTarget = historyTargetOf(target.kind, target.key)
       const isChapter = target.kind === 'chapter'
       const [roundJob, setRoundJob] = useState(null)
+      // The timer belongs to the job, not to a render: leaving the page must not
+      // orphan a running review behind a button that says 「审核一轮」 again.
+      const roundTimer = useRef(null)
       const [roundReport, setRoundReport] = useState('')
       // A refusal with a button: the server says which one action unblocks this,
       // and the panel draws it where the refusal is — not in some other view.
@@ -4141,6 +4162,54 @@ const API_BACKUP = '/api/inkwell/backup'
         }
       }
 
+      /**
+       * Poll one review job to its end, reporting every stage.
+       *
+       * @param id - the server job id.
+       * @param number - the chapter it belongs to.
+       */
+      const startWatching = (id, number) => {
+        if (roundTimer.current !== null) clearInterval(roundTimer.current)
+        roundTimer.current = setInterval(() => {
+          readRound(id)
+            .then((state) => {
+              setRoundJob({ stage: state.stage, elapsed: state.elapsed, number, done: state.done })
+              if (!state.done) return undefined
+              clearInterval(roundTimer.current)
+              roundTimer.current = null
+              if (state.error !== '') setRoundError({ message: state.error, action: state.action })
+              else { setRoundReport(state.report || ''); setRoundError(null) }
+              if (onChanged) onChanged()
+              return undefined
+            })
+            .catch((failure) => {
+              clearInterval(roundTimer.current)
+              roundTimer.current = null
+              setRoundError({ message: String((failure && failure.message) || failure) })
+              setRoundJob(null)
+            })
+        }, 1000)
+      }
+
+      useEffect(() => () => {
+        if (roundTimer.current !== null) clearInterval(roundTimer.current)
+      }, [])
+
+      // Re-entering a chapter adopts whatever is still running there. Without this
+      // the button reset to 「审核一轮」 while three subagents were mid-sentence.
+      useEffect(() => {
+        if (!isChapter) return
+        const number = Number(target.key)
+        readRoundForChapter(sessionId, root, number)
+          .then((state) => {
+            if (state === undefined) return
+            setRoundJob({ stage: state.stage, elapsed: state.elapsed, number, done: false })
+            startWatching(state.id, number)
+            return undefined
+          })
+          .catch(() => undefined)
+      }, [target.kind, target.key])
+
       const head = h(
         'div',
         { style: S.head },
@@ -4171,26 +4240,7 @@ const API_BACKUP = '/api/inkwell/backup'
                   setRoundJob({ stage: 'logic', elapsed: 0, number, done: false })
                   startRound(sessionId, root, number)
                     .then((started) => {
-                      // Poll until the server says the last role is finished. One
-                      // second is fast enough to see each stage and slow enough
-                      // not to matter.
-                      const timer = setInterval(() => {
-                        readRound(started.id)
-                          .then((state) => {
-                            setRoundJob({ stage: state.stage, elapsed: state.elapsed, number, done: state.done })
-                            if (!state.done) return undefined
-                            clearInterval(timer)
-                            if (state.error !== '') setRoundError({ message: state.error, action: state.action })
-                            else { setRoundReport(state.report || ''); setRoundError(null) }
-                            if (onChanged) onChanged()
-                            return undefined
-                          })
-                          .catch((failure) => {
-                            clearInterval(timer)
-                            setRoundError({ message: String((failure && failure.message) || failure) })
-                            setRoundJob(null)
-                          })
-                      }, 1000)
+                      startWatching(started.id, number)
                       return undefined
                     })
                     .catch((failure) => {

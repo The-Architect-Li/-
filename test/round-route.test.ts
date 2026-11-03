@@ -350,3 +350,36 @@ describe('the panel round is review-only', () => {
     }
   })
 })
+
+describe('adopting a running review', () => {
+  it('answers by chapter number, so a remounted page can pick the job up', async () => {
+    // Leaving the chapter unmounted the component that held the job id; the
+    // subagents kept running. Coming back must find the job by chapter.
+    const dir = await mkdtemp(join(tmpdir(), 'inkwell-adopt-'))
+    roots.push(dir)
+    const store = new ProjectStore(join(dir, '.novel'))
+    await store.init('雾港', 800000)
+    await store.writeChapter(
+      { number: 7, title: '会', text: '正文。'.repeat(60), words: 120, summary: '', writtenAt: '2026-01-01T00:00:00.000Z', revision: 1 },
+      { baseRevision: undefined },
+    )
+    const app = await serve({ agentOf: () => ({}), ctxOf: () => ({}) }, store)
+    try {
+      const started = await fetch(`${app.base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', [PANEL_HEADER]: PANEL_HEADER_VALUE },
+        body: JSON.stringify({ number: 7 }),
+      })
+      const { data } = (await started.json()) as { data: { id: string } }
+      const adopted = await fetch(`${app.base}/round?number=7`)
+      expect(adopted.status).toBe(200)
+      const payload = (await adopted.json()) as { data: { id: string; number: number } }
+      expect(payload.data.id).toBe(data.id)
+      expect(payload.data.number).toBe(7)
+      const nothing = await fetch(`${app.base}/round?number=9`)
+      expect(nothing.status).toBe(404)
+    } finally {
+      await app.close()
+    }
+  })
+})

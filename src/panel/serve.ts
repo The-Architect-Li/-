@@ -1725,7 +1725,34 @@ const ROUND_JOBS = new Map<string, RoundJob>()
  * @param id - the job id from `/round`.
  * @returns its stage, and the report once it finishes.
  */
-export async function roundStatusRoute(id: string | undefined): Promise<PanelAnswer> {
+export async function roundStatusRoute(id: string | undefined, number?: number): Promise<PanelAnswer> {
+  // Re-entering a chapter asks 「is anything still running here?」 rather than
+  // 「what is job X doing」: the panel component that owned the id was unmounted,
+  // and the author should not have to remember it. The newest unfinished job for
+  // that chapter is the answer.
+  if (id === undefined && number !== undefined) {
+    const running = [...ROUND_JOBS.values()]
+      .filter((job) => job.number === number && !job.done)
+      .sort((a, b) => b.started - a.started)[0]
+    if (running === undefined) {
+      return { status: 404, body: { ok: false, error: { message: '这一章现在没有在跑的任务。' } } }
+    }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        data: {
+          id: running.id,
+          number: running.number,
+          stage: running.stage,
+          done: false,
+          elapsed: Math.round((Date.now() - running.started) / 1000),
+          report: running.report,
+          error: running.error,
+        },
+      },
+    }
+  }
   const job = id === undefined ? undefined : ROUND_JOBS.get(id)
   if (job === undefined) {
     return { status: 404, body: { ok: false, error: { message: '这个跑批任务已经不在内存里了（应用可能重启过）。' } } }
@@ -2632,7 +2659,11 @@ export function createPanelHandler(deps: PanelDeps): (req: IncomingMessage, res:
         // GET polls a job. POST starts one. Same path, two verbs, because the
         // poll is about the thing the POST created.
         if (isRead) {
-          send(res, await roundStatusRoute(url.searchParams.get('id') ?? undefined))
+          const asked = url.searchParams.get('number')
+          send(res, await roundStatusRoute(
+            url.searchParams.get('id') ?? undefined,
+            asked === null ? undefined : Number(asked),
+          ))
           return
         }
         send(
