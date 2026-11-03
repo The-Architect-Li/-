@@ -85,6 +85,9 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
   // does it compile a brief and delegate. Without this the session AI reads as a
   // pass-through, and the author's real question becomes 「那我为什么不直接跟写手说」.
   ctx.inject(['systemPrompt'], (child) => {
+    // Belt and braces: the charter is a nicety, the tools are the product. A host
+    // whose registry has a different shape must lose the charter, not the plugin.
+    try {
     const registry = child.get('systemPrompt') as
       | { section?: (section: { name: string; order: number; text: string }) => () => void }
       | undefined
@@ -111,6 +114,9 @@ export function apply(ctx: Context, config: Partial<InkwellConfig> = {}): void {
           '写与改：你和你的子智能体。审：你和面板都有入口，产出同账。面板的按钮永远不写正文——这是定死的。',
         ].join('\n'),
     }))
+    } catch {
+      // No charter this run; the session AI keeps its default identity.
+    }
   })
 
   ctx.on('tools/pre-execute', async (exec, next) => {
